@@ -154,17 +154,18 @@ class ScaleTool:
         if self.active_handle is None:
             return False
             
-        # Grid snap uygula
+        # Grid snap uygula - daha hassas snap kullan
+        snapped_pos = pos
         if (self.background_settings and 
             self.background_settings.get('snap_to_grid', False)):
-            pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
+            snapped_pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings)
             
         # Tutamak tipine göre boyutlandırma yöntemini belirle
         handle_type = self.handle_types[self.active_handle]
         
         if handle_type in ["top-left", "top-right", "bottom-left", "bottom-right"]:
             # Köşe tutamakları - proportional scaling
-            delta = pos - self.scale_center
+            delta = snapped_pos - self.scale_center
             current_distance = math.sqrt(delta.x()**2 + delta.y()**2)
             
             if current_distance == 0 or self.initial_distance == 0:
@@ -173,6 +174,14 @@ class ScaleTool:
             new_scale_factor = current_distance / self.initial_distance
             scale_change = new_scale_factor / self.scale_factor
             
+            # Grid snap aktifse minimum scale değişimini kontrol et
+            if (self.background_settings and 
+                self.background_settings.get('snap_to_grid', False)):
+                grid_size = self.background_settings.get('grid_size', 20)
+                # Scale değişimi çok küçükse atla
+                if abs(scale_change - 1.0) < 0.05:
+                    return False
+            
             # Minimum ve maksimum scale sınırları
             scale_change = max(0.1, min(5.0, scale_change))
             
@@ -180,7 +189,8 @@ class ScaleTool:
             for selected_stroke in selected_strokes:
                 if selected_stroke < len(strokes):
                     stroke_data = strokes[selected_stroke]
-                    StrokeHandler.scale_stroke(stroke_data, self.scale_center.x(), self.scale_center.y(), scale_change, scale_change)
+                    # Hassas grid snap ile scale uygula
+                    self.scale_stroke_precise(stroke_data, scale_change)
                 
             self.scale_factor = new_scale_factor
             
@@ -191,13 +201,16 @@ class ScaleTool:
             if not bounding_rect:
                 return False
                 
+            # Grid snap için pozisyonu ayarla
+            effective_pos = snapped_pos
+            
             # Orijinal kontrol noktalarına göre yeni scale hesapla
             scale_change_x = 1.0
             scale_change_y = 1.0
             
             if handle_type == "left":
                 # Sol kenara göre genişlik değişimi
-                new_width = bounding_rect.right() - pos.x()
+                new_width = bounding_rect.right() - effective_pos.x()
                 old_width = bounding_rect.width()
                 if old_width > 0:
                     scale_change_x = new_width / old_width
@@ -205,7 +218,7 @@ class ScaleTool:
                     
             elif handle_type == "right":
                 # Sağ kenara göre genişlik değişimi
-                new_width = pos.x() - bounding_rect.left()
+                new_width = effective_pos.x() - bounding_rect.left()
                 old_width = bounding_rect.width()
                 if old_width > 0:
                     scale_change_x = new_width / old_width
@@ -213,7 +226,7 @@ class ScaleTool:
                     
             elif handle_type == "top":
                 # Üst kenara göre yükseklik değişimi
-                new_height = bounding_rect.bottom() - pos.y()
+                new_height = bounding_rect.bottom() - effective_pos.y()
                 old_height = bounding_rect.height()
                 if old_height > 0:
                     scale_change_y = new_height / old_height
@@ -221,11 +234,18 @@ class ScaleTool:
                     
             elif handle_type == "bottom":
                 # Alt kenara göre yükseklik değişimi
-                new_height = pos.y() - bounding_rect.top()
+                new_height = effective_pos.y() - bounding_rect.top()
                 old_height = bounding_rect.height()
                 if old_height > 0:
                     scale_change_y = new_height / old_height
                     scale_change_y = max(0.1, min(5.0, scale_change_y))
+            
+            # Grid snap aktifse minimum scale değişimini kontrol et
+            if (self.background_settings and 
+                self.background_settings.get('snap_to_grid', False)):
+                # Scale değişimi çok küçükse atla
+                if (abs(scale_change_x - 1.0) < 0.05 and abs(scale_change_y - 1.0) < 0.05):
+                    return False
             
             # Tüm seçili stroke'ları tek seferde scale uygula
             for selected_stroke in selected_strokes:
@@ -336,3 +356,155 @@ class ScaleTool:
     def set_background_settings(self, settings):
         """Arka plan ayarlarını güncelle (grid snap için)"""
         self.background_settings = settings 
+
+    def mouseMoveEvent(self, event):
+        """Mouse hareket ettirildiğinde"""
+        if self.is_scaling and self.selected_strokes and self.scale_center:
+            current_pos = event.position()
+            
+            # Grid snap aktifse pozisyonu snap'le
+            if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                current_pos = GridSnapUtils.snap_point_to_grid_precise(current_pos, self.background_settings)
+            
+            # Ölçek faktörünü hesapla
+            initial_distance = self.calculate_distance(self.start_pos, self.scale_center)
+            current_distance = self.calculate_distance(current_pos, self.scale_center)
+            
+            if initial_distance > 0:
+                scale_factor = current_distance / initial_distance
+                
+                # Minimum ölçek değişimi kontrolü - grid snap aktifse daha hassas
+                min_scale_change = 0.02 if self.background_settings and self.background_settings.get('snap_to_grid', False) else 0.05
+                if abs(scale_factor - 1.0) < min_scale_change:
+                    return
+                
+                # Grid snap aktifse ölçek faktörünü grid'e uygun hale getir
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    grid_size = self.background_settings.get('grid_size', 20)
+                    # Ölçek faktörünü 0.1 katlarına yuvarlama
+                    scale_factor = round(scale_factor * 10) / 10
+                    if scale_factor <= 0.1:
+                        scale_factor = 0.1
+                
+                # Seçili stroke'ları ölçeklendir
+                for stroke in self.selected_strokes:
+                    original_data = self.original_stroke_data[id(stroke)]
+                    self.scale_stroke(stroke, original_data, scale_factor)
+                
+                self.drawing_widget.update()
+
+    def scale_stroke_precise(self, stroke_data, scale_factor):
+        """Stroke'u hassas grid snap ile boyutlandır"""
+        if not hasattr(self, 'original_stroke_data') or id(stroke_data) not in self.original_stroke_data:
+            # İlk kez scale ediliyorsa orijinal veriyi sakla
+            if not hasattr(self, 'original_stroke_data'):
+                self.original_stroke_data = {}
+            self.original_stroke_data[id(stroke_data)] = stroke_data.copy()
+        
+        original_data = self.original_stroke_data[id(stroke_data)]
+        self.scale_stroke(stroke_data, original_data, scale_factor)
+    
+    def scale_stroke(self, stroke, original_data, scale_factor):
+        """Stroke'u belirtilen faktörle ölçeklendir"""
+        stroke_type = stroke.get('type', '')
+        
+        if stroke_type == 'freehand':
+            if 'points' in original_data:
+                stroke['points'] = []
+                for point in original_data['points']:
+                    if isinstance(point, dict):
+                        # Dict formatında - serbest çizimler için her noktayı snap'leme
+                        original_point = QPointF(point['x'], point['y'])
+                        scaled_point = self.scale_point(original_point, self.scale_center, scale_factor)
+                        stroke['points'].append({'x': scaled_point.x(), 'y': scaled_point.y()})
+                    else:
+                        # QPointF formatında - serbest çizimler için her noktayı snap'leme
+                        from stroke_handler import ensure_qpointf
+                        original_point = ensure_qpointf(point)
+                        scaled_point = self.scale_point(original_point, self.scale_center, scale_factor)
+                        stroke['points'].append(scaled_point)
+        
+        elif stroke_type == 'bspline':
+            if 'control_points' in original_data:
+                stroke['control_points'] = []
+                for cp in original_data['control_points']:
+                    original_point = QPointF(cp[0], cp[1])
+                    scaled_point = self.scale_point(original_point, self.scale_center, scale_factor)
+                    
+                    # Grid snap aktifse control point'i snap'le
+                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                        scaled_point = GridSnapUtils.snap_point_to_grid_precise(scaled_point, self.background_settings)
+                    
+                    stroke['control_points'].append([scaled_point.x(), scaled_point.y()])
+        
+        elif stroke_type == 'line':
+            if 'start_point' in original_data:
+                original_start = QPointF(original_data['start_point'][0], original_data['start_point'][1])
+                scaled_start = self.scale_point(original_start, self.scale_center, scale_factor)
+                
+                # Grid snap aktifse endpoint'i snap'le
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    scaled_start = GridSnapUtils.snap_point_to_grid_precise(scaled_start, self.background_settings)
+                
+                stroke['start_point'] = (scaled_start.x(), scaled_start.y())
+            
+            if 'end_point' in original_data:
+                original_end = QPointF(original_data['end_point'][0], original_data['end_point'][1])
+                scaled_end = self.scale_point(original_end, self.scale_center, scale_factor)
+                
+                # Grid snap aktifse endpoint'i snap'le
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    scaled_end = GridSnapUtils.snap_point_to_grid_precise(scaled_end, self.background_settings)
+                
+                stroke['end_point'] = (scaled_end.x(), scaled_end.y())
+        
+        elif stroke_type == 'rectangle':
+            if 'corners' in original_data:
+                stroke['corners'] = []
+                for corner in original_data['corners']:
+                    original_corner = QPointF(corner[0], corner[1])
+                    scaled_corner = self.scale_point(original_corner, self.scale_center, scale_factor)
+                    
+                    # Grid snap aktifse corner'ı snap'le
+                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                        scaled_corner = GridSnapUtils.snap_point_to_grid_precise(scaled_corner, self.background_settings)
+                    
+                    stroke['corners'].append((scaled_corner.x(), scaled_corner.y()))
+            elif 'top_left' in original_data and 'bottom_right' in original_data:
+                # Eski format desteği
+                original_tl = QPointF(original_data['top_left'][0], original_data['top_left'][1])
+                original_br = QPointF(original_data['bottom_right'][0], original_data['bottom_right'][1])
+                
+                scaled_tl = self.scale_point(original_tl, self.scale_center, scale_factor)
+                scaled_br = self.scale_point(original_br, self.scale_center, scale_factor)
+                
+                # Grid snap aktifse corner'ları snap'le
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    scaled_tl = GridSnapUtils.snap_point_to_grid_precise(scaled_tl, self.background_settings)
+                    scaled_br = GridSnapUtils.snap_point_to_grid_precise(scaled_br, self.background_settings)
+                
+                stroke['top_left'] = (scaled_tl.x(), scaled_tl.y())
+                stroke['bottom_right'] = (scaled_br.x(), scaled_br.y())
+        
+        elif stroke_type == 'circle':
+            if 'center' in original_data:
+                original_center = QPointF(original_data['center'][0], original_data['center'][1])
+                scaled_center = self.scale_point(original_center, self.scale_center, scale_factor)
+                
+                # Grid snap aktifse center'ı snap'le
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    scaled_center = GridSnapUtils.snap_point_to_grid_precise(scaled_center, self.background_settings)
+                
+                stroke['center'] = (scaled_center.x(), scaled_center.y())
+            
+            if 'radius' in original_data:
+                scaled_radius = original_data['radius'] * scale_factor
+                
+                # Grid snap aktifse radius'u da grid'e uygun hale getir
+                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    grid_size = self.background_settings.get('grid_size', 20)
+                    scaled_radius = round(scaled_radius / grid_size) * grid_size
+                    if scaled_radius == 0:
+                        scaled_radius = grid_size
+                
+                stroke['radius'] = scaled_radius 

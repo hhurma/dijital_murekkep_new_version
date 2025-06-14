@@ -1,7 +1,16 @@
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, Qt
 from PyQt6.QtGui import QPainter, QPen, QPainterPath
-from PyQt6.QtCore import Qt
 import math
+
+def ensure_qpointf(point):
+    """Point'i QPointF'e dönüştür (dict'ten veya zaten QPointF'ten)"""
+    if isinstance(point, dict):
+        return QPointF(point['x'], point['y'])
+    elif isinstance(point, QPointF):
+        return point
+    else:
+        # Başka bir format, deneme
+        return QPointF(point.x(), point.y())
 
 class FreehandTool:
     def __init__(self):
@@ -143,19 +152,26 @@ class FreehandTool:
         # Gelişmiş Catmull-Rom spline curve
         if len(points) >= 2:
             path = QPainterPath()
-            path.moveTo(points[0])
+            
+            # Helper fonksiyonu kullan
+            first_point = ensure_qpointf(points[0])
+            path.moveTo(first_point)
             
             if len(points) == 2:
-                path.lineTo(points[1])
+                second_point = ensure_qpointf(points[1])
+                path.lineTo(second_point)
             elif len(points) == 3:
-                path.quadTo(points[1], points[2])
+                p1 = ensure_qpointf(points[1])
+                p2 = ensure_qpointf(points[2])
+                path.quadTo(p1, p2)
             else:
                 # Daha güçlü spline smoothing
                 for i in range(1, len(points) - 2):
-                    p0 = points[i - 1] if i > 0 else points[i]
-                    p1 = points[i]
-                    p2 = points[i + 1]
-                    p3 = points[i + 2] if i + 2 < len(points) else points[i + 1]
+                    # Helper fonksiyonu kullan
+                    p0 = ensure_qpointf(points[i - 1] if i > 0 else points[i])
+                    p1 = ensure_qpointf(points[i])
+                    p2 = ensure_qpointf(points[i + 1])
+                    p3 = ensure_qpointf(points[i + 2] if i + 2 < len(points) else points[i + 1])
                     
                     # Daha güçlü control point hesaplama
                     cp1_x = p1.x() + (p2.x() - p0.x()) / 4.0  # Önceki iyi versiyon
@@ -169,7 +185,9 @@ class FreehandTool:
                         p2
                     )
                 
-                path.lineTo(points[-1])
+                # Helper fonksiyonu kullan
+                last_point = ensure_qpointf(points[-1])
+                path.lineTo(last_point)
             
             painter.setPen(pen)
             painter.drawPath(path)

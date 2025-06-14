@@ -3,7 +3,7 @@ import os
 from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton, 
                             QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
                             QMenuBar, QDockWidget)
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPointF
 from PyQt6.QtGui import QAction, QIcon
 import qtawesome as qta
 from splash_screen import show_splash_screen
@@ -47,6 +47,9 @@ class MainWindow(QMainWindow):
         # Ayarlardan pencere boyutunu yükle
         width, height = self.settings.get_window_size()
         self.setGeometry(100, 100, width, height)
+        
+        # Uygulama tam ekran açılsın
+        self.showMaximized()
 
         # Ana widget ve layout
         main_widget = QWidget()
@@ -59,6 +62,9 @@ class MainWindow(QMainWindow):
         
         # Toolbar oluştur
         self.create_toolbar()
+        
+        # Status bar oluştur
+        self.create_status_bar()
         
         # Background dock widget oluştur
         self.create_background_dock()
@@ -83,7 +89,7 @@ class MainWindow(QMainWindow):
         # Dosya işlemleri
         new_tab_action = QAction(qta.icon('fa5s.plus', color='#4CAF50'), "Yeni Tab", self)
         new_tab_action.setToolTip("Yeni çizim tab'ı oluştur")
-        new_tab_action.triggered.connect(self.tab_manager.create_new_tab)
+        new_tab_action.triggered.connect(lambda: self.tab_manager.create_new_tab())
         toolbar.addAction(new_tab_action)
         
         toolbar.addSeparator()
@@ -193,9 +199,11 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # Renk paleti
+        # Color palette
         self.color_palette = ColorPalette()
+        self.color_palette.set_settings_manager(self.settings)
         self.color_palette.colorSelected.connect(self.on_color_selected)
+        self.color_palette.paletteChanged.connect(self.on_palette_changed)
         toolbar.addWidget(self.color_palette)
         
         toolbar.addSeparator()
@@ -291,6 +299,48 @@ class MainWindow(QMainWindow):
         shape_library_action.triggered.connect(self.toggle_shape_library_dock)
         view_menu.addAction(shape_library_action)
         
+    def create_status_bar(self):
+        """Status bar oluştur"""
+        self.status_bar = self.statusBar()
+        self.status_bar.showMessage("Hazır - Çizime başlayabilirsiniz", 3000)
+        
+        # Zoom bilgisi için permanent widget
+        self.zoom_status_label = QPushButton("100%")
+        self.zoom_status_label.setFlat(True)
+        self.zoom_status_label.setMaximumWidth(60)
+        self.zoom_status_label.clicked.connect(self.zoom_reset)
+        self.status_bar.addPermanentWidget(self.zoom_status_label)
+        
+        # Aktif araç bilgisi
+        self.tool_status_label = QPushButton("B-Spline")
+        self.tool_status_label.setFlat(True)
+        self.tool_status_label.setMaximumWidth(100)
+        self.status_bar.addPermanentWidget(self.tool_status_label)
+        
+    def show_status_message(self, message, timeout=3000):
+        """Status bar'da mesaj göster"""
+        self.status_bar.showMessage(message, timeout)
+        
+    def update_zoom_status(self, zoom_level):
+        """Zoom durumunu status bar'da güncelle"""
+        self.zoom_status_label.setText(f"{int(zoom_level)}%")
+        
+    def update_tool_status(self, tool_name):
+        """Aktif araç durumunu status bar'da güncelle"""
+        tool_names = {
+            "bspline": "B-Spline",
+            "freehand": "Serbest",
+            "line": "Düz Çizgi",
+            "rectangle": "Dikdörtgen",
+            "circle": "Çember",
+            "select": "Seçim",
+            "move": "Taşıma", 
+            "rotate": "Döndürme",
+            "scale": "Boyutlandırma"
+        }
+        display_name = tool_names.get(tool_name, tool_name)
+        self.tool_status_label.setText(display_name)
+        
     def create_background_dock(self):
         """Arka plan ayarları dock widget'ı oluştur"""
         self.background_dock = QDockWidget("Arka Plan Ayarları", self)
@@ -354,18 +404,22 @@ class MainWindow(QMainWindow):
         """Şekil havuzundan seçilen şekli canvas'a ekle"""
         current_widget = self.get_current_drawing_widget()
         if current_widget and strokes:
-            # Şekli canvas'ın ortasına yerleştir
-            canvas_center_x = current_widget.width() // 2
-            canvas_center_y = current_widget.height() // 2
+            # Canvas merkezini world koordinatlarında hesapla
+            canvas_center_x, canvas_center_y = self.transform_canvas_to_world(
+                current_widget.width() // 2, 
+                current_widget.height() // 2, 
+                current_widget
+            )
             
-            # Şeklin merkez noktasını hesapla
+            # Şeklin merkez noktasını hesapla (zaten world koordinatlarında)
             if strokes:
                 min_x = min_y = float('inf')
                 max_x = max_y = float('-inf')
                 
                 for stroke in strokes:
-                    for point in stroke.get('points', []):
-                        x, y = point['x'], point['y']
+                    # Stroke tipine göre point'leri al
+                    points = self.get_stroke_points_for_bounds(stroke)
+                    for x, y in points:
                         min_x = min(min_x, x)
                         max_x = max(max_x, x)
                         min_y = min(min_y, y)
@@ -385,14 +439,7 @@ class MainWindow(QMainWindow):
                 # Stroke'ları offset ile ekle ve seçili yap
                 added_stroke_indices = []
                 for stroke in strokes:
-                    new_stroke = stroke.copy()
-                    new_points = []
-                    for point in stroke.get('points', []):
-                        new_points.append({
-                            'x': point['x'] + offset_x,
-                            'y': point['y'] + offset_y
-                        })
-                    new_stroke['points'] = new_points
+                    new_stroke = self.apply_offset_to_stroke(stroke, offset_x, offset_y)
                     current_widget.strokes.append(new_stroke)
                     added_stroke_indices.append(len(current_widget.strokes) - 1)
                 
@@ -404,6 +451,108 @@ class MainWindow(QMainWindow):
                 self.set_tool("select")
                 
                 current_widget.update()
+
+    def transform_canvas_to_world(self, canvas_x, canvas_y, drawing_widget):
+        """Canvas koordinatlarını world koordinatlarına dönüştür"""
+        if not hasattr(drawing_widget, 'zoom_level') or not hasattr(drawing_widget, 'zoom_offset'):
+            return canvas_x, canvas_y
+            
+        zoom_level = getattr(drawing_widget, 'zoom_level', 1.0)
+        zoom_offset = getattr(drawing_widget, 'zoom_offset', QPointF(0, 0))
+        
+        # Canvas koordinatlarını world koordinatlarına dönüştür
+        world_x = (canvas_x - zoom_offset.x()) / zoom_level
+        world_y = (canvas_y - zoom_offset.y()) / zoom_level
+        
+        return world_x, world_y
+        
+    def get_stroke_points_for_bounds(self, stroke):
+        """Stroke'tan bounding hesaplama için point'leri al"""
+        points = []
+        
+        if stroke['type'] == 'freehand':
+            for point in stroke.get('points', []):
+                if isinstance(point, dict):
+                    points.append((point['x'], point['y']))
+                    
+        elif stroke['type'] == 'bspline':
+            for cp in stroke.get('control_points', []):
+                points.append((cp[0], cp[1]))
+                
+        elif stroke['type'] == 'line':
+            if 'start_point' in stroke:
+                points.append(stroke['start_point'])
+            if 'end_point' in stroke:
+                points.append(stroke['end_point'])
+                
+        elif stroke['type'] == 'rectangle':
+            if 'corners' in stroke:
+                points.extend(stroke['corners'])
+            elif 'top_left' in stroke and 'bottom_right' in stroke:
+                points.extend([stroke['top_left'], stroke['bottom_right']])
+                
+        elif stroke['type'] == 'circle':
+            if 'center' in stroke:
+                center = stroke['center']
+                radius = stroke.get('radius', 0)
+                # Çemberin bounding box'ını hesapla
+                points.extend([
+                    (center[0] - radius, center[1] - radius),
+                    (center[0] + radius, center[1] + radius)
+                ])
+        
+        return points
+        
+    def apply_offset_to_stroke(self, stroke, offset_x, offset_y):
+        """Stroke'a offset uygula"""
+        new_stroke = stroke.copy()
+        
+        if new_stroke['type'] == 'freehand':
+            if 'points' in new_stroke:
+                new_points = []
+                for point in new_stroke['points']:
+                    if isinstance(point, dict):
+                        new_points.append({
+                            'x': point['x'] + offset_x,
+                            'y': point['y'] + offset_y
+                        })
+                    else:
+                        new_points.append(point)  # Değiştirilmemiş bırak
+                new_stroke['points'] = new_points
+                
+        elif new_stroke['type'] == 'bspline':
+            if 'control_points' in new_stroke:
+                new_control_points = []
+                for cp in new_stroke['control_points']:
+                    new_control_points.append([cp[0] + offset_x, cp[1] + offset_y])
+                new_stroke['control_points'] = new_control_points
+                
+        elif new_stroke['type'] == 'line':
+            if 'start_point' in new_stroke:
+                start = new_stroke['start_point']
+                new_stroke['start_point'] = (start[0] + offset_x, start[1] + offset_y)
+            if 'end_point' in new_stroke:
+                end = new_stroke['end_point']
+                new_stroke['end_point'] = (end[0] + offset_x, end[1] + offset_y)
+                
+        elif new_stroke['type'] == 'rectangle':
+            if 'corners' in new_stroke:
+                new_corners = []
+                for corner in new_stroke['corners']:
+                    new_corners.append((corner[0] + offset_x, corner[1] + offset_y))
+                new_stroke['corners'] = new_corners
+            elif 'top_left' in new_stroke and 'bottom_right' in new_stroke:
+                tl = new_stroke['top_left']
+                br = new_stroke['bottom_right']
+                new_stroke['top_left'] = (tl[0] + offset_x, tl[1] + offset_y)
+                new_stroke['bottom_right'] = (br[0] + offset_x, br[1] + offset_y)
+                
+        elif new_stroke['type'] == 'circle':
+            if 'center' in new_stroke:
+                center = new_stroke['center']
+                new_stroke['center'] = (center[0] + offset_x, center[1] + offset_y)
+        
+        return new_stroke
 
     def get_current_drawing_widget(self):
         """Aktif tab'daki drawing widget'ı al"""
@@ -437,6 +586,9 @@ class MainWindow(QMainWindow):
         self.settings.set_active_tool(tool_name)
         self.settings.save_settings()
         
+        # Status bar'ı güncelle
+        self.update_tool_status(tool_name)
+        
     def on_color_selected(self, color):
         """Renk seçildiğinde aktif tab'a bildir"""
         current_widget = self.get_current_drawing_widget()
@@ -446,6 +598,10 @@ class MainWindow(QMainWindow):
         # Rengi ayarlara kaydet
         self.settings.set_drawing_color(color)
         self.settings.save_settings()
+        
+    def on_palette_changed(self):
+        """Color palette değiştiğinde"""
+        self.show_status_message("Renk paleti kaydedildi")
             
     def on_width_changed(self, width):
         """Çizgi kalınlığı değiştiğinde aktif tab'a bildir"""
@@ -524,6 +680,8 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if current_widget and hasattr(current_widget, 'set_zoom_level'):
             current_widget.set_zoom_level(zoom_level)
+        # Status bar zoom bilgisini güncelle
+        self.update_zoom_status(zoom_level)
     
     def on_pan_changed(self, pan_offset):
         """Pan değiştiğinde aktif tab'a bildir"""
@@ -548,6 +706,7 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if current_widget:
             current_widget.clear_all_strokes()
+            self.show_status_message("Çizim alanı temizlendi")
             
     def load_settings_to_tab(self, drawing_widget):
         """Ayarları tab'a yükle"""
@@ -564,7 +723,7 @@ class MainWindow(QMainWindow):
         drawing_widget.set_background_settings(bg_settings)
         
         # UI widget'larını güncelle
-        self.color_palette.set_current_color(self.settings.get_drawing_color())
+        self.color_palette.load_from_settings()
         self.line_width_widget.set_width(self.settings.get_line_width())
         self.fill_widget.set_filled(self.settings.get_fill_enabled())
         self.fill_color_widget.set_fill_color(self.settings.get_fill_color())
@@ -640,7 +799,12 @@ class MainWindow(QMainWindow):
     
     def export_to_pdf(self):
         """Tüm sekmeleri PDF olarak dışa aktar"""
-        self.pdf_exporter.export_to_pdf()
+        self.show_status_message("PDF dışa aktarılıyor...")
+        success = self.pdf_exporter.export_to_pdf()
+        if success:
+            self.show_status_message("PDF başarıyla dışa aktarıldı")
+        else:
+            self.show_status_message("PDF dışa aktarma başarısız")
         
     def closeEvent(self, event):
         """Uygulama kapanırken ayarları kaydet"""

@@ -66,11 +66,17 @@ class SessionManager:
             with open(filename, 'w', encoding='utf-8') as f:
                 json.dump(session_data, f, indent=2, ensure_ascii=False)
                 
-            QMessageBox.information(main_window, "Başarılı", f"Oturum kaydedildi:\n{filename}")
+            # Status bar'da mesaj göster
+            if hasattr(main_window, 'show_status_message'):
+                import os
+                file_name = os.path.basename(filename)
+                main_window.show_status_message(f"Oturum kaydedildi: {file_name}")
             return filename
             
         except Exception as e:
-            QMessageBox.critical(main_window, "Hata", f"Oturum kaydedilemedi:\n{str(e)}")
+            # Status bar'da hata mesajı göster
+            if hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message(f"Oturum kaydedilemedi: {str(e)}")
             return None
             
     def load_session(self, main_window, filename=None):
@@ -134,11 +140,17 @@ class SessionManager:
             # UI'yi güncelle
             main_window.load_settings_to_tab(main_window.get_current_drawing_widget())
                 
-            QMessageBox.information(main_window, "Başarılı", f"Oturum yüklendi:\n{filename}")
+            # Status bar'da mesaj göster
+            if hasattr(main_window, 'show_status_message'):
+                import os
+                file_name = os.path.basename(filename)
+                main_window.show_status_message(f"Oturum yüklendi: {file_name}")
             return filename
             
         except Exception as e:
-            QMessageBox.critical(main_window, "Hata", f"Oturum yüklenemedi:\n{str(e)}")
+            # Status bar'da hata mesajı göster
+            if hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message(f"Oturum yüklenemedi: {str(e)}")
             return None
             
     def serialize_strokes(self, strokes):
@@ -254,8 +266,13 @@ class SessionManager:
         """Otomatik oturum kaydetme"""
         try:
             auto_save_path = os.path.join(self.sessions_dir, "auto_save.sdm")
-            return self.save_session(main_window, auto_save_path)
-        except Exception:
+            result = self.save_session(main_window, auto_save_path)
+            if result and hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message("Otomatik kayıt tamamlandı")
+            return result
+        except Exception as e:
+            if hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message(f"Otomatik kayıt başarısız: {str(e)}")
             return False
             
     def serialize_background_settings(self, bg_settings):
@@ -274,6 +291,9 @@ class SessionManager:
         if 'grid_color' in serialized:
             if isinstance(serialized['grid_color'], QColor):
                 serialized['grid_color'] = serialized['grid_color'].name()
+        if 'major_grid_color' in serialized:
+            if isinstance(serialized['major_grid_color'], QColor):
+                serialized['major_grid_color'] = serialized['major_grid_color'].name()
                 
         return serialized
         
@@ -291,6 +311,8 @@ class SessionManager:
             bg_settings['background_color'] = QColor(bg_settings['background_color'])
         if 'grid_color' in bg_settings and isinstance(bg_settings['grid_color'], str):
             bg_settings['grid_color'] = QColor(bg_settings['grid_color'])
+        if 'major_grid_color' in bg_settings and isinstance(bg_settings['major_grid_color'], str):
+            bg_settings['major_grid_color'] = QColor(bg_settings['major_grid_color'])
             
         return bg_settings
         

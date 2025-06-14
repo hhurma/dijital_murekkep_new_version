@@ -3,6 +3,16 @@ from PyQt6.QtGui import QPen, QBrush
 from PyQt6.QtCore import Qt
 import numpy as np
 
+def ensure_qpointf(point):
+    """Point'i QPointF'e dönüştür (dict'ten veya zaten QPointF'ten)"""
+    if isinstance(point, dict):
+        return QPointF(point['x'], point['y'])
+    elif isinstance(point, QPointF):
+        return point
+    else:
+        # Başka bir format, deneme
+        return QPointF(point.x(), point.y())
+
 class StrokeHandler:
     """Tüm stroke tiplerini modüler şekilde işleyen base sınıf"""
     
@@ -12,8 +22,12 @@ class StrokeHandler:
         if stroke_data['type'] == 'bspline':
             return stroke_data['control_points']
         elif stroke_data['type'] == 'freehand':
-            # QPointF'leri (x, y) tuple'larına çevir
-            return [(p.x(), p.y()) for p in stroke_data['points']]
+            # Point'leri (x, y) tuple'larına çevir
+            points = []
+            for p in stroke_data['points']:
+                point_qf = ensure_qpointf(p)
+                points.append((point_qf.x(), point_qf.y()))
+            return points
         elif stroke_data['type'] == 'line':
             return [stroke_data['start_point'], stroke_data['end_point']]
         elif stroke_data['type'] == 'rectangle':
@@ -74,7 +88,8 @@ class StrokeHandler:
         elif stroke_data['type'] == 'freehand':
             points = stroke_data['points']
             for i in range(len(points)):
-                points[i] = QPointF(points[i].x() + delta_x, points[i].y() + delta_y)
+                point_qf = ensure_qpointf(points[i])
+                points[i] = QPointF(point_qf.x() + delta_x, point_qf.y() + delta_y)
                 
         elif stroke_data['type'] == 'line':
             start = stroke_data['start_point']
@@ -124,8 +139,9 @@ class StrokeHandler:
             points = stroke_data['points']
             for i in range(len(points)):
                 # Merkeze göre relatif pozisyon
-                rel_x = points[i].x() - center_x
-                rel_y = points[i].y() - center_y
+                point_qf = ensure_qpointf(points[i])
+                rel_x = point_qf.x() - center_x
+                rel_y = point_qf.y() - center_y
                 
                 # Döndürme matrisi uygula
                 new_x = rel_x * cos_a - rel_y * sin_a
@@ -312,7 +328,8 @@ class StrokeHandler:
             # Serbest çizim için noktalara yakınlık
             points = stroke_data['points']
             for point in points:
-                if (pos - point).manhattanLength() < tolerance:
+                point_qf = ensure_qpointf(point)
+                if (pos - point_qf).manhattanLength() < tolerance:
                     return True
                     
         elif stroke_data['type'] == 'line':
@@ -367,7 +384,8 @@ class StrokeHandler:
         elif stroke_data['type'] == 'freehand':
             points = stroke_data['points']
             for point in points:
-                if rect.contains(point):
+                point_qf = ensure_qpointf(point)
+                if rect.contains(point_qf):
                     return True
                     
         elif stroke_data['type'] == 'line':
@@ -415,7 +433,7 @@ class StrokeHandler:
             painter.setPen(pen)
             for i, point in enumerate(points):
                 if i % 5 == 0:  # Performans için her 5. noktayı çiz
-                    painter.drawPoint(point)
+                    painter.drawPoint(ensure_qpointf(point))
                     
         elif stroke_data['type'] == 'line':
             # Çizginin uç noktalarını vurgula

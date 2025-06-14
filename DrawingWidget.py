@@ -219,6 +219,16 @@ class DrawingWidget(QWidget):
         transformed_x = (pos.x() - self.zoom_offset.x()) / self.zoom_level
         transformed_y = (pos.y() - self.zoom_offset.y()) / self.zoom_level
         return QPointF(transformed_x, transformed_y)
+    
+    def set_zoom_level(self, zoom_level):
+        """Zoom seviyesini ayarla"""
+        self.zoom_level = zoom_level
+        self.update()
+    
+    def set_pan_offset(self, pan_offset):
+        """Pan offset'ini ayarla"""
+        self.zoom_offset = pan_offset
+        self.update()
         
     def save_current_state(self, description="Action"):
         """Mevcut durumu undo manager'a kaydet"""
@@ -806,16 +816,19 @@ class DrawingWidget(QWidget):
             self.draw_snap_grid(painter)
             
     def draw_grid_background(self, painter):
-        """Çizgili arka plan çiz (sadece yatay çizgiler)"""
-        grid_color = QColor(self.background_settings['grid_color'])
+        """Çizgili arka plan çiz (sadece yatay çizgiler) - Major/Minor sistem"""
+        # Minor grid ayarları
+        minor_color = QColor(self.background_settings['grid_color'])
+        major_color = QColor(self.background_settings.get('major_grid_color', QColor(150, 150, 150)))
         grid_size = self.background_settings['grid_size']
-        grid_width = self.background_settings['grid_width']
+        minor_width = self.background_settings['grid_width']
+        major_width = self.background_settings.get('major_grid_width', 2)
+        major_interval = self.background_settings.get('major_grid_interval', 5)
         grid_opacity = self.background_settings.get('grid_opacity', 1.0)
         
         # Şeffaflık uygula
-        grid_color.setAlphaF(grid_opacity)
-        pen = QPen(grid_color, grid_width)
-        painter.setPen(pen)
+        minor_color.setAlphaF(grid_opacity)
+        major_color.setAlphaF(grid_opacity)
         
         rect = self.rect()
         width = rect.width()
@@ -823,21 +836,36 @@ class DrawingWidget(QWidget):
         
         # Sadece yatay çizgiler (çizgili kağıt gibi)
         y = 0
+        line_count = 0
         while y <= height:
+            # Her major_interval çizgide bir major grid çiz
+            if line_count % major_interval == 0:
+                # Major çizgi
+                pen = QPen(major_color, major_width)
+                painter.setPen(pen)
+            else:
+                # Minor çizgi
+                pen = QPen(minor_color, minor_width)
+                painter.setPen(pen)
+            
             painter.drawLine(0, y, width, y)
             y += grid_size
+            line_count += 1
              
     def draw_snap_grid(self, painter):
-        """Beyaz arka planda snap için hafif grid çiz"""
-        grid_color = QColor(self.background_settings['grid_color'])
+        """Beyaz arka planda snap için hafif grid çiz - Major/Minor sistem"""
+        # Minor grid ayarları
+        minor_color = QColor(self.background_settings['grid_color'])
+        major_color = QColor(self.background_settings.get('major_grid_color', QColor(150, 150, 150)))
         grid_size = self.background_settings['grid_size']
-        grid_width = max(1, self.background_settings['grid_width'] - 1)  # Biraz daha ince
+        minor_width = max(1, self.background_settings['grid_width'] - 1)  # Biraz daha ince
+        major_width = max(1, self.background_settings.get('major_grid_width', 2) - 1)  # Biraz daha ince
+        major_interval = self.background_settings.get('major_grid_interval', 5)
         grid_opacity = self.background_settings.get('grid_opacity', 1.0) * 0.3  # Daha şeffaf
         
         # Şeffaflık uygula
-        grid_color.setAlphaF(grid_opacity)
-        pen = QPen(grid_color, grid_width, Qt.PenStyle.DotLine)  # Noktalı çizgi
-        painter.setPen(pen)
+        minor_color.setAlphaF(grid_opacity)
+        major_color.setAlphaF(grid_opacity)
         
         rect = self.rect()
         width = rect.width()
@@ -845,27 +873,54 @@ class DrawingWidget(QWidget):
         
         # Dikey çizgiler
         x = 0
+        line_count = 0
         while x <= width:
+            # Her major_interval çizgide bir major grid çiz
+            if line_count % major_interval == 0:
+                # Major çizgi
+                pen = QPen(major_color, major_width, Qt.PenStyle.DotLine)
+                painter.setPen(pen)
+            else:
+                # Minor çizgi
+                pen = QPen(minor_color, minor_width, Qt.PenStyle.DotLine)
+                painter.setPen(pen)
+            
             painter.drawLine(x, 0, x, height)
             x += grid_size
+            line_count += 1
             
         # Yatay çizgiler
         y = 0
+        line_count = 0
         while y <= height:
+            # Her major_interval çizgide bir major grid çiz
+            if line_count % major_interval == 0:
+                # Major çizgi
+                pen = QPen(major_color, major_width, Qt.PenStyle.DotLine)
+                painter.setPen(pen)
+            else:
+                # Minor çizgi
+                pen = QPen(minor_color, minor_width, Qt.PenStyle.DotLine)
+                painter.setPen(pen)
+            
             painter.drawLine(0, y, width, y)
             y += grid_size
+            line_count += 1
             
     def draw_dots_background(self, painter):
-        """Kareli arka plan çiz (hem yatay hem dikey çizgiler)"""
-        grid_color = QColor(self.background_settings['grid_color'])
+        """Kareli arka plan çiz (hem yatay hem dikey çizgiler) - Major/Minor sistem"""
+        # Minor grid ayarları
+        minor_color = QColor(self.background_settings['grid_color'])
+        major_color = QColor(self.background_settings.get('major_grid_color', QColor(150, 150, 150)))
         grid_size = self.background_settings['grid_size']
-        grid_width = self.background_settings['grid_width']
+        minor_width = self.background_settings['grid_width']
+        major_width = self.background_settings.get('major_grid_width', 2)
+        major_interval = self.background_settings.get('major_grid_interval', 5)
         grid_opacity = self.background_settings.get('grid_opacity', 1.0)
         
         # Şeffaflık uygula
-        grid_color.setAlphaF(grid_opacity)
-        pen = QPen(grid_color, grid_width)
-        painter.setPen(pen)
+        minor_color.setAlphaF(grid_opacity)
+        major_color.setAlphaF(grid_opacity)
         
         rect = self.rect()
         width = rect.width()
@@ -873,12 +928,36 @@ class DrawingWidget(QWidget):
         
         # Dikey çizgiler (kareli için)
         x = 0
+        line_count = 0
         while x <= width:
+            # Her major_interval çizgide bir major grid çiz
+            if line_count % major_interval == 0:
+                # Major çizgi
+                pen = QPen(major_color, major_width)
+                painter.setPen(pen)
+            else:
+                # Minor çizgi
+                pen = QPen(minor_color, minor_width)
+                painter.setPen(pen)
+            
             painter.drawLine(x, 0, x, height)
             x += grid_size
+            line_count += 1
             
         # Yatay çizgiler (kareli için)
         y = 0
+        line_count = 0
         while y <= height:
+            # Her major_interval çizgide bir major grid çiz
+            if line_count % major_interval == 0:
+                # Major çizgi
+                pen = QPen(major_color, major_width)
+                painter.setPen(pen)
+            else:
+                # Minor çizgi
+                pen = QPen(minor_color, minor_width)
+                painter.setPen(pen)
+            
             painter.drawLine(0, y, width, y)
             y += grid_size
+            line_count += 1

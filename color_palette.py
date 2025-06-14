@@ -89,6 +89,7 @@ class ColorButton(QPushButton):
 class ColorPalette(QWidget):
     """Dinamik renk paleti - başlangıçta 1 renk, + ile maksimum 5'e kadar"""
     colorSelected = pyqtSignal(QColor)
+    paletteChanged = pyqtSignal()  # Palette değiştiğinde sinyal
     
     def __init__(self, parent=None):
         super().__init__(parent)
@@ -96,6 +97,8 @@ class ColorPalette(QWidget):
         self.color_buttons = []
         self.add_button = None
         self.max_colors = 5
+        self.settings_manager = None  # Ana pencere tarafından ayarlanacak
+        self.loading_from_settings = False  # Ayarlardan yüklenirken sinyal gönderme
         self.setup_ui()
         
     def setup_ui(self):
@@ -144,6 +147,15 @@ class ColorPalette(QWidget):
     
     def add_color_button(self, color, selected=False):
         """Yeni renk butonu ekle"""
+        self.add_color_button_internal(color, selected)
+            
+        # Ayarlara kaydet (sadece yükleme sırasında değilse)
+        if not self.loading_from_settings:
+            self.save_to_settings()
+            self.paletteChanged.emit()
+        
+    def add_color_button_internal(self, color, selected=False):
+        """İç kullanım için renk butonu ekle (sinyal göndermez)"""
         can_delete = len(self.color_buttons) > 0  # İlk renk silinemez
         btn = ColorButton(color, can_delete)
         btn.setCheckable(True)
@@ -155,14 +167,14 @@ class ColorPalette(QWidget):
             btn.setChecked(True)
             
         # + butonundan önce ekle
-        insert_pos = self.layout.count() - 1
+        insert_pos = self.layout.count() - 1 if self.add_button else self.layout.count()
         self.layout.insertWidget(insert_pos, btn)
         self.color_buttons.append(btn)
         
         # Maksimum sayıya ulaşıldıysa + butonunu gizle
-        if len(self.color_buttons) >= self.max_colors:
+        if len(self.color_buttons) >= self.max_colors and self.add_button:
             self.add_button.hide()
-        
+
     def delete_color_button(self, button):
         """Renk butonunu sil"""
         if len(self.color_buttons) <= 1:  # En az 1 renk olmalı
@@ -189,7 +201,68 @@ class ColorPalette(QWidget):
         if len(self.color_buttons) == 1:
             self.color_buttons[0].can_delete = False
             self.color_buttons[0].setToolTip("Sol tık: rengi seç\nUzun basma: rengi değiştir")
+            
+        # Ayarlara kaydet (sadece yükleme sırasında değilse)
+        if not self.loading_from_settings:
+            self.save_to_settings()
+            self.paletteChanged.emit()
     
+    def set_settings_manager(self, settings_manager):
+        """Settings manager'ı ayarla"""
+        self.settings_manager = settings_manager
+        
+    def load_from_settings(self):
+        """Ayarlardan renkleri yükle"""
+        if not self.settings_manager:
+            return
+            
+        self.loading_from_settings = True  # Yükleme modunu aç
+        
+        # Mevcut butonları temizle
+        for btn in self.color_buttons[:]:
+            self.layout.removeWidget(btn)
+            btn.deleteLater()
+        self.color_buttons.clear()
+        
+        # Ayarlardan renkleri al
+        colors = self.settings_manager.get_palette_colors()
+        selected_index = self.settings_manager.get_palette_selected_index()
+        
+        # Renk butonlarını oluştur
+        for i, color in enumerate(colors):
+            selected = (i == selected_index)
+            self.add_color_button_internal(color, selected=selected)  # Internal fonksiyon kullan
+            if selected:
+                self.current_color = color
+                
+        # + butonunu yeniden oluştur
+        if self.add_button:
+            self.layout.removeWidget(self.add_button)
+            self.add_button.deleteLater()
+        self.create_add_button()
+        
+        self.loading_from_settings = False  # Yükleme modunu kapat
+        
+    def save_to_settings(self):
+        """Renkleri ayarlara kaydet"""
+        if not self.settings_manager:
+            return
+            
+        # Renkleri topla
+        colors = [btn.get_color() for btn in self.color_buttons]
+        
+        # Seçili index'i bul
+        selected_index = 0
+        for i, btn in enumerate(self.color_buttons):
+            if btn.isChecked():
+                selected_index = i
+                break
+                
+        # Ayarlara kaydet
+        self.settings_manager.set_palette_colors(colors)
+        self.settings_manager.set_palette_selected_index(selected_index)
+        self.settings_manager.save_settings()
+        
     def add_new_color(self):
         """Yeni renk ekle"""
         if len(self.color_buttons) >= self.max_colors:
@@ -237,6 +310,10 @@ class ColorPalette(QWidget):
         self.current_color = color
         self.colorSelected.emit(color)
         
+        # Ayarlara kaydet (sadece yükleme sırasında değilse)
+        if not self.loading_from_settings:
+            self.save_to_settings()
+        
     def on_color_changed(self, color):
         """Renk değiştirildiğinde"""
         sender = self.sender()
@@ -244,6 +321,11 @@ class ColorPalette(QWidget):
             # Eğer değiştirilen renk şu an seçili ise, aktif rengi güncelle
             self.current_color = color
             self.colorSelected.emit(color)
+            
+        # Ayarlara kaydet (sadece yükleme sırasında değilse)
+        if not self.loading_from_settings:
+            self.save_to_settings()
+            self.paletteChanged.emit()
             
     def get_current_color(self):
         """Şu anki seçili rengi al"""

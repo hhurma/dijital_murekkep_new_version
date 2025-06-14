@@ -30,6 +30,12 @@ class SettingsManager:
             'line_style': '1'  # Qt.PenStyle.SolidLine
         }
         
+        # Color palette ayarları
+        self.config['ColorPalette'] = {
+            'colors': '#000000',  # Virgülle ayrılmış renk listesi
+            'selected_index': '0'
+        }
+        
         # Arka plan ayarları
         self.config['Background'] = {
             'type': 'solid',
@@ -117,6 +123,40 @@ class SettingsManager:
             style_value = int(style)
         self.config.set('Drawing', 'line_style', str(style_value))
         
+    # Color palette ayarları
+    def get_palette_colors(self):
+        """Color palette renklerini al"""
+        colors_str = self.config.get('ColorPalette', 'colors', fallback='#000000')
+        color_names = colors_str.split(',')
+        colors = []
+        for color_name in color_names:
+            color_name = color_name.strip()
+            if color_name:
+                colors.append(QColor(color_name))
+        return colors if colors else [QColor('#000000')]
+        
+    def set_palette_colors(self, colors):
+        """Color palette renklerini kaydet"""
+        # ColorPalette section'ının var olduğundan emin ol
+        if not self.config.has_section('ColorPalette'):
+            self.config.add_section('ColorPalette')
+            
+        color_names = [color.name() for color in colors]
+        colors_str = ','.join(color_names)
+        self.config.set('ColorPalette', 'colors', colors_str)
+        
+    def get_palette_selected_index(self):
+        """Color palette seçili index'i al"""
+        return self.config.getint('ColorPalette', 'selected_index', fallback=0)
+        
+    def set_palette_selected_index(self, index):
+        """Color palette seçili index'i kaydet"""
+        # ColorPalette section'ının var olduğundan emin ol
+        if not self.config.has_section('ColorPalette'):
+            self.config.add_section('ColorPalette')
+            
+        self.config.set('ColorPalette', 'selected_index', str(index))
+        
     # Arka plan ayarları
     def get_background_type(self):
         """Arka plan tipini al"""
@@ -136,13 +176,22 @@ class SettingsManager:
         self.config.set('Background', 'background_color', color.name())
         
     def get_grid_color(self):
-        """Grid rengini al"""
+        """Minor grid rengini al"""
         color_str = self.config.get('Background', 'grid_color', fallback='#C8C8C8')
         return QColor(color_str)
         
     def set_grid_color(self, color):
-        """Grid rengini kaydet"""
+        """Minor grid rengini kaydet"""
         self.config.set('Background', 'grid_color', color.name())
+        
+    def get_major_grid_color(self):
+        """Major grid rengini al"""
+        color_str = self.config.get('Background', 'major_grid_color', fallback='#969696')
+        return QColor(color_str)
+        
+    def set_major_grid_color(self, color):
+        """Major grid rengini kaydet"""
+        self.config.set('Background', 'major_grid_color', color.name())
         
     def get_grid_size(self):
         """Grid boyutunu al"""
@@ -153,12 +202,28 @@ class SettingsManager:
         self.config.set('Background', 'grid_size', str(size))
         
     def get_grid_width(self):
-        """Grid kalınlığını al"""
+        """Minor grid kalınlığını al"""
         return self.config.getint('Background', 'grid_width', fallback=1)
         
     def set_grid_width(self, width):
-        """Grid kalınlığını kaydet"""
+        """Minor grid kalınlığını kaydet"""
         self.config.set('Background', 'grid_width', str(width))
+        
+    def get_major_grid_width(self):
+        """Major grid kalınlığını al"""
+        return self.config.getint('Background', 'major_grid_width', fallback=2)
+        
+    def set_major_grid_width(self, width):
+        """Major grid kalınlığını kaydet"""
+        self.config.set('Background', 'major_grid_width', str(width))
+        
+    def get_major_grid_interval(self):
+        """Major grid aralığını al"""
+        return self.config.getint('Background', 'major_grid_interval', fallback=5)
+        
+    def set_major_grid_interval(self, interval):
+        """Major grid aralığını kaydet"""
+        self.config.set('Background', 'major_grid_interval', str(interval))
         
     def get_grid_opacity(self):
         """Grid şeffaflığını al"""
@@ -182,8 +247,11 @@ class SettingsManager:
             'type': self.get_background_type(),
             'background_color': self.get_background_color(),
             'grid_color': self.get_grid_color(),
+            'major_grid_color': self.get_major_grid_color(),
             'grid_size': self.get_grid_size(),
             'grid_width': self.get_grid_width(),
+            'major_grid_width': self.get_major_grid_width(),
+            'major_grid_interval': self.get_major_grid_interval(),
             'grid_opacity': self.get_grid_opacity(),
             'snap_to_grid': self.get_snap_to_grid()
         }
@@ -193,8 +261,11 @@ class SettingsManager:
         self.set_background_type(settings.get('type', 'solid'))
         self.set_background_color(settings.get('background_color', QColor(255, 255, 255)))
         self.set_grid_color(settings.get('grid_color', QColor(200, 200, 200)))
+        self.set_major_grid_color(settings.get('major_grid_color', QColor(150, 150, 150)))
         self.set_grid_size(settings.get('grid_size', 20))
         self.set_grid_width(settings.get('grid_width', 1))
+        self.set_major_grid_width(settings.get('major_grid_width', 2))
+        self.set_major_grid_interval(settings.get('major_grid_interval', 5))
         self.set_grid_opacity(settings.get('grid_opacity', 1.0))
         self.set_snap_to_grid(settings.get('snap_to_grid', False))
         

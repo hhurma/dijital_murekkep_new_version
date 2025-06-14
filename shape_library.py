@@ -6,7 +6,7 @@ from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QPushButton,
                             QComboBox, QMessageBox, QInputDialog, QFileDialog,
                             QSplitter, QTextEdit, QGroupBox, QScrollArea, QCheckBox,
                             QGridLayout, QFrame)
-from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QSize, QRect, QRectF
+from PyQt6.QtCore import Qt, pyqtSignal, QStandardPaths, QSize, QRect, QRectF, QPointF
 from PyQt6.QtGui import QPixmap, QPainter, QIcon, QPen, QBrush, QColor
 import qtawesome as qta
 
@@ -611,9 +611,13 @@ class ShapeLibraryWidget(QWidget):
         
     def refresh_shapes(self):
         """Şekil listesini yenile"""
+        # Grid layout'taki tüm widget'ları temizle
+        while self.shapes_grid_layout.count():
+            child = self.shapes_grid_layout.takeAt(0)
+            if child.widget():
+                child.widget().deleteLater()
+        
         # Eski butonları temizle
-        for button in self.shape_buttons:
-            button.setParent(None)
         self.shape_buttons.clear()
         
         current_category = self.category_combo.currentText()
@@ -719,8 +723,13 @@ class ShapeLibraryWidget(QWidget):
             description, ok2 = QInputDialog.getText(self, "Kategori Açıklaması", "Açıklama (isteğe bağlı):")
             if ok2:
                 if self.library_manager.add_category(name.strip(), description.strip()):
+                    # Kategorileri yenile ve yeni kategoriyi seç
                     self.refresh_categories()
-                    self.category_combo.setCurrentText(name.strip())
+                    # Yeni kategoriyi seç
+                    index = self.category_combo.findText(name.strip())
+                    if index >= 0:
+                        self.category_combo.setCurrentIndex(index)
+                    QMessageBox.information(self, "Başarılı", f"'{name.strip()}' kategorisi eklendi!")
                 else:
                     QMessageBox.warning(self, "Hata", "Bu kategori zaten mevcut!")
                     
@@ -753,11 +762,14 @@ class ShapeLibraryWidget(QWidget):
             QMessageBox.information(self, "Bilgi", "Önce şekil seçin!")
             return
             
-        # Seçili stroke'ları al
+        # Seçili stroke'ları al ve zoom transform'unu kaldır
         selected_strokes = []
         for stroke_index in current_widget.selection_tool.selected_strokes:
             if stroke_index < len(current_widget.strokes):
-                selected_strokes.append(current_widget.strokes[stroke_index])
+                stroke = current_widget.strokes[stroke_index].copy()
+                # Zoom transform'unu tersine çevir
+                stroke = self.remove_zoom_transform(stroke, current_widget)
+                selected_strokes.append(stroke)
                 
         if not selected_strokes:
             QMessageBox.information(self, "Bilgi", "Seçili şekil bulunamadı!")
@@ -875,6 +887,105 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
             QMessageBox.information(self, "Başarılı", "Tüm önizlemeler yenilendi!")
         else:
             QMessageBox.information(self, "Bilgi", "Önizleme bulunamadı.")
+    
+    def remove_zoom_transform(self, stroke, drawing_widget):
+        """Stroke'tan zoom transform'unu kaldır (world koordinatlarına dönüştür)"""
+        if not hasattr(drawing_widget, 'zoom_level') or not hasattr(drawing_widget, 'zoom_offset'):
+            return stroke
+            
+        zoom_level = getattr(drawing_widget, 'zoom_level', 1.0)
+        zoom_offset = getattr(drawing_widget, 'zoom_offset', QPointF(0, 0))
+        
+        # Zoom transform'unu tersine çevir
+        inverse_zoom = 1.0 / zoom_level
+        
+        stroke_copy = stroke.copy()
+        
+        if stroke_copy['type'] == 'freehand':
+            # Freehand points'leri dönüştür
+            if 'points' in stroke_copy:
+                transformed_points = []
+                for point in stroke_copy['points']:
+                    if isinstance(point, dict):
+                        # Dict formatındaki point'leri dönüştür
+                        world_x = (point['x'] - zoom_offset.x()) * inverse_zoom
+                        world_y = (point['y'] - zoom_offset.y()) * inverse_zoom
+                        transformed_points.append({'x': world_x, 'y': world_y})
+                    else:
+                        # QPointF formatındaki point'leri dönüştür
+                        try:
+                            from freehand_tool import ensure_qpointf
+                            point_qf = ensure_qpointf(point)
+                            world_x = (point_qf.x() - zoom_offset.x()) * inverse_zoom
+                            world_y = (point_qf.y() - zoom_offset.y()) * inverse_zoom
+                            transformed_points.append({'x': world_x, 'y': world_y})
+                        except:
+                            # Fallback - eğer QPointF ise
+                            if hasattr(point, 'x') and hasattr(point, 'y'):
+                                world_x = (point.x() - zoom_offset.x()) * inverse_zoom
+                                world_y = (point.y() - zoom_offset.y()) * inverse_zoom
+                                transformed_points.append({'x': world_x, 'y': world_y})
+                            else:
+                                transformed_points.append(point)  # Olduğu gibi bırak
+                stroke_copy['points'] = transformed_points
+                
+        elif stroke_copy['type'] == 'bspline':
+            # B-spline control points'leri dönüştür
+            if 'control_points' in stroke_copy:
+                transformed_points = []
+                for cp in stroke_copy['control_points']:
+                    world_x = (cp[0] - zoom_offset.x()) * inverse_zoom
+                    world_y = (cp[1] - zoom_offset.y()) * inverse_zoom
+                    transformed_points.append([world_x, world_y])
+                stroke_copy['control_points'] = transformed_points
+                
+        elif stroke_copy['type'] == 'line':
+            # Line endpoints'leri dönüştür
+            if 'start_point' in stroke_copy:
+                start = stroke_copy['start_point']
+                world_start_x = (start[0] - zoom_offset.x()) * inverse_zoom
+                world_start_y = (start[1] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['start_point'] = (world_start_x, world_start_y)
+                
+            if 'end_point' in stroke_copy:
+                end = stroke_copy['end_point']
+                world_end_x = (end[0] - zoom_offset.x()) * inverse_zoom
+                world_end_y = (end[1] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['end_point'] = (world_end_x, world_end_y)
+                
+        elif stroke_copy['type'] == 'rectangle':
+            # Rectangle corner'larını dönüştür
+            if 'corners' in stroke_copy:
+                transformed_corners = []
+                for corner in stroke_copy['corners']:
+                    world_x = (corner[0] - zoom_offset.x()) * inverse_zoom
+                    world_y = (corner[1] - zoom_offset.y()) * inverse_zoom
+                    transformed_corners.append((world_x, world_y))
+                stroke_copy['corners'] = transformed_corners
+            elif 'top_left' in stroke_copy and 'bottom_right' in stroke_copy:
+                # Eski format
+                tl = stroke_copy['top_left']
+                br = stroke_copy['bottom_right']
+                world_tl_x = (tl[0] - zoom_offset.x()) * inverse_zoom
+                world_tl_y = (tl[1] - zoom_offset.y()) * inverse_zoom
+                world_br_x = (br[0] - zoom_offset.x()) * inverse_zoom
+                world_br_y = (br[1] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['top_left'] = (world_tl_x, world_tl_y)
+                stroke_copy['bottom_right'] = (world_br_x, world_br_y)
+                
+        elif stroke_copy['type'] == 'circle':
+            # Circle center'ını dönüştür
+            if 'center' in stroke_copy:
+                center = stroke_copy['center']
+                world_center_x = (center[0] - zoom_offset.x()) * inverse_zoom
+                world_center_y = (center[1] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['center'] = (world_center_x, world_center_y)
+                
+            # Radius'u da ölçekle
+            if 'radius' in stroke_copy:
+                stroke_copy['radius'] = stroke_copy['radius'] * inverse_zoom
+        
+        return stroke_copy
                 
     def get_main_window(self):
         """Ana pencereyi bul"""

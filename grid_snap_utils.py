@@ -14,9 +14,29 @@ class GridSnapUtils:
         if grid_size <= 0:
             return point
             
-        # En yakın grid noktasına yuvarlama
+        # En yakın grid noktasına yuvarlama - daha hassas
         x = round(point.x() / grid_size) * grid_size
         y = round(point.y() / grid_size) * grid_size
+        
+        return QPointF(float(x), float(y))
+    
+    @staticmethod
+    def snap_point_to_grid_precise(point, background_settings, force_snap=True):
+        """Bir noktayı grid'e kesin olarak yapıştır"""
+        if not background_settings or (not background_settings.get('snap_to_grid', False) and not force_snap):
+            return point
+            
+        grid_size = background_settings.get('grid_size', 20)
+        if grid_size <= 0:
+            return point
+            
+        # Tam grid koordinatlarına yuvarlama
+        x = round(point.x() / grid_size) * grid_size
+        y = round(point.y() / grid_size) * grid_size
+        
+        # Float precision sorunlarını önle
+        x = round(x, 2)
+        y = round(y, 2)
         
         return QPointF(x, y)
     
@@ -27,8 +47,8 @@ class GridSnapUtils:
             return rect
             
         # Köşeleri grid'e yapıştır
-        top_left = GridSnapUtils.snap_point_to_grid(rect.topLeft(), background_settings)
-        bottom_right = GridSnapUtils.snap_point_to_grid(rect.bottomRight(), background_settings)
+        top_left = GridSnapUtils.snap_point_to_grid_precise(rect.topLeft(), background_settings)
+        bottom_right = GridSnapUtils.snap_point_to_grid_precise(rect.bottomRight(), background_settings)
         
         from PyQt6.QtCore import QRectF
         return QRectF(top_left, bottom_right)
@@ -39,8 +59,8 @@ class GridSnapUtils:
         if not background_settings or not background_settings.get('snap_to_grid', False):
             return start_point, end_point
             
-        snapped_start = GridSnapUtils.snap_point_to_grid(start_point, background_settings)
-        snapped_end = GridSnapUtils.snap_point_to_grid(end_point, background_settings)
+        snapped_start = GridSnapUtils.snap_point_to_grid_precise(start_point, background_settings)
+        snapped_end = GridSnapUtils.snap_point_to_grid_precise(end_point, background_settings)
         
         return snapped_start, snapped_end
     
@@ -55,7 +75,7 @@ class GridSnapUtils:
             return center, radius
             
         # Merkezi grid'e yapıştır
-        snapped_center = GridSnapUtils.snap_point_to_grid(center, background_settings)
+        snapped_center = GridSnapUtils.snap_point_to_grid_precise(center, background_settings)
         
         # Yarıçapı grid'in katına yuvarlama (isteğe bağlı)
         snapped_radius = round(radius / grid_size) * grid_size
@@ -65,12 +85,91 @@ class GridSnapUtils:
         return snapped_center, snapped_radius
     
     @staticmethod
+    def snap_stroke_to_grid(stroke_data, background_settings):
+        """Bir stroke'u tamamen grid'e yapıştır"""
+        if not background_settings or not background_settings.get('snap_to_grid', False):
+            return stroke_data
+            
+        stroke_copy = stroke_data.copy()
+        stroke_type = stroke_copy.get('type', '')
+        
+        if stroke_type == 'freehand':
+            # Freehand points'leri snap'le
+            if 'points' in stroke_copy:
+                snapped_points = []
+                for point in stroke_copy['points']:
+                    if isinstance(point, dict):
+                        original_point = QPointF(point['x'], point['y'])
+                        snapped_point = GridSnapUtils.snap_point_to_grid_precise(original_point, background_settings)
+                        snapped_points.append({'x': snapped_point.x(), 'y': snapped_point.y()})
+                    else:
+                        snapped_points.append(point)
+                stroke_copy['points'] = snapped_points
+                
+        elif stroke_type == 'bspline':
+            # B-spline control points'leri snap'le
+            if 'control_points' in stroke_copy:
+                snapped_points = []
+                for cp in stroke_copy['control_points']:
+                    original_point = QPointF(cp[0], cp[1])
+                    snapped_point = GridSnapUtils.snap_point_to_grid_precise(original_point, background_settings)
+                    snapped_points.append([snapped_point.x(), snapped_point.y()])
+                stroke_copy['control_points'] = snapped_points
+                
+        elif stroke_type == 'line':
+            # Line endpoints'leri snap'le
+            if 'start_point' in stroke_copy:
+                start = QPointF(stroke_copy['start_point'][0], stroke_copy['start_point'][1])
+                snapped_start = GridSnapUtils.snap_point_to_grid_precise(start, background_settings)
+                stroke_copy['start_point'] = (snapped_start.x(), snapped_start.y())
+                
+            if 'end_point' in stroke_copy:
+                end = QPointF(stroke_copy['end_point'][0], stroke_copy['end_point'][1])
+                snapped_end = GridSnapUtils.snap_point_to_grid_precise(end, background_settings)
+                stroke_copy['end_point'] = (snapped_end.x(), snapped_end.y())
+                
+        elif stroke_type == 'rectangle':
+            # Rectangle corner'larını snap'le
+            if 'corners' in stroke_copy:
+                snapped_corners = []
+                for corner in stroke_copy['corners']:
+                    original_point = QPointF(corner[0], corner[1])
+                    snapped_point = GridSnapUtils.snap_point_to_grid_precise(original_point, background_settings)
+                    snapped_corners.append((snapped_point.x(), snapped_point.y()))
+                stroke_copy['corners'] = snapped_corners
+            elif 'top_left' in stroke_copy and 'bottom_right' in stroke_copy:
+                # Eski format
+                tl = QPointF(stroke_copy['top_left'][0], stroke_copy['top_left'][1])
+                br = QPointF(stroke_copy['bottom_right'][0], stroke_copy['bottom_right'][1])
+                snapped_tl = GridSnapUtils.snap_point_to_grid_precise(tl, background_settings)
+                snapped_br = GridSnapUtils.snap_point_to_grid_precise(br, background_settings)
+                stroke_copy['top_left'] = (snapped_tl.x(), snapped_tl.y())
+                stroke_copy['bottom_right'] = (snapped_br.x(), snapped_br.y())
+                
+        elif stroke_type == 'circle':
+            # Circle center'ını snap'le
+            if 'center' in stroke_copy:
+                center = QPointF(stroke_copy['center'][0], stroke_copy['center'][1])
+                snapped_center = GridSnapUtils.snap_point_to_grid_precise(center, background_settings)
+                stroke_copy['center'] = (snapped_center.x(), snapped_center.y())
+                
+            # Radius'u da grid'e uygun hale getir
+            if 'radius' in stroke_copy:
+                grid_size = background_settings.get('grid_size', 20)
+                snapped_radius = round(stroke_copy['radius'] / grid_size) * grid_size
+                if snapped_radius == 0:
+                    snapped_radius = grid_size
+                stroke_copy['radius'] = snapped_radius
+        
+        return stroke_copy
+    
+    @staticmethod
     def get_snap_indicator_points(point, background_settings):
         """Snap noktası için görsel gösterge noktaları al"""
         if not background_settings or not background_settings.get('snap_to_grid', False):
             return []
             
-        snap_point = GridSnapUtils.snap_point_to_grid(point, background_settings)
+        snap_point = GridSnapUtils.snap_point_to_grid_precise(point, background_settings)
         
         # Çapraz gösterge için noktalar
         indicator_size = 5
@@ -94,7 +193,7 @@ class GridSnapUtils:
             return False
             
         # En yakın grid noktası
-        snap_point = GridSnapUtils.snap_point_to_grid(point, background_settings)
+        snap_point = GridSnapUtils.snap_point_to_grid_precise(point, background_settings)
         
         # Mesafe kontrolü
         distance = math.sqrt((point.x() - snap_point.x())**2 + (point.y() - snap_point.y())**2)
