@@ -1,0 +1,453 @@
+from PyQt6.QtCore import QPointF, QRectF
+from PyQt6.QtGui import QPen, QBrush
+from PyQt6.QtCore import Qt
+import numpy as np
+
+class StrokeHandler:
+    """Tüm stroke tiplerini modüler şekilde işleyen base sınıf"""
+    
+    @staticmethod
+    def get_stroke_points(stroke_data):
+        """Stroke tipine göre noktaları döndür"""
+        if stroke_data['type'] == 'bspline':
+            return stroke_data['control_points']
+        elif stroke_data['type'] == 'freehand':
+            # QPointF'leri (x, y) tuple'larına çevir
+            return [(p.x(), p.y()) for p in stroke_data['points']]
+        elif stroke_data['type'] == 'line':
+            return [stroke_data['start_point'], stroke_data['end_point']]
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                return stroke_data['corners']
+            else:
+                # Eski format - top_left ve bottom_right
+                return [stroke_data['top_left'], stroke_data['bottom_right']]
+        elif stroke_data['type'] == 'circle':
+            # Çember için merkez ve çevre noktaları
+            center = stroke_data['center']
+            radius = stroke_data['radius']
+            return [center, (center[0] + radius, center[1]), (center[0], center[1] + radius), 
+                   (center[0] - radius, center[1]), (center[0], center[1] - radius)]
+        return []
+    
+    @staticmethod
+    def set_stroke_points(stroke_data, points):
+        """Stroke tipine göre noktaları ayarla"""
+        if stroke_data['type'] == 'bspline':
+            stroke_data['control_points'] = points
+        elif stroke_data['type'] == 'freehand':
+            # (x, y) tuple'larını QPointF'lere çevir
+            stroke_data['points'] = [QPointF(p[0], p[1]) for p in points]
+        elif stroke_data['type'] == 'line':
+            if len(points) >= 2:
+                stroke_data['start_point'] = points[0]
+                stroke_data['end_point'] = points[1]
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - 4 köşe noktası
+                if len(points) >= 4:
+                    stroke_data['corners'] = points[:4]
+            else:
+                # Eski format - top_left ve bottom_right
+                if len(points) >= 2:
+                    stroke_data['top_left'] = points[0]
+                    stroke_data['bottom_right'] = points[1]
+        elif stroke_data['type'] == 'circle':
+            if len(points) >= 2:
+                import math
+                stroke_data['center'] = points[0]
+                # Yeni yarıçapı hesapla (merkez ve başka bir nokta arası mesafe)
+                center = points[0]
+                edge_point = points[1]
+                stroke_data['radius'] = math.sqrt((edge_point[0] - center[0])**2 + 
+                                                (edge_point[1] - center[1])**2)
+    
+    @staticmethod
+    def move_stroke(stroke_data, delta_x, delta_y):
+        """Stroke'u belirtilen miktarda taşı"""
+        if stroke_data['type'] == 'bspline':
+            control_points = stroke_data['control_points']
+            for i in range(len(control_points)):
+                control_points[i][0] += delta_x
+                control_points[i][1] += delta_y
+                
+        elif stroke_data['type'] == 'freehand':
+            points = stroke_data['points']
+            for i in range(len(points)):
+                points[i] = QPointF(points[i].x() + delta_x, points[i].y() + delta_y)
+                
+        elif stroke_data['type'] == 'line':
+            start = stroke_data['start_point']
+            end = stroke_data['end_point']
+            stroke_data['start_point'] = (start[0] + delta_x, start[1] + delta_y)
+            stroke_data['end_point'] = (end[0] + delta_x, end[1] + delta_y)
+            
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - 4 köşe noktası
+                corners = stroke_data['corners']
+                for i in range(len(corners)):
+                    corners[i] = (corners[i][0] + delta_x, corners[i][1] + delta_y)
+            else:
+                # Eski format
+                tl = stroke_data['top_left']
+                br = stroke_data['bottom_right']
+                stroke_data['top_left'] = (tl[0] + delta_x, tl[1] + delta_y)
+                stroke_data['bottom_right'] = (br[0] + delta_x, br[1] + delta_y)
+            
+        elif stroke_data['type'] == 'circle':
+            center = stroke_data['center']
+            stroke_data['center'] = (center[0] + delta_x, center[1] + delta_y)
+    
+    @staticmethod
+    def rotate_stroke(stroke_data, center_x, center_y, angle_rad):
+        """Stroke'u belirtilen merkez etrafında döndür"""
+        cos_a = np.cos(angle_rad)
+        sin_a = np.sin(angle_rad)
+        
+        if stroke_data['type'] == 'bspline':
+            control_points = stroke_data['control_points']
+            for i in range(len(control_points)):
+                # Merkeze göre relatif pozisyon
+                rel_x = control_points[i][0] - center_x
+                rel_y = control_points[i][1] - center_y
+                
+                # Döndürme matrisi uygula
+                new_x = rel_x * cos_a - rel_y * sin_a
+                new_y = rel_x * sin_a + rel_y * cos_a
+                
+                # Merkezi geri ekle
+                control_points[i][0] = new_x + center_x
+                control_points[i][1] = new_y + center_y
+                
+        elif stroke_data['type'] == 'freehand':
+            points = stroke_data['points']
+            for i in range(len(points)):
+                # Merkeze göre relatif pozisyon
+                rel_x = points[i].x() - center_x
+                rel_y = points[i].y() - center_y
+                
+                # Döndürme matrisi uygula
+                new_x = rel_x * cos_a - rel_y * sin_a
+                new_y = rel_x * sin_a + rel_y * cos_a
+                
+                # Merkezi geri ekle ve kaydet
+                points[i] = QPointF(new_x + center_x, new_y + center_y)
+                
+        elif stroke_data['type'] == 'line':
+            # Başlangıç noktası
+            rel_x = stroke_data['start_point'][0] - center_x
+            rel_y = stroke_data['start_point'][1] - center_y
+            new_x = rel_x * cos_a - rel_y * sin_a + center_x
+            new_y = rel_x * sin_a + rel_y * cos_a + center_y
+            stroke_data['start_point'] = (new_x, new_y)
+            
+            # Bitiş noktası
+            rel_x = stroke_data['end_point'][0] - center_x
+            rel_y = stroke_data['end_point'][1] - center_y
+            new_x = rel_x * cos_a - rel_y * sin_a + center_x
+            new_y = rel_x * sin_a + rel_y * cos_a + center_y
+            stroke_data['end_point'] = (new_x, new_y)
+            
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - 4 köşe noktasını döndür
+                corners = stroke_data['corners']
+                for i in range(len(corners)):
+                    rel_x = corners[i][0] - center_x
+                    rel_y = corners[i][1] - center_y
+                    new_x = rel_x * cos_a - rel_y * sin_a + center_x
+                    new_y = rel_x * sin_a + rel_y * cos_a + center_y
+                    corners[i] = (new_x, new_y)
+            else:
+                # Eski format
+                # Sol üst köşe
+                rel_x = stroke_data['top_left'][0] - center_x
+                rel_y = stroke_data['top_left'][1] - center_y
+                new_x = rel_x * cos_a - rel_y * sin_a + center_x
+                new_y = rel_x * sin_a + rel_y * cos_a + center_y
+                stroke_data['top_left'] = (new_x, new_y)
+                
+                # Sağ alt köşe
+                rel_x = stroke_data['bottom_right'][0] - center_x
+                rel_y = stroke_data['bottom_right'][1] - center_y
+                new_x = rel_x * cos_a - rel_y * sin_a + center_x
+                new_y = rel_x * sin_a + rel_y * cos_a + center_y
+                stroke_data['bottom_right'] = (new_x, new_y)
+            
+        elif stroke_data['type'] == 'circle':
+            # Çember için sadece merkezi döndür, yarıçap değişmez
+            rel_x = stroke_data['center'][0] - center_x
+            rel_y = stroke_data['center'][1] - center_y
+            new_x = rel_x * cos_a - rel_y * sin_a + center_x
+            new_y = rel_x * sin_a + rel_y * cos_a + center_y
+            stroke_data['center'] = (new_x, new_y)
+    
+    @staticmethod
+    def scale_stroke(stroke_data, center_x, center_y, scale_x, scale_y):
+        """Stroke'u belirtilen merkez etrafında boyutlandır"""
+        if stroke_data['type'] == 'bspline':
+            control_points = stroke_data['control_points']
+            for i in range(len(control_points)):
+                # Merkeze göre relatif pozisyon
+                rel_x = control_points[i][0] - center_x
+                rel_y = control_points[i][1] - center_y
+                
+                # Ölçekleme uygula
+                new_x = rel_x * scale_x
+                new_y = rel_y * scale_y
+                
+                # Merkezi geri ekle
+                control_points[i][0] = new_x + center_x
+                control_points[i][1] = new_y + center_y
+                
+        elif stroke_data['type'] == 'freehand':
+            points = stroke_data['points']
+            for i in range(len(points)):
+                # Merkeze göre relatif pozisyon
+                rel_x = points[i].x() - center_x
+                rel_y = points[i].y() - center_y
+                
+                # Ölçekleme uygula
+                new_x = rel_x * scale_x
+                new_y = rel_y * scale_y
+                
+                # Merkezi geri ekle ve kaydet
+                points[i] = QPointF(new_x + center_x, new_y + center_y)
+                
+        elif stroke_data['type'] == 'line':
+            # Başlangıç noktası
+            rel_x = stroke_data['start_point'][0] - center_x
+            rel_y = stroke_data['start_point'][1] - center_y
+            new_x = rel_x * scale_x + center_x
+            new_y = rel_y * scale_y + center_y
+            stroke_data['start_point'] = (new_x, new_y)
+            
+            # Bitiş noktası
+            rel_x = stroke_data['end_point'][0] - center_x
+            rel_y = stroke_data['end_point'][1] - center_y
+            new_x = rel_x * scale_x + center_x
+            new_y = rel_y * scale_y + center_y
+            stroke_data['end_point'] = (new_x, new_y)
+            
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - 4 köşe noktasını ölçekle
+                corners = stroke_data['corners']
+                for i in range(len(corners)):
+                    rel_x = corners[i][0] - center_x
+                    rel_y = corners[i][1] - center_y
+                    new_x = rel_x * scale_x + center_x
+                    new_y = rel_y * scale_y + center_y
+                    corners[i] = (new_x, new_y)
+            else:
+                # Eski format
+                # Sol üst köşe
+                rel_x = stroke_data['top_left'][0] - center_x
+                rel_y = stroke_data['top_left'][1] - center_y
+                new_x = rel_x * scale_x + center_x
+                new_y = rel_y * scale_y + center_y
+                stroke_data['top_left'] = (new_x, new_y)
+                
+                # Sağ alt köşe
+                rel_x = stroke_data['bottom_right'][0] - center_x
+                rel_y = stroke_data['bottom_right'][1] - center_y
+                new_x = rel_x * scale_x + center_x
+                new_y = rel_y * scale_y + center_y
+                stroke_data['bottom_right'] = (new_x, new_y)
+            
+        elif stroke_data['type'] == 'circle':
+            # Merkezi ölçekle
+            rel_x = stroke_data['center'][0] - center_x
+            rel_y = stroke_data['center'][1] - center_y
+            new_x = rel_x * scale_x + center_x
+            new_y = rel_y * scale_y + center_y
+            stroke_data['center'] = (new_x, new_y)
+            
+            # Yarıçapı da ölçekle (ortalama ölçek kullan)
+            avg_scale = (scale_x + scale_y) / 2
+            stroke_data['radius'] *= avg_scale
+    
+    @staticmethod
+    def get_stroke_bounds(stroke_data):
+        """Stroke'un bounding box'ını hesapla"""
+        points = StrokeHandler.get_stroke_points(stroke_data)
+        if not points:
+            return None
+            
+        min_x = min(p[0] for p in points)
+        max_x = max(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_y = max(p[1] for p in points)
+        
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+    
+    @staticmethod
+    def get_stroke_center(stroke_data):
+        """Stroke'un merkezini hesapla"""
+        points = StrokeHandler.get_stroke_points(stroke_data)
+        if not points:
+            return None
+            
+        center_x = sum(p[0] for p in points) / len(points)
+        center_y = sum(p[1] for p in points) / len(points)
+        
+        return QPointF(center_x, center_y)
+    
+    @staticmethod
+    def is_point_near_stroke(stroke_data, pos, tolerance=15):
+        """Nokta stroke'a yakın mı kontrol et"""
+        if stroke_data['type'] == 'bspline':
+            # B-spline için kontrol noktalarına yakınlık
+            control_points = stroke_data['control_points']
+            for cp in control_points:
+                cp_point = QPointF(cp[0], cp[1])
+                if (pos - cp_point).manhattanLength() < tolerance:
+                    return True
+            
+            # B-spline eğrisi kontrolü de eklenebilir
+            return False
+            
+        elif stroke_data['type'] == 'freehand':
+            # Serbest çizim için noktalara yakınlık
+            points = stroke_data['points']
+            for point in points:
+                if (pos - point).manhattanLength() < tolerance:
+                    return True
+                    
+        elif stroke_data['type'] == 'line':
+            # Çizgiye yakınlık kontrolü
+            start = QPointF(stroke_data['start_point'][0], stroke_data['start_point'][1])
+            end = QPointF(stroke_data['end_point'][0], stroke_data['end_point'][1])
+            
+            # Basit yakınlık - noktalara mesafe
+            if (pos - start).manhattanLength() < tolerance or (pos - end).manhattanLength() < tolerance:
+                return True
+                
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - köşe noktalarına yakınlık
+                corners = stroke_data['corners']
+                for corner in corners:
+                    corner_point = QPointF(corner[0], corner[1])
+                    if (pos - corner_point).manhattanLength() < tolerance:
+                        return True
+            else:
+                # Eski format - dikdörtgen çerçevesine yakınlık
+                tl = QPointF(stroke_data['top_left'][0], stroke_data['top_left'][1])
+                br = QPointF(stroke_data['bottom_right'][0], stroke_data['bottom_right'][1])
+                rect = QRectF(tl, br).normalized()
+                
+                # Çerçeve yakınlığı kontrolü (basit)
+                expanded_rect = rect.adjusted(-tolerance, -tolerance, tolerance, tolerance)
+                if expanded_rect.contains(pos) and not rect.adjusted(tolerance, tolerance, -tolerance, -tolerance).contains(pos):
+                    return True
+                
+        elif stroke_data['type'] == 'circle':
+            # Çember çevresine yakınlık
+            center = QPointF(stroke_data['center'][0], stroke_data['center'][1])
+            radius = stroke_data['radius']
+            
+            distance_to_center = ((pos.x() - center.x())**2 + (pos.y() - center.y())**2)**0.5
+            # Çember çevresine yakınlık kontrolü
+            if abs(distance_to_center - radius) < tolerance:
+                return True
+                    
+        return False
+    
+    @staticmethod
+    def is_stroke_in_rect(stroke_data, rect):
+        """Stroke'un herhangi bir noktası dikdörtgen içinde mi"""
+        if stroke_data['type'] == 'bspline':
+            control_points = stroke_data['control_points']
+            for cp in control_points:
+                if rect.contains(QPointF(cp[0], cp[1])):
+                    return True
+                    
+        elif stroke_data['type'] == 'freehand':
+            points = stroke_data['points']
+            for point in points:
+                if rect.contains(point):
+                    return True
+                    
+        elif stroke_data['type'] == 'line':
+            start = QPointF(stroke_data['start_point'][0], stroke_data['start_point'][1])
+            end = QPointF(stroke_data['end_point'][0], stroke_data['end_point'][1])
+            if rect.contains(start) or rect.contains(end):
+                return True
+                
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - köşe noktalarının herhangi biri seçim içinde mi
+                corners = stroke_data['corners']
+                for corner in corners:
+                    if rect.contains(QPointF(corner[0], corner[1])):
+                        return True
+            else:
+                # Eski format
+                tl = QPointF(stroke_data['top_left'][0], stroke_data['top_left'][1])
+                br = QPointF(stroke_data['bottom_right'][0], stroke_data['bottom_right'][1])
+                shape_rect = QRectF(tl, br).normalized()
+                if rect.intersects(shape_rect):
+                    return True
+                
+        elif stroke_data['type'] == 'circle':
+            center = QPointF(stroke_data['center'][0], stroke_data['center'][1])
+            if rect.contains(center):
+                return True
+                    
+        return False
+    
+    @staticmethod
+    def draw_stroke_highlight(painter, stroke_data, color=Qt.GlobalColor.green, size=8):
+        """Stroke'u vurgulayarak çiz"""
+        pen = QPen(color, size, Qt.PenStyle.SolidLine)
+        painter.setPen(pen)
+        
+        if stroke_data['type'] == 'bspline':
+            control_points = stroke_data['control_points']
+            for cp in control_points:
+                painter.drawPoint(QPointF(cp[0], cp[1]))
+                
+        elif stroke_data['type'] == 'freehand':
+            points = stroke_data['points']
+            pen.setWidth(max(2, size // 2))
+            painter.setPen(pen)
+            for i, point in enumerate(points):
+                if i % 5 == 0:  # Performans için her 5. noktayı çiz
+                    painter.drawPoint(point)
+                    
+        elif stroke_data['type'] == 'line':
+            # Çizginin uç noktalarını vurgula
+            start = QPointF(stroke_data['start_point'][0], stroke_data['start_point'][1])
+            end = QPointF(stroke_data['end_point'][0], stroke_data['end_point'][1])
+            painter.drawPoint(start)
+            painter.drawPoint(end)
+            
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                # Yeni format - köşe noktalarını vurgula
+                corners = stroke_data['corners']
+                for corner in corners:
+                    painter.drawPoint(QPointF(corner[0], corner[1]))
+            else:
+                # Eski format - dikdörtgenin köşelerini vurgula
+                tl = QPointF(stroke_data['top_left'][0], stroke_data['top_left'][1])
+                br = QPointF(stroke_data['bottom_right'][0], stroke_data['bottom_right'][1])
+                tr = QPointF(br.x(), tl.y())
+                bl = QPointF(tl.x(), br.y())
+                painter.drawPoint(tl)
+                painter.drawPoint(tr)
+                painter.drawPoint(bl)
+                painter.drawPoint(br)
+            
+        elif stroke_data['type'] == 'circle':
+            # Çemberin merkez ve çevre noktalarını vurgula
+            center = QPointF(stroke_data['center'][0], stroke_data['center'][1])
+            radius = stroke_data['radius']
+            painter.drawPoint(center)
+            # 4 ana yön
+            painter.drawPoint(QPointF(center.x() + radius, center.y()))
+            painter.drawPoint(QPointF(center.x() - radius, center.y()))
+            painter.drawPoint(QPointF(center.x(), center.y() + radius))
+            painter.drawPoint(QPointF(center.x(), center.y() - radius)) 
