@@ -51,12 +51,21 @@ class MoveTool:
         for selected_stroke in selected_strokes:
             if selected_stroke < len(strokes):
                 stroke_data = strokes[selected_stroke]
-                # Güvenlik kontrolü - eski stroke'lar için
-                if 'type' not in stroke_data:
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    # Resim pozisyonunu güncelle
+                    current_pos = stroke_data.position
+                    new_pos = QPointF(current_pos.x() + delta.x(), current_pos.y() + delta.y())
+                    stroke_data.set_position(new_pos)
                     continue
                 
-                # Yeni hassas move_stroke fonksiyonunu kullan
-                self.move_stroke_precise(stroke_data, delta)
+                # Güvenlik kontrolü - eski stroke'lar için
+                if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                    continue
+                elif hasattr(stroke_data, 'get'):
+                    # Yeni hassas move_stroke fonksiyonunu kullan
+                    self.move_stroke_precise(stroke_data, delta)
             
         self.last_pos = snapped_pos  # Snapped pozisyonu kaydet
         return True
@@ -80,10 +89,20 @@ class MoveTool:
             for selected_stroke in selected_strokes:
                 if selected_stroke < len(strokes):
                     stroke_data = strokes[selected_stroke]
-                    # Güvenlik kontrolü - eski stroke'lar için
-                    if 'type' not in stroke_data:
+                    
+                    # Image stroke kontrolü
+                    if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                        # Resim pozisyonunu ters yönde güncelle
+                        current_pos = stroke_data.position
+                        new_pos = QPointF(current_pos.x() - total_delta.x(), current_pos.y() - total_delta.y())
+                        stroke_data.set_position(new_pos)
                         continue
-                    StrokeHandler.move_stroke(stroke_data, -total_delta.x(), -total_delta.y())
+                    
+                    # Güvenlik kontrolü - eski stroke'lar için
+                    if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                        continue
+                    elif hasattr(stroke_data, 'get'):
+                        StrokeHandler.move_stroke(stroke_data, -total_delta.x(), -total_delta.y())
                 
         self.finish_move()
         

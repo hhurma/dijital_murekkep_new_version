@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QTabWidget, QWidget, QVBoxLayout
+from PyQt6.QtWidgets import QTabWidget, QWidget, QVBoxLayout, QScrollArea
 from PyQt6.QtCore import Qt, pyqtSignal
 from DrawingWidget import DrawingWidget
 from undo_redo_manager import UndoRedoManager
@@ -54,6 +54,50 @@ class TabManager:
         drawing_widget = DrawingWidget()
         drawing_widget.set_main_window(self.main_window)
         
+        # DrawingWidget'ı QScrollArea ile sar
+        scroll_area = QScrollArea()
+        scroll_area.setWidget(drawing_widget)
+        scroll_area.setWidgetResizable(False)  # Widget'ın kendi boyutunu korusun
+        scroll_area.setAlignment(Qt.AlignmentFlag.AlignCenter)  # Merkezde konumlandır
+        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+        
+        # Scroll area stil ayarları
+        scroll_area.setStyleSheet("""
+            QScrollArea {
+                border: none;
+                background-color: #f0f0f0;
+            }
+            QScrollBar:vertical {
+                border: none;
+                background: #f0f0f0;
+                width: 14px;
+                border-radius: 7px;
+            }
+            QScrollBar::handle:vertical {
+                background: #c0c0c0;
+                border-radius: 7px;
+                min-height: 30px;
+            }
+            QScrollBar::handle:vertical:hover {
+                background: #a0a0a0;
+            }
+            QScrollBar:horizontal {
+                border: none;
+                background: #f0f0f0;
+                height: 14px;
+                border-radius: 7px;
+            }
+            QScrollBar::handle:horizontal {
+                background: #c0c0c0;
+                border-radius: 7px;
+                min-width: 30px;
+            }
+            QScrollBar::handle:horizontal:hover {
+                background: #a0a0a0;
+            }
+        """)
+        
         # Undo/Redo manager ekle
         undo_manager = UndoRedoManager()
         drawing_widget.set_undo_manager(undo_manager)
@@ -67,8 +111,8 @@ class TabManager:
             tab_count = self.tab_widget.count() + 1
             tab_name = f"Çizim {tab_count}"
         
-        # Tab'ı ekle
-        index = self.tab_widget.addTab(drawing_widget, tab_name)
+        # Tab'ı ekle (scroll_area'yı tab olarak ekle)
+        index = self.tab_widget.addTab(scroll_area, tab_name)
         self.tab_widget.setCurrentIndex(index)
         
         # Yeni tab için ayarları yükle
@@ -81,6 +125,11 @@ class TabManager:
         # Toolbar'da aktif aracı seç
         self.main_window.set_tool(active_tool)
         
+        # Zoom level'ı %100 olarak ayarla
+        drawing_widget.set_zoom_level(1.0)  # %100 zoom
+        if hasattr(self.main_window, 'zoom_widget'):
+            self.main_window.zoom_widget.zoom_manager.set_zoom_level(1.0)  # %100 olarak göster
+        
         return drawing_widget
     
     def close_tab(self, index):
@@ -89,13 +138,23 @@ class TabManager:
             self.tab_widget.removeTab(index)
         else:
             # Son tab ise sadece temizle
-            drawing_widget = self.tab_widget.widget(index)
+            widget = self.tab_widget.widget(index)
+            if widget and hasattr(widget, 'widget'):
+                # Eğer QScrollArea ise, içindeki drawing widget'ı al
+                drawing_widget = widget.widget()
+            else:
+                drawing_widget = widget
+                
             if drawing_widget:
                 drawing_widget.clear_all_strokes()
     
     def get_current_drawing_widget(self):
         """Aktif çizim widget'ını döndür"""
-        return self.tab_widget.currentWidget()
+        current_widget = self.tab_widget.currentWidget()
+        if current_widget and hasattr(current_widget, 'widget'):
+            # Eğer QScrollArea ise, içindeki widget'ı döndür
+            return current_widget.widget()
+        return current_widget
     
     def on_tab_changed(self, index):
         """Tab değiştiğinde çağrılır"""
@@ -113,7 +172,11 @@ class TabManager:
     
     def get_tab_widget_at_index(self, index):
         """Belirtilen indeksteki widget'ı döndür"""
-        return self.tab_widget.widget(index)
+        widget = self.tab_widget.widget(index)
+        if widget and hasattr(widget, 'widget'):
+            # Eğer QScrollArea ise, içindeki widget'ı döndür
+            return widget.widget()
+        return widget
     
     def get_tab_text(self, index):
         """Belirtilen indeksteki tab adını döndür"""

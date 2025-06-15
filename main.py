@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton,
                             QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
                             QMenuBar, QDockWidget)
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QAction, QIcon
+from PyQt6.QtGui import QAction, QIcon, QActionGroup
 import qtawesome as qta
 from splash_screen import show_splash_screen
 from DrawingWidget import DrawingWidget
@@ -38,6 +38,10 @@ class MainWindow(QMainWindow):
         
         # Tab manager'ı başlat
         self.tab_manager = TabManager(self)
+        
+        # Resim cache klasörü
+        self.image_cache_dir = os.path.join(os.path.dirname(__file__), "image_cache")
+        self.cached_images = {}  # Hash -> cache path mapping
         
         self.setWindowTitle("Dijital Mürekkep - Çizim Uygulaması")
         
@@ -273,6 +277,15 @@ class MainWindow(QMainWindow):
         
         file_menu.addSeparator()
         
+        # Resim import
+        import_image_action = QAction(qta.icon('fa5s.image', color='#4CAF50'), "Resim Ekle", self)
+        import_image_action.setShortcut("Ctrl+I")
+        import_image_action.setToolTip("Canvas'a resim ekle")
+        import_image_action.triggered.connect(self.import_image)
+        file_menu.addAction(import_image_action)
+        
+        file_menu.addSeparator()
+        
         # PDF dışa aktarma
         export_pdf_action = QAction(qta.icon('fa5s.file-pdf', color='#DC143C'), "PDF Olarak Dışa Aktar", self)
         export_pdf_action.setShortcut("Ctrl+E")
@@ -289,15 +302,17 @@ class MainWindow(QMainWindow):
         # Görünüm menüsü
         view_menu = menubar.addMenu("Görünüm")
         
-        # Arka plan ayarları
-        background_action = QAction("Arka Plan Ayarları", self)
-        background_action.triggered.connect(self.toggle_background_dock)
-        view_menu.addAction(background_action)
+        # Ayarlar
+        settings_action = QAction("Ayarlar", self)
+        settings_action.triggered.connect(self.toggle_background_dock)
+        view_menu.addAction(settings_action)
         
         # Şekil havuzu
         shape_library_action = QAction("Şekil Havuzu", self)
         shape_library_action.triggered.connect(self.toggle_shape_library_dock)
         view_menu.addAction(shape_library_action)
+        
+
         
     def create_status_bar(self):
         """Status bar oluştur"""
@@ -342,34 +357,41 @@ class MainWindow(QMainWindow):
         self.tool_status_label.setText(display_name)
         
     def create_background_dock(self):
-        """Arka plan ayarları dock widget'ı oluştur"""
-        self.background_dock = QDockWidget("Arka Plan Ayarları", self)
-        self.background_widget = BackgroundWidget()
-        self.background_widget.backgroundChanged.connect(self.on_background_changed)
+        """Ayarlar dock widget'ı oluştur"""
+        from settings_widget import SettingsWidget
         
-        self.background_dock.setWidget(self.background_widget)
-        self.background_dock.setFloating(False)
-        self.background_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
-                                        QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        self.settings_dock = QDockWidget("Ayarlar", self)
+        self.settings_widget = SettingsWidget()
         
-        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.background_dock)
+        # Sinyalleri bağla
+        self.settings_widget.backgroundChanged.connect(self.on_background_changed)
+        self.settings_widget.pdfOrientationChanged.connect(self.on_pdf_orientation_changed)
+        self.settings_widget.canvasOrientationChanged.connect(self.on_canvas_orientation_changed)
+        self.settings_widget.canvasSizeChanged.connect(self.on_canvas_size_changed)
+        
+        self.settings_dock.setWidget(self.settings_widget)
+        self.settings_dock.setFloating(False)
+        self.settings_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
+                                      QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.settings_dock)
         
         # Dock görünürlüğünü ayarlardan yükle
         if self.settings.get_background_dock_visible():
-            self.background_dock.show()
+            self.settings_dock.show()
         else:
-            self.background_dock.hide()
+            self.settings_dock.hide()
             
         # Şekil havuzu dock widget'ı oluştur
         self.create_shape_library_dock()
         
     def toggle_background_dock(self):
-        """Arka plan dock widget'ını aç/kapat"""
-        if self.background_dock.isVisible():
-            self.background_dock.hide()
+        """Ayarlar dock widget'ını aç/kapat"""
+        if self.settings_dock.isVisible():
+            self.settings_dock.hide()
             self.settings.set_background_dock_visible(False)
         else:
-            self.background_dock.show()
+            self.settings_dock.show()
             self.settings.set_background_dock_visible(True)
         self.settings.save_settings()
         
@@ -663,6 +685,55 @@ class MainWindow(QMainWindow):
         self.settings.set_background_settings(settings)
         self.settings.save_settings()
     
+    def on_pdf_orientation_changed(self, orientation):
+        """PDF yönü değiştiğinde"""
+        self.settings.set_pdf_orientation(orientation)
+        self.settings.save_settings()
+        self.show_status_message(f"PDF yönü: {'Yatay' if orientation == 'landscape' else 'Dikey'}")
+        
+    def on_canvas_orientation_changed(self, orientation):
+        """Canvas yönü değiştiğinde"""
+        self.settings.set_canvas_orientation(orientation)
+        # Tüm açık tab'lara uygula
+        for i in range(self.tab_widget.count()):
+            drawing_widget = self.tab_manager.get_tab_widget_at_index(i)
+            if drawing_widget:
+                drawing_widget.set_canvas_orientation(orientation)
+        self.settings.save_settings()
+        self.show_status_message(f"Canvas yönü: {'Yatay' if orientation == 'landscape' else 'Dikey'}")
+        
+    def on_canvas_size_changed(self, size):
+        """Canvas boyutu değiştiğinde"""
+        # Canvas boyutlarını güncelle
+        self.update_canvas_sizes(size)
+        self.settings.save_settings()
+        size_names = {'small': 'Küçük', 'medium': 'Orta', 'large': 'Büyük'}
+        self.show_status_message(f"Canvas boyutu: {size_names.get(size, size)}")
+        
+    def update_canvas_sizes(self, size):
+        """Canvas boyutlarını güncelle"""
+        # Tüm açık tab'lara yeni boyutları uygula
+        for i in range(self.tab_widget.count()):
+            drawing_widget = self.tab_manager.get_tab_widget_at_index(i)
+            if drawing_widget:
+                if size == 'medium':
+                    drawing_widget.a4_width_portrait = 1240
+                    drawing_widget.a4_height_portrait = 1754
+                    drawing_widget.a4_width_landscape = 1754
+                    drawing_widget.a4_height_landscape = 1240
+                elif size == 'large':
+                    drawing_widget.a4_width_portrait = 2480
+                    drawing_widget.a4_height_portrait = 3508
+                    drawing_widget.a4_width_landscape = 3508
+                    drawing_widget.a4_height_landscape = 2480
+                else:  # small
+                    drawing_widget.a4_width_portrait = 827
+                    drawing_widget.a4_height_portrait = 1169
+                    drawing_widget.a4_width_landscape = 1169
+                    drawing_widget.a4_height_landscape = 827
+                
+                drawing_widget.update_canvas_size()
+    
     def zoom_in(self):
         """Yakınlaştır"""
         self.zoom_widget.zoom_in()
@@ -678,16 +749,16 @@ class MainWindow(QMainWindow):
     def on_zoom_changed(self, zoom_level):
         """Zoom değiştiğinde aktif tab'a bildir"""
         current_widget = self.get_current_drawing_widget()
-        if current_widget and hasattr(current_widget, 'set_zoom_level'):
-            current_widget.set_zoom_level(zoom_level)
+        if current_widget:
+            current_widget.update()  # Sadece yeniden çiz
         # Status bar zoom bilgisini güncelle
         self.update_zoom_status(zoom_level)
     
     def on_pan_changed(self, pan_offset):
         """Pan değiştiğinde aktif tab'a bildir"""
         current_widget = self.get_current_drawing_widget()
-        if current_widget and hasattr(current_widget, 'set_pan_offset'):
-            current_widget.set_pan_offset(pan_offset)
+        if current_widget:
+            current_widget.update()  # Sadece yeniden çiz
             
     def undo(self):
         """Geri al"""
@@ -718,6 +789,10 @@ class MainWindow(QMainWindow):
         drawing_widget.set_current_opacity(self.settings.get_opacity())
         drawing_widget.set_line_style(self.settings.get_line_style())
         
+        # Canvas yönü
+        canvas_orientation = self.settings.get_canvas_orientation()
+        drawing_widget.set_canvas_orientation(canvas_orientation)
+        
         # Arka plan ayarları
         bg_settings = self.settings.get_background_settings()
         drawing_widget.set_background_settings(bg_settings)
@@ -729,7 +804,7 @@ class MainWindow(QMainWindow):
         self.fill_color_widget.set_fill_color(self.settings.get_fill_color())
         self.opacity_widget.set_opacity(self.settings.get_opacity())
         self.line_style_widget.set_style(self.settings.get_line_style())
-        self.background_widget.set_background_settings(bg_settings)
+        self.settings_widget.set_background_settings(bg_settings)
         
     def save_session(self):
         """Oturumu kaydet (mevcut dosya varsa üzerine yaz)"""
@@ -797,6 +872,79 @@ class MainWindow(QMainWindow):
             # Eğer icon.ico yoksa qtawesome'dan ikon kullan
             self.setWindowIcon(qta.icon('fa5s.paint-brush', color='#2196F3'))
     
+    def set_pdf_orientation(self, orientation):
+        """PDF sayfa yönünü ayarla"""
+        self.settings.set_pdf_orientation(orientation)
+        self.settings.save_settings()
+        self.show_status_message(f"PDF sayfa yönü: {'Yatay' if orientation == 'landscape' else 'Dikey'}")
+    
+    def set_canvas_orientation(self, orientation):
+        """Canvas yönünü ayarla"""
+        self.settings.set_canvas_orientation(orientation)
+        self.settings.save_settings()
+        
+        # Tüm tab'lardaki canvas'ları güncelle
+        for i in range(self.tab_widget.count()):
+            drawing_widget = self.tab_manager.get_tab_widget_at_index(i)
+            if drawing_widget:
+                drawing_widget.set_canvas_orientation(orientation)
+        
+        self.show_status_message(f"Canvas yönü: {'Yatay' if orientation == 'landscape' else 'Dikey'}")
+    
+    def import_image(self):
+        """Canvas'a resim ekle"""
+        from PyQt6.QtWidgets import QFileDialog
+        from image_stroke import ImageStroke
+        
+        # Resim dosyası seç
+        filename, _ = QFileDialog.getOpenFileName(
+            self, "Resim Seç",
+            "",
+            "Resim Dosyaları (*.png *.jpg *.jpeg *.bmp *.gif *.tiff);;Tüm Dosyalar (*)"
+        )
+        
+        if not filename:
+            return
+        
+        try:
+            current_widget = self.get_current_drawing_widget()
+            if not current_widget:
+                return
+            
+            # Resim stroke'u oluştur - sol üst köşeye yerleştir
+            image_stroke = ImageStroke(filename, QPointF(50, 50))
+            
+            # Resmi cache'le (aynı resim tekrar eklenmemesi için)
+            file_hash = image_stroke.file_hash
+            if file_hash not in self.cached_images:
+                cached_path = image_stroke.cache_image(self.image_cache_dir)
+                self.cached_images[file_hash] = cached_path
+            else:
+                # Daha önce cache'lenmiş, cache path'i kullan
+                image_stroke.image_path = self.cached_images[file_hash]
+            
+            # Undo için state kaydet
+            current_widget.save_current_state("Add image")
+            
+            # Stroke'u ekle
+            current_widget.strokes.append(image_stroke)
+            
+            # Resimi seç
+            stroke_index = len(current_widget.strokes) - 1
+            current_widget.selection_tool.selected_strokes = [stroke_index]
+            
+            # Seçim aracına geç
+            current_widget.set_active_tool("select")
+            self.set_tool("select")
+            
+            current_widget.update()
+            
+            self.show_status_message(f"Resim eklendi: {os.path.basename(filename)}")
+            
+        except Exception as e:
+            from PyQt6.QtWidgets import QMessageBox
+            QMessageBox.critical(self, "Hata", f"Resim eklenemedi:\n{str(e)}")
+    
     def export_to_pdf(self):
         """Tüm sekmeleri PDF olarak dışa aktar"""
         self.show_status_message("PDF dışa aktarılıyor...")
@@ -811,16 +959,31 @@ class MainWindow(QMainWindow):
         # Otomatik oturum kaydetme
         self.session_manager.auto_save_session(self)
         
+        # Eğer kullanıcı manuel olarak kaydetmediyse image cache'i temizle
+        if not self.current_session_file:
+            self.clear_image_cache()
+        
         # Pencere boyutunu kaydet
         self.settings.set_window_size(self.width(), self.height())
         
-        # Background dock görünürlüğünü kaydet
-        self.settings.set_background_dock_visible(self.background_dock.isVisible())
+        # Settings dock görünürlüğünü kaydet
+        self.settings.set_background_dock_visible(self.settings_dock.isVisible())
         
         # Ayarları kaydet
         self.settings.save_settings()
         
         super().closeEvent(event)
+    
+    def clear_image_cache(self):
+        """Image cache klasörünü temizle"""
+        try:
+            import shutil
+            if os.path.exists(self.image_cache_dir):
+                shutil.rmtree(self.image_cache_dir)
+                os.makedirs(self.image_cache_dir, exist_ok=True)
+            self.cached_images.clear()
+        except Exception as e:
+            print(f"Image cache temizlenirken hata: {e}")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

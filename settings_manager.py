@@ -59,6 +59,16 @@ class SettingsManager:
             'background_dock_visible': 'False'
         }
         
+        # PDF ayarları
+        self.config['PDF'] = {
+            'orientation': 'landscape'  # portrait veya landscape
+        }
+        
+        # Canvas ayarları
+        self.config['Canvas'] = {
+            'orientation': 'landscape'  # portrait veya landscape
+        }
+        
         self.save_settings()
         
     def save_settings(self):
@@ -321,4 +331,26 @@ class SettingsManager:
                     
             self.save_settings()
         except Exception as e:
-            print(f"Ayarlar yüklenemedi: {e}") 
+            print(f"Ayarlar yüklenemedi: {e}")
+    
+    # PDF ayarları
+    def get_pdf_orientation(self):
+        """PDF sayfa yönünü al"""
+        return self.config.get('PDF', 'orientation', fallback='landscape')
+        
+    def set_pdf_orientation(self, orientation):
+        """PDF sayfa yönünü kaydet"""
+        if not self.config.has_section('PDF'):
+            self.config.add_section('PDF')
+        self.config.set('PDF', 'orientation', orientation)
+        
+    # Canvas ayarları
+    def get_canvas_orientation(self):
+        """Canvas yönünü al"""
+        return self.config.get('Canvas', 'orientation', fallback='landscape')
+        
+    def set_canvas_orientation(self, orientation):
+        """Canvas yönünü kaydet"""
+        if not self.config.has_section('Canvas'):
+            self.config.add_section('Canvas')
+        self.config.set('Canvas', 'orientation', orientation) 

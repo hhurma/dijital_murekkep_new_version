@@ -131,29 +131,22 @@ class RotateTool:
         if not self.is_rotating or not selected_strokes or not self.rotation_center:
             return False
             
-        # Grid snap uygula - pozisyon bazında, daha hassas snap kullan
-        snapped_pos = pos
-        if (self.background_settings and 
-            self.background_settings.get('snap_to_grid', False)):
-            snapped_pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings)
-            
-        # Şu anki açıyı hesapla
-        delta = snapped_pos - self.rotation_center
+        # Şu anki açıyı hesapla - grid snap kullanmadan
+        delta = pos - self.rotation_center
         current_angle = math.atan2(delta.y(), delta.x())
         
-        # Grid snap aktifse açıyı da snap'le (15 derece aralıklarla)
-        if (self.background_settings and 
-            self.background_settings.get('snap_to_grid', False)):
-            # Açıyı 15 derece aralıklarla snap'le
-            angle_degrees = math.degrees(current_angle)
-            snap_angle_degrees = round(angle_degrees / 15) * 15
-            current_angle = math.radians(snap_angle_degrees)
+        # Opsiyonel: Shift tuşu basılıysa 15 derece aralıklarla snap'le
+        # (Grid snap yerine manuel snap)
+        # if shift_pressed:  # Bu özellik ileride eklenebilir
+        #     angle_degrees = math.degrees(current_angle)
+        #     snap_angle_degrees = round(angle_degrees / 15) * 15
+        #     current_angle = math.radians(snap_angle_degrees)
         
         # Açı farkı
         angle_diff = current_angle - self.last_angle
         
         # Çok küçük açı değişimlerini atla
-        if abs(angle_diff) < 0.01:  # ~0.6 derece
+        if abs(angle_diff) < 0.02:  # ~1 derece - daha hassas
             return False
         
         # Tüm seçili stroke'ların kontrol noktalarını döndür
@@ -163,6 +156,52 @@ class RotateTool:
         for selected_stroke in selected_strokes:
             if selected_stroke < len(strokes):
                 stroke_data = strokes[selected_stroke]
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    # İlk kez rotate ediliyorsa orijinal değerleri sakla
+                    if not hasattr(self, 'original_image_data'):
+                        self.original_image_data = {}
+                    if not hasattr(self, 'total_rotation_angles'):
+                        self.total_rotation_angles = {}
+                    if id(stroke_data) not in self.original_image_data:
+                        self.original_image_data[id(stroke_data)] = {
+                            'position': QPointF(stroke_data.position),
+                            'rotation': stroke_data.rotation
+                        }
+                        self.total_rotation_angles[id(stroke_data)] = 0.0
+                    
+                    # Toplam açı değişimini güncelle
+                    total_angle = self.last_angle - self.start_angle
+                    self.total_rotation_angles[id(stroke_data)] = total_angle
+                    
+                    # Orijinal değerlerden yeni pozisyonu hesapla
+                    original_data = self.original_image_data[id(stroke_data)]
+                    original_pos = original_data['position']
+                    original_bounds = QRectF(original_pos.x(), original_pos.y(), 
+                                           stroke_data.size.x(), stroke_data.size.y())
+                    original_center = original_bounds.center()
+                    
+                    # Orijinal merkezi döndürme merkezi etrafında döndür
+                    rel_x = original_center.x() - self.rotation_center.x()
+                    rel_y = original_center.y() - self.rotation_center.y()
+                    
+                    cos_a = math.cos(total_angle)
+                    sin_a = math.sin(total_angle)
+                    
+                    new_center_x = rel_x * cos_a - rel_y * sin_a + self.rotation_center.x()
+                    new_center_y = rel_x * sin_a + rel_y * cos_a + self.rotation_center.y()
+                    
+                    # Yeni pozisyonu ayarla (merkez pozisyonundan sol üst köşeye çevir)
+                    offset_x = new_center_x - stroke_data.size.x() / 2
+                    offset_y = new_center_y - stroke_data.size.y() / 2
+                    stroke_data.set_position(QPointF(offset_x, offset_y))
+                    
+                    # Resmin kendi rotasyonunu da güncelle
+                    original_rotation = original_data['rotation']
+                    stroke_data.rotation = original_rotation + math.degrees(total_angle)
+                    continue
+                
                 # Hassas grid snap ile rotate uygula
                 self.rotate_stroke_precise(stroke_data, math.degrees(angle_diff))
             
@@ -177,6 +216,11 @@ class RotateTool:
         self.start_angle = 0
         self.active_handle = None
         self.rotation_handles = []
+        # Resim cache'ini temizle
+        if hasattr(self, 'original_image_data'):
+            delattr(self, 'original_image_data')
+        if hasattr(self, 'total_rotation_angles'):
+            delattr(self, 'total_rotation_angles')
         
     def get_rotation_angle(self, pos):
         """Şu anki döndürme açısını derece cinsinden döndür"""
@@ -303,9 +347,7 @@ class RotateTool:
                     original_point = QPointF(cp[0], cp[1])
                     rotated_point = self.rotate_point(original_point, self.rotation_center, angle)
                     
-                    # Grid snap aktifse control point'i snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                        rotated_point = GridSnapUtils.snap_point_to_grid_precise(rotated_point, self.background_settings)
+                    # Grid snap kaldırıldı - daha smooth döndürme için
                     
                     stroke['control_points'].append([rotated_point.x(), rotated_point.y()])
         
@@ -314,9 +356,7 @@ class RotateTool:
                 original_start = QPointF(original_data['start_point'][0], original_data['start_point'][1])
                 rotated_start = self.rotate_point(original_start, self.rotation_center, angle)
                 
-                # Grid snap aktifse endpoint'i snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    rotated_start = GridSnapUtils.snap_point_to_grid_precise(rotated_start, self.background_settings)
+                # Grid snap kaldırıldı
                 
                 stroke['start_point'] = (rotated_start.x(), rotated_start.y())
             
@@ -324,9 +364,7 @@ class RotateTool:
                 original_end = QPointF(original_data['end_point'][0], original_data['end_point'][1])
                 rotated_end = self.rotate_point(original_end, self.rotation_center, angle)
                 
-                # Grid snap aktifse endpoint'i snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    rotated_end = GridSnapUtils.snap_point_to_grid_precise(rotated_end, self.background_settings)
+                # Grid snap kaldırıldı
                 
                 stroke['end_point'] = (rotated_end.x(), rotated_end.y())
         
@@ -337,9 +375,7 @@ class RotateTool:
                     original_corner = QPointF(corner[0], corner[1])
                     rotated_corner = self.rotate_point(original_corner, self.rotation_center, angle)
                     
-                    # Grid snap aktifse corner'ı snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                        rotated_corner = GridSnapUtils.snap_point_to_grid_precise(rotated_corner, self.background_settings)
+                    # Grid snap kaldırıldı
                     
                     stroke['corners'].append((rotated_corner.x(), rotated_corner.y()))
             elif 'top_left' in original_data and 'bottom_right' in original_data:
@@ -350,10 +386,7 @@ class RotateTool:
                 rotated_tl = self.rotate_point(original_tl, self.rotation_center, angle)
                 rotated_br = self.rotate_point(original_br, self.rotation_center, angle)
                 
-                # Grid snap aktifse corner'ları snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    rotated_tl = GridSnapUtils.snap_point_to_grid_precise(rotated_tl, self.background_settings)
-                    rotated_br = GridSnapUtils.snap_point_to_grid_precise(rotated_br, self.background_settings)
+                # Grid snap kaldırıldı
                 
                 stroke['top_left'] = (rotated_tl.x(), rotated_tl.y())
                 stroke['bottom_right'] = (rotated_br.x(), rotated_br.y())
@@ -363,9 +396,7 @@ class RotateTool:
                 original_center = QPointF(original_data['center'][0], original_data['center'][1])
                 rotated_center = self.rotate_point(original_center, self.rotation_center, angle)
                 
-                # Grid snap aktifse center'ı snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    rotated_center = GridSnapUtils.snap_point_to_grid_precise(rotated_center, self.background_settings)
+                # Grid snap kaldırıldı
                 
                 stroke['center'] = (rotated_center.x(), rotated_center.y())
             

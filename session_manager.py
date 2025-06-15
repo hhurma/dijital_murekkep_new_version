@@ -68,7 +68,6 @@ class SessionManager:
                 
             # Status bar'da mesaj göster
             if hasattr(main_window, 'show_status_message'):
-                import os
                 file_name = os.path.basename(filename)
                 main_window.show_status_message(f"Oturum kaydedildi: {file_name}")
             return filename
@@ -142,7 +141,6 @@ class SessionManager:
                 
             # Status bar'da mesaj göster
             if hasattr(main_window, 'show_status_message'):
-                import os
                 file_name = os.path.basename(filename)
                 main_window.show_status_message(f"Oturum yüklendi: {file_name}")
             return filename
@@ -161,8 +159,13 @@ class SessionManager:
         serialized = []
         for i, stroke in enumerate(strokes):
             try:
-                # Stroke verilerini kopyala
-                stroke_copy = stroke.copy()
+                # ImageStroke kontrolü
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    # ImageStroke'u serialize et
+                    stroke_copy = stroke.to_dict()
+                else:
+                    # Normal stroke verilerini kopyala
+                    stroke_copy = stroke.copy()
                 
                 # Points listesini özel olarak handle et
                 if 'points' in stroke_copy:
@@ -224,23 +227,34 @@ class SessionManager:
         
         strokes = []
         for i, stroke_data in enumerate(serialized_strokes):
-            # Stroke verilerini kopyala
-            stroke = stroke_data.copy()
-            
-            
-            # String'leri QColor'a çevir
-            if 'color' in stroke and isinstance(stroke['color'], str):
-                stroke['color'] = QColor(stroke['color'])
-            if 'fill_color' in stroke and isinstance(stroke['fill_color'], str):
-                stroke['fill_color'] = QColor(stroke['fill_color'])
-                
-            # Integer'ları Qt enum'larına çevir
-            if 'style' in stroke and isinstance(stroke['style'], int):
-                stroke['style'] = Qt.PenStyle(stroke['style'])
-            if 'line_style' in stroke and isinstance(stroke['line_style'], int):
-                stroke['line_style'] = Qt.PenStyle(stroke['line_style'])
-                
-            strokes.append(stroke)
+            try:
+                # ImageStroke kontrolü
+                if stroke_data.get('stroke_type') == 'image':
+                    # ImageStroke'u deserialize et
+                    from image_stroke import ImageStroke
+                    image_stroke = ImageStroke.from_dict(stroke_data)
+                    strokes.append(image_stroke)
+                else:
+                    # Normal stroke verilerini kopyala
+                    stroke = stroke_data.copy()
+                    
+                    # String'leri QColor'a çevir
+                    if 'color' in stroke and isinstance(stroke['color'], str):
+                        stroke['color'] = QColor(stroke['color'])
+                    if 'fill_color' in stroke and isinstance(stroke['fill_color'], str):
+                        stroke['fill_color'] = QColor(stroke['fill_color'])
+                        
+                    # Integer'ları Qt enum'larına çevir
+                    if 'style' in stroke and isinstance(stroke['style'], int):
+                        stroke['style'] = Qt.PenStyle(stroke['style'])
+                    if 'line_style' in stroke and isinstance(stroke['line_style'], int):
+                        stroke['line_style'] = Qt.PenStyle(stroke['line_style'])
+                        
+                    strokes.append(stroke)
+                    
+            except Exception as e:
+                print(f"Stroke {i} deserialize edilemedi: {e}")
+                continue
             
         return strokes
         

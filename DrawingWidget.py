@@ -19,6 +19,19 @@ from stroke_handler import StrokeHandler
 class DrawingWidget(QWidget):
     def __init__(self):
         super().__init__()
+        
+        # A4 boyutları (100 DPI'da piksel cinsinden - daha küçük)
+        # A4: 210x297 mm = 8.27x11.69 inch
+        # Portrait: 827x1169, Landscape: 1169x827
+        self.a4_width_portrait = 827
+        self.a4_height_portrait = 1169
+        self.a4_width_landscape = 1169
+        self.a4_height_landscape = 827
+        
+        # Varsayılan olarak yatay (landscape)
+        self.canvas_orientation = 'landscape'
+        self.update_canvas_size()
+        
         self.strokes = [] # Stores all stroke data (farklı araç türleri)
         self.setMouseTracking(True) # Enable tracking even when no button is pressed
         
@@ -61,8 +74,8 @@ class DrawingWidget(QWidget):
         # Ana pencere referansı
         self.main_window = None
         
-        # Zoom ayarları
-        self.zoom_level = 1.0
+        # Zoom ayarları - varsayılan %200
+        self.zoom_level = 2.0
         self.zoom_offset = QPointF(0, 0)  # Pan offset
         
         # Pan ayarları
@@ -75,6 +88,24 @@ class DrawingWidget(QWidget):
     def set_main_window(self, main_window):
         """Ana pencere referansını ayarla"""
         self.main_window = main_window
+        
+    def update_canvas_size(self):
+        """Canvas boyutunu mevcut yönlendirmeye göre güncelle"""
+        if self.canvas_orientation == 'landscape':
+            self.setFixedSize(self.a4_width_landscape, self.a4_height_landscape)
+        else:
+            self.setFixedSize(self.a4_width_portrait, self.a4_height_portrait)
+        self.update()
+        
+    def set_canvas_orientation(self, orientation):
+        """Canvas yönünü ayarla (portrait/landscape)"""
+        if orientation in ['portrait', 'landscape']:
+            self.canvas_orientation = orientation
+            self.update_canvas_size()
+            
+    def get_canvas_orientation(self):
+        """Canvas yönünü döndür"""
+        return self.canvas_orientation
         
     def set_active_tool(self, tool_name):
         """Aktif aracı ayarla"""
@@ -215,9 +246,17 @@ class DrawingWidget(QWidget):
     
     def transform_mouse_pos(self, pos):
         """Mouse pozisyonunu zoom ve pan'e göre dönüştür"""
+        # Main window'dan güncel zoom ve pan değerlerini al
+        current_zoom = self.zoom_level
+        current_offset = self.zoom_offset
+        
+        if self.main_window and hasattr(self.main_window, 'zoom_widget'):
+            current_zoom = self.main_window.zoom_widget.get_zoom_level()
+            current_offset = self.main_window.zoom_widget.get_pan_offset()
+        
         # Önce pan offset'ini çıkar, sonra zoom'u tersine çevir
-        transformed_x = (pos.x() - self.zoom_offset.x()) / self.zoom_level
-        transformed_y = (pos.y() - self.zoom_offset.y()) / self.zoom_level
+        transformed_x = (pos.x() - current_offset.x()) / current_zoom
+        transformed_y = (pos.y() - current_offset.y()) / current_zoom
         return QPointF(transformed_x, transformed_y)
     
     def set_zoom_level(self, zoom_level):
@@ -609,19 +648,27 @@ class DrawingWidget(QWidget):
             if stroke_index in temp_selected:
                 continue
                 
-            # Güvenlik kontrolü - eski stroke'lar için
-            if 'type' not in stroke_data:
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                # Resim için basit bounding rect kontrolü
+                bounds = stroke_data.get_bounds()
+                if self.selection_tool.selection_rect.intersects(bounds):
+                    temp_selected.append(stroke_index)
                 continue
                 
-            # Modüler stroke seçim kontrolü
-            stroke_selected = StrokeHandler.is_stroke_in_rect(stroke_data, self.selection_tool.selection_rect)
-            
-            # B-spline için eğri kesişimi de kontrol et
-            if not stroke_selected and stroke_data['type'] == 'bspline':
-                stroke_selected = self.selection_tool.check_curve_intersection(stroke_data, self.selection_tool.selection_rect)
+            # Güvenlik kontrolü - eski stroke'lar için
+            if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                continue
+            elif hasattr(stroke_data, 'get'):
+                # Modüler stroke seçim kontrolü
+                stroke_selected = StrokeHandler.is_stroke_in_rect(stroke_data, self.selection_tool.selection_rect)
                 
-            if stroke_selected:
-                temp_selected.append(stroke_index)
+                # B-spline için eğri kesişimi de kontrol et
+                if not stroke_selected and stroke_data['type'] == 'bspline':
+                    stroke_selected = self.selection_tool.check_curve_intersection(stroke_data, self.selection_tool.selection_rect)
+                    
+                if stroke_selected:
+                    temp_selected.append(stroke_index)
                  
         # Preview listesini güncelle
         self.selection_tool.set_preview_strokes(temp_selected)
@@ -748,15 +795,28 @@ class DrawingWidget(QWidget):
         painter = QPainter(self)
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
+        # Main window'dan güncel zoom ve pan değerlerini al
+        current_zoom = self.zoom_level
+        current_offset = self.zoom_offset
+        
+        if self.main_window and hasattr(self.main_window, 'zoom_widget'):
+            current_zoom = self.main_window.zoom_widget.get_zoom_level()
+            current_offset = self.main_window.zoom_widget.get_pan_offset()
+        
         # Zoom ve pan transformasyonu uygula
-        painter.scale(self.zoom_level, self.zoom_level)
-        painter.translate(self.zoom_offset)
+        painter.scale(current_zoom, current_zoom)
+        painter.translate(current_offset)
         
         # Arka planı çiz
         self.draw_background(painter)
 
         # Tüm tamamlanmış stroke'ları çiz
         for stroke_data in self.strokes:
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                stroke_data.render(painter)
+                continue
+                
             # Güvenlik kontrolü - eski stroke'lar için
             if 'type' not in stroke_data:
                 continue
@@ -961,3 +1021,32 @@ class DrawingWidget(QWidget):
             painter.drawLine(0, y, width, y)
             y += grid_size
             line_count += 1
+
+    def render(self, painter):
+        """PDF export için özel render metodu - zoom/pan olmadan sadece içerik"""
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Arka planı çiz (beyaz)
+        bg_color = QColor(Qt.GlobalColor.white)
+        painter.fillRect(self.rect(), QBrush(bg_color))
+        
+        # Tüm tamamlanmış stroke'ları çiz
+        for stroke_data in self.strokes:
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                stroke_data.render(painter)
+                continue
+                
+            # Güvenlik kontrolü - eski stroke'lar için
+            if 'type' not in stroke_data:
+                continue
+            if stroke_data['type'] == 'bspline':
+                self.bspline_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'freehand':
+                self.freehand_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'line':
+                self.line_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'rectangle':
+                self.rectangle_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'circle':
+                self.circle_tool.draw_stroke(painter, stroke_data)

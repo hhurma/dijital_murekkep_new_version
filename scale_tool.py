@@ -174,13 +174,9 @@ class ScaleTool:
             new_scale_factor = current_distance / self.initial_distance
             scale_change = new_scale_factor / self.scale_factor
             
-            # Grid snap aktifse minimum scale değişimini kontrol et
-            if (self.background_settings and 
-                self.background_settings.get('snap_to_grid', False)):
-                grid_size = self.background_settings.get('grid_size', 20)
-                # Scale değişimi çok küçükse atla
-                if abs(scale_change - 1.0) < 0.05:
-                    return False
+            # Minimum scale değişimini kontrol et
+            if abs(scale_change - 1.0) < 0.1:  # %10'dan az değişim varsa atla
+                return False
             
             # Minimum ve maksimum scale sınırları
             scale_change = max(0.1, min(5.0, scale_change))
@@ -189,6 +185,28 @@ class ScaleTool:
             for selected_stroke in selected_strokes:
                 if selected_stroke < len(strokes):
                     stroke_data = strokes[selected_stroke]
+                    
+                    # Image stroke kontrolü
+                    if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                        # İlk kez scale ediliyorsa orijinal boyutu sakla
+                        if not hasattr(self, 'original_image_sizes'):
+                            self.original_image_sizes = {}
+                        if not hasattr(self, 'total_scale_factors'):
+                            self.total_scale_factors = {}
+                        if id(stroke_data) not in self.original_image_sizes:
+                            self.original_image_sizes[id(stroke_data)] = QPointF(stroke_data.size)
+                            self.total_scale_factors[id(stroke_data)] = 1.0
+                        
+                        # Toplam scale faktörünü güncelle
+                        self.total_scale_factors[id(stroke_data)] = new_scale_factor
+                        
+                        # Orijinal boyuttan yeni boyutu hesapla
+                        original_size = self.original_image_sizes[id(stroke_data)]
+                        total_factor = self.total_scale_factors[id(stroke_data)]
+                        new_size = QPointF(original_size.x() * total_factor, original_size.y() * total_factor)
+                        stroke_data.set_size(new_size)
+                        continue
+                    
                     # Hassas grid snap ile scale uygula
                     self.scale_stroke_precise(stroke_data, scale_change)
                 
@@ -240,17 +258,28 @@ class ScaleTool:
                     scale_change_y = new_height / old_height
                     scale_change_y = max(0.1, min(5.0, scale_change_y))
             
-            # Grid snap aktifse minimum scale değişimini kontrol et
-            if (self.background_settings and 
-                self.background_settings.get('snap_to_grid', False)):
-                # Scale değişimi çok küçükse atla
-                if (abs(scale_change_x - 1.0) < 0.05 and abs(scale_change_y - 1.0) < 0.05):
-                    return False
+            # Minimum scale değişimini kontrol et
+            if (abs(scale_change_x - 1.0) < 0.1 and abs(scale_change_y - 1.0) < 0.1):  # %10'dan az değişim varsa atla
+                return False
             
             # Tüm seçili stroke'ları tek seferde scale uygula
             for selected_stroke in selected_strokes:
                 if selected_stroke < len(strokes):
                     stroke_data = strokes[selected_stroke]
+                    
+                    # Image stroke kontrolü
+                    if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                        # İlk kez scale ediliyorsa orijinal boyutu sakla
+                        if not hasattr(self, 'original_image_sizes'):
+                            self.original_image_sizes = {}
+                        if id(stroke_data) not in self.original_image_sizes:
+                            self.original_image_sizes[id(stroke_data)] = QPointF(stroke_data.size)
+                        
+                        # Orijinal boyuttan yeni boyutu hesapla
+                        original_size = self.original_image_sizes[id(stroke_data)]
+                        new_size = QPointF(original_size.x() * scale_change_x, original_size.y() * scale_change_y)
+                        stroke_data.set_size(new_size)
+                        continue
                     
                     # Önceki scale'i tersine çevir
                     if hasattr(self, 'last_scale_x') and hasattr(self, 'last_scale_y'):
@@ -283,6 +312,11 @@ class ScaleTool:
             delattr(self, 'last_scale_x')
         if hasattr(self, 'last_scale_y'):
             delattr(self, 'last_scale_y')
+        # Resim boyutları cache'ini temizle
+        if hasattr(self, 'original_image_sizes'):
+            delattr(self, 'original_image_sizes')
+        if hasattr(self, 'total_scale_factors'):
+            delattr(self, 'total_scale_factors')
         
     def get_scale_factor(self, pos):
         """Şu anki scale faktörünü döndür"""
@@ -355,7 +389,20 @@ class ScaleTool:
         
     def set_background_settings(self, settings):
         """Arka plan ayarlarını güncelle (grid snap için)"""
-        self.background_settings = settings 
+        self.background_settings = settings
+    
+    def scale_point(self, point, center, scale_factor):
+        """Bir noktayı merkez etrafında ölçeklendir"""
+        # Merkeze göre relatif pozisyon
+        relative_x = point.x() - center.x()
+        relative_y = point.y() - center.y()
+        
+        # Ölçeklendir
+        scaled_x = relative_x * scale_factor
+        scaled_y = relative_y * scale_factor
+        
+        # Merkezi geri ekle
+        return QPointF(center.x() + scaled_x, center.y() + scaled_y) 
 
     def mouseMoveEvent(self, event):
         """Mouse hareket ettirildiğinde"""

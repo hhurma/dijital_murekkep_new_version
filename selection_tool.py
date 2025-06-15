@@ -55,6 +55,16 @@ class SelectionTool:
         # Stroke'ların seçim dikdörtgenine çakışıp çakışmadığını kontrol et
         newly_selected = []
         for stroke_index, stroke_data in enumerate(strokes):
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                # Resmin bounding rect'i seçim alanıyla kesişiyor mu?
+                image_bounds = stroke_data.get_bounds()
+                if self.selection_rect.intersects(image_bounds):
+                    if stroke_index not in self.selected_strokes:
+                        self.selected_strokes.append(stroke_index)
+                        newly_selected.append(stroke_index)
+                continue
+                
             # Güvenlik kontrolü - eski stroke'lar için
             if 'type' not in stroke_data:
                 continue
@@ -82,6 +92,12 @@ class SelectionTool:
         import numpy as np
         
         for stroke_index, stroke_data in enumerate(strokes):
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                if stroke_data.contains_point(pos):
+                    return self.toggle_stroke_selection(stroke_index)
+                continue
+                
             # Güvenlik kontrolü - eski stroke'lar için
             if 'type' not in stroke_data:
                 continue
@@ -186,6 +202,19 @@ class SelectionTool:
         for stroke_index in self.selected_strokes:
             if stroke_index < len(strokes):
                 stroke_data = strokes[stroke_index]
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    bounds = stroke_data.get_bounds()
+                    # Köşe noktalarını ekle
+                    all_points.extend([
+                        (bounds.left(), bounds.top()),
+                        (bounds.right(), bounds.top()),
+                        (bounds.left(), bounds.bottom()),
+                        (bounds.right(), bounds.bottom())
+                    ])
+                    continue
+                
                 # Güvenlik kontrolü - eski stroke'lar için
                 if 'type' not in stroke_data:
                     continue
@@ -209,6 +238,19 @@ class SelectionTool:
         for stroke_index in self.selected_strokes:
             if stroke_index < len(strokes):
                 stroke_data = strokes[stroke_index]
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    bounds = stroke_data.get_bounds()
+                    # Köşe noktalarını ekle
+                    all_points.extend([
+                        (bounds.left(), bounds.top()),
+                        (bounds.right(), bounds.top()),
+                        (bounds.left(), bounds.bottom()),
+                        (bounds.right(), bounds.bottom())
+                    ])
+                    continue
+                
                 # Güvenlik kontrolü - eski stroke'lar için
                 if 'type' not in stroke_data:
                     continue
@@ -260,19 +302,41 @@ class SelectionTool:
         for stroke_index in self.selected_strokes:
             if stroke_index < len(strokes):
                 stroke_data = strokes[stroke_index]
-                # Güvenlik kontrolü - eski stroke'lar için
-                if 'type' not in stroke_data:
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    # Resim için özel vurgulama
+                    bounds = stroke_data.get_bounds()
+                    pen = QPen(Qt.GlobalColor.green, 3, Qt.PenStyle.SolidLine)
+                    painter.setPen(pen)
+                    painter.drawRect(bounds)
                     continue
-                StrokeHandler.draw_stroke_highlight(painter, stroke_data, Qt.GlobalColor.green, 8)
+                
+                # Güvenlik kontrolü - eski stroke'lar için
+                if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                    continue
+                elif hasattr(stroke_data, 'get'):
+                    StrokeHandler.draw_stroke_highlight(painter, stroke_data, Qt.GlobalColor.green, 8)
                     
         # Preview (geçici) seçili stroke'ları açık yeşil ile vurgula
         for stroke_index in self.preview_strokes:
             if stroke_index < len(strokes) and stroke_index not in self.selected_strokes:
                 stroke_data = strokes[stroke_index]
-                # Güvenlik kontrolü - eski stroke'lar için
-                if 'type' not in stroke_data:
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    # Resim için özel preview vurgulama
+                    bounds = stroke_data.get_bounds()
+                    pen = QPen(Qt.GlobalColor.cyan, 2, Qt.PenStyle.DashLine)
+                    painter.setPen(pen)
+                    painter.drawRect(bounds)
                     continue
-                StrokeHandler.draw_stroke_highlight(painter, stroke_data, Qt.GlobalColor.cyan, 6)
+                
+                # Güvenlik kontrolü - eski stroke'lar için
+                if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                    continue
+                elif hasattr(stroke_data, 'get'):
+                    StrokeHandler.draw_stroke_highlight(painter, stroke_data, Qt.GlobalColor.cyan, 6)
                 
         # Tüm seçimin bounding box'ını çiz
         all_selected = list(set(self.selected_strokes + self.preview_strokes))
@@ -282,11 +346,24 @@ class SelectionTool:
             for stroke_index in all_selected:
                 if stroke_index < len(strokes):
                     stroke_data = strokes[stroke_index]
-                    # Güvenlik kontrolü - eski stroke'lar için
-                    if 'type' not in stroke_data:
+                    
+                    # Image stroke kontrolü
+                    if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                        bounds = stroke_data.get_bounds()
+                        all_points.extend([
+                            (bounds.left(), bounds.top()),
+                            (bounds.right(), bounds.top()),
+                            (bounds.left(), bounds.bottom()),
+                            (bounds.right(), bounds.bottom())
+                        ])
                         continue
-                    points = StrokeHandler.get_stroke_points(stroke_data)
-                    all_points.extend(points)
+                    
+                    # Güvenlik kontrolü - eski stroke'lar için
+                    if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
+                        continue
+                    elif hasattr(stroke_data, 'get'):
+                        points = StrokeHandler.get_stroke_points(stroke_data)
+                        all_points.extend(points)
                     
             if all_points:
                 min_x = min(cp[0] for cp in all_points)

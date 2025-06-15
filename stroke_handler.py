@@ -19,6 +19,20 @@ class StrokeHandler:
     @staticmethod
     def get_stroke_points(stroke_data):
         """Stroke tipine göre noktaları döndür"""
+        # Image stroke kontrolü
+        if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+            bounds = stroke_data.get_bounds()
+            return [
+                (bounds.left(), bounds.top()),
+                (bounds.right(), bounds.top()),
+                (bounds.left(), bounds.bottom()),
+                (bounds.right(), bounds.bottom())
+            ]
+        
+        # Dict kontrolü
+        if not hasattr(stroke_data, 'get'):
+            return []
+            
         if stroke_data['type'] == 'bspline':
             return stroke_data['control_points']
         elif stroke_data['type'] == 'freehand':
