@@ -21,13 +21,13 @@ class TabletHandler(QObject):
         self.high_frequency_mode = False  # Tablet yüksek frekansta event gönderiyorsa
         
     def handle_tablet_event(self, event: QTabletEvent):
-        """Tablet event'lerini işle - throttling devre dışı"""
+        """Tablet event'lerini işle - throttling YOK"""
         self.is_tablet_active = True
         
         # Position al
         pos = QPointF(event.position())
         
-        # Pressure al (smoothing devre dışı)
+        # Raw pressure - smoothing yok
         raw_pressure = event.pressure()
         self.last_pressure = raw_pressure
         

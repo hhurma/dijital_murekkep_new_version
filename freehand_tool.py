@@ -96,7 +96,7 @@ class FreehandTool:
         self.current_stroke['pressures'].append(pressure)
     
     def _should_update(self):
-        """Throttling devre dışı - her zaman güncelle"""
+        """Her zaman güncelle - throttling YOK"""
         return True
             
     def finish_stroke(self):

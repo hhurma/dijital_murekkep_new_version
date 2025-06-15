@@ -455,12 +455,36 @@ class DrawingWidget(QWidget):
                 self._throttled_update()
                 
     def _throttled_update(self):
-        """Throttling devre dışı - direkt update"""
-        self.update()
+        """Akıllı throttling - sadece çok fazla stroke varsa"""
+        if len(self.strokes) > 100:  # 100'den fazla stroke varsa throttling
+            if not hasattr(self, '_last_update_time'):
+                self._last_update_time = 0
+                
+            import time
+            current_time = time.time()
+            min_interval = 1.0 / 30.0  # 30 FPS limit
+            
+            if current_time - self._last_update_time > min_interval:
+                self.update()
+                self._last_update_time = current_time
+        else:
+            self.update()  # Az stroke varsa direkt update
             
     def _throttled_freehand_update(self):
-        """Throttling devre dışı - direkt update"""
-        self.update()
+        """Freehand için minimal throttling - sadece çok yoğun durumda"""
+        if len(self.strokes) > 50:  # 50'den fazla stroke varsa hafif throttling
+            if not hasattr(self, '_last_freehand_update_time'):
+                self._last_freehand_update_time = 0
+                
+            import time
+            current_time = time.time()
+            min_interval = 1.0 / 60.0  # 60 FPS limit
+            
+            if current_time - self._last_freehand_update_time > min_interval:
+                self.update()
+                self._last_freehand_update_time = current_time
+        else:
+            self.update()  # Az stroke varsa direkt update
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -558,7 +582,7 @@ class DrawingWidget(QWidget):
         elif self.active_tool == "freehand":
             if self.freehand_tool.is_drawing:
                 self.freehand_tool.add_point(pos, pressure, True)  # True = tablet
-                self.update()  # INSTANT update - throttling yok
+                self.update()  # INSTANT update - ASLA throttling yok
         elif self.active_tool == "line":
             if self.line_tool.is_drawing:
                 self.line_tool.add_point(pos, pressure)
@@ -635,8 +659,21 @@ class DrawingWidget(QWidget):
         self.tablet_handler.reset_tablet_state()
         
     def _throttled_tablet_update(self):
-        """Throttling devre dışı - direkt update"""
-        self.update()
+        """Tablet için akıllı throttling - yazım kalitesini korur"""
+        # Tablet yazımı için daha az agresif throttling
+        if len(self.strokes) > 80:  # 80'den fazla stroke varsa hafif throttling
+            if not hasattr(self, '_last_tablet_update_time'):
+                self._last_tablet_update_time = 0
+                
+            import time
+            current_time = time.time()
+            min_interval = 1.0 / 90.0  # 90 FPS - tablet için yüksek
+            
+            if current_time - self._last_tablet_update_time > min_interval:
+                self.update()
+                self._last_tablet_update_time = current_time
+        else:
+            self.update()  # Az stroke varsa direkt update
 
     # B-spline çizim aracı fonksiyonları
     def handle_bspline_press(self, event):
@@ -979,15 +1016,26 @@ class DrawingWidget(QWidget):
         inverse_transform = transform.inverted()[0]
         scene_rect = inverse_transform.mapRect(QRectF(visible_rect))
         
-        # Stroke sayısına göre render optimizasyonu
+        # Akıllı render optimizasyonu
         total_strokes = len(self.strokes)
-        use_culling = total_strokes > 50  # Daha yüksek threshold - 50'den fazla stroke varsa culling kullan
+        use_culling = total_strokes > 100  # Moderate threshold - viewport culling
+        use_lod = total_strokes > 50  # Level of Detail optimization
+        
+        # LOD hesaplama - zoom seviyesine göre
+        zoom_level = current_zoom
+        high_detail = zoom_level > 1.0  # Yakın zoom - full detail
+        medium_detail = zoom_level > 0.5  # Orta zoom - reduced detail  
+        low_detail = zoom_level <= 0.5  # Uzak zoom - minimal detail
         
         # Tüm tamamlanmış stroke'ları çiz
         for stroke_data in self.strokes:
-            # Culling kontrolü (çok fazla stroke varsa) - şimdilik devre dışı
-            # if use_culling and not self.stroke_intersects_scene(stroke_data, scene_rect):
-            #     continue
+            # Viewport culling kontrolü
+            if use_culling:
+                try:
+                    if not self.stroke_intersects_scene(stroke_data, scene_rect):
+                        continue  # Görünmeyen stroke'ları atla
+                except:
+                    pass  # Hata durumunda stroke'u çiz
                 
             # Image stroke kontrolü
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
@@ -1002,19 +1050,19 @@ class DrawingWidget(QWidget):
             if 'type' not in stroke_data:
                 continue
             
-            # Normal stroke'lar için antialiasing
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                
-            if stroke_data['type'] == 'bspline':
-                self.bspline_tool.draw_stroke(painter, stroke_data)
-            elif stroke_data['type'] == 'freehand':
-                self.freehand_tool.draw_stroke(painter, stroke_data)
-            elif stroke_data['type'] == 'line':
-                self.line_tool.draw_stroke(painter, stroke_data)
-            elif stroke_data['type'] == 'rectangle':
-                self.rectangle_tool.draw_stroke(painter, stroke_data)
-            elif stroke_data['type'] == 'circle':
-                self.circle_tool.draw_stroke(painter, stroke_data)
+            # LOD bazlı rendering ayarları
+            if use_lod and low_detail:
+                # Uzak zoom - minimal antialiasing, basit çizim
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                self._draw_stroke_simple(painter, stroke_data)
+            elif use_lod and medium_detail:
+                # Orta zoom - orta kalite
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                self._draw_stroke_medium(painter, stroke_data)
+            else:
+                # Yakın zoom veya LOD yok - full kalite
+                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                self._draw_stroke_full(painter, stroke_data)
 
         # Seçim vurgusunu çiz
         self.selection_tool.draw_selected_stroke_highlight(painter, self.strokes)
@@ -1044,7 +1092,7 @@ class DrawingWidget(QWidget):
             self.circle_tool.draw_current_stroke(painter)
             
     def stroke_intersects_scene(self, stroke_data, scene_rect):
-        """Stroke'un görünür alanda olup olmadığını kontrol et"""
+        """Gelişmiş stroke-viewport intersection kontrolü"""
         try:
             # Resim stroke'ları için
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
@@ -1052,26 +1100,76 @@ class DrawingWidget(QWidget):
                                    stroke_data.size.x(), stroke_data.size.y())
                 return scene_rect.intersects(stroke_rect)
             
-            # Normal stroke'lar için
+            # Normal stroke'lar için optimized bounds check
             if 'points' in stroke_data and stroke_data['points']:
-                # Stroke bounds hesapla
                 points = stroke_data['points']
                 if not points:
                     return True
-                    
-                min_x = min(p.x() for p in points)
-                max_x = max(p.x() for p in points)
-                min_y = min(p.y() for p in points)
-                max_y = max(p.y() for p in points)
                 
-                # Çizgi kalınlığını hesaba kat
-                width = stroke_data.get('width', 2)
+                # İlk ve son nokta ile hızlı pre-check
+                first_point = points[0]
+                last_point = points[-1]
+                width = stroke_data.get('width', 2) + 5  # Biraz margin
+                
+                # Bounding box hesapla (vectorized)
+                if len(points) == 1:
+                    min_x = max_x = first_point.x()
+                    min_y = max_y = first_point.y()
+                elif len(points) == 2:
+                    min_x = min(first_point.x(), last_point.x())
+                    max_x = max(first_point.x(), last_point.x())
+                    min_y = min(first_point.y(), last_point.y())
+                    max_y = max(first_point.y(), last_point.y())
+                else:
+                    # Çok nokta varsa sampling yap (performans)
+                    sample_points = points[::max(1, len(points)//10)]  # Her 10'da bir
+                    x_coords = [p.x() for p in sample_points]
+                    y_coords = [p.y() for p in sample_points]
+                    min_x, max_x = min(x_coords), max(x_coords)
+                    min_y, max_y = min(y_coords), max(y_coords)
+                
+                # Margin ile stroke rect
                 stroke_rect = QRectF(min_x - width, min_y - width, 
                                    max_x - min_x + 2*width, max_y - min_y + 2*width)
                 
                 return scene_rect.intersects(stroke_rect)
                 
-            return True  # Güvenli taraf - çiz
+            # Diğer stroke tipleri için
+            elif stroke_data.get('type') == 'line':
+                start = stroke_data['start_point']
+                end = stroke_data['end_point']
+                width = stroke_data.get('width', 2) + 5
+                min_x = min(start[0], end[0]) - width
+                max_x = max(start[0], end[0]) + width
+                min_y = min(start[1], end[1]) - width
+                max_y = max(start[1], end[1]) + width
+                stroke_rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+                return scene_rect.intersects(stroke_rect)
+                
+            elif stroke_data.get('type') == 'rectangle':
+                if 'corners' in stroke_data:
+                    corners = stroke_data['corners']
+                    x_coords = [c[0] for c in corners]
+                    y_coords = [c[1] for c in corners]
+                else:
+                    tl, br = stroke_data['top_left'], stroke_data['bottom_right']
+                    x_coords = [tl[0], br[0]]
+                    y_coords = [tl[1], br[1]]
+                
+                width = stroke_data.get('width', 2) + 5
+                min_x, max_x = min(x_coords) - width, max(x_coords) + width
+                min_y, max_y = min(y_coords) - width, max(y_coords) + width
+                stroke_rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+                return scene_rect.intersects(stroke_rect)
+                
+            elif stroke_data.get('type') == 'circle':
+                center = stroke_data['center']
+                radius = stroke_data['radius'] + stroke_data.get('width', 2) + 5
+                stroke_rect = QRectF(center[0] - radius, center[1] - radius, 
+                                   2 * radius, 2 * radius)
+                return scene_rect.intersects(stroke_rect)
+                
+            return True  # Bilinmeyen tip - güvenli taraf
         except:
             return True  # Hata durumunda çiz
             
@@ -1267,3 +1365,81 @@ class DrawingWidget(QWidget):
                 self.rectangle_tool.draw_stroke(painter, stroke_data)
             elif stroke_data['type'] == 'circle':
                 self.circle_tool.draw_stroke(painter, stroke_data)
+
+    def _draw_stroke_full(self, painter, stroke_data):
+        """Full kalite stroke çizimi"""
+        if stroke_data['type'] == 'bspline':
+            self.bspline_tool.draw_stroke(painter, stroke_data)
+        elif stroke_data['type'] == 'freehand':
+            self.freehand_tool.draw_stroke(painter, stroke_data)
+        elif stroke_data['type'] == 'line':
+            self.line_tool.draw_stroke(painter, stroke_data)
+        elif stroke_data['type'] == 'rectangle':
+            self.rectangle_tool.draw_stroke(painter, stroke_data)
+        elif stroke_data['type'] == 'circle':
+            self.circle_tool.draw_stroke(painter, stroke_data)
+    
+    def _draw_stroke_medium(self, painter, stroke_data):
+        """Orta kalite stroke çizimi - nokta sayısını azalt"""
+        if stroke_data['type'] == 'freehand' and 'points' in stroke_data:
+            # Freehand için nokta sayısını azalt (performans)
+            original_points = stroke_data['points']
+            if len(original_points) > 10:
+                # Her 2. noktayı al
+                simplified_data = stroke_data.copy()
+                simplified_data['points'] = original_points[::2]
+                self.freehand_tool.draw_stroke(painter, simplified_data)
+            else:
+                self.freehand_tool.draw_stroke(painter, stroke_data)
+        else:
+            # Diğer tipler için normal çizim
+            self._draw_stroke_full(painter, stroke_data)
+    
+    def _draw_stroke_simple(self, painter, stroke_data):
+        """Basit/hızlı stroke çizimi - minimal detail"""
+        # Renk ve kalınlık al
+        color = stroke_data.get('color', Qt.GlobalColor.black)
+        width = max(1, stroke_data.get('width', 2) * 0.7)  # İnce çiz
+        
+        # Basit pen oluştur
+        from PyQt6.QtGui import QColor, QPen
+        if isinstance(color, str):
+            color = QColor(color)
+        
+        pen = QPen(color)
+        pen.setWidthF(width)
+        pen.setCapStyle(Qt.PenCapStyle.RoundCap)
+        painter.setPen(pen)
+        
+        # Stroke tipine göre basit çizim
+        if stroke_data['type'] in ['freehand', 'bspline'] and 'points' in stroke_data:
+            points = stroke_data['points']
+            if len(points) > 4:
+                # Çok basitleştir - sadece start, mid, end
+                simplified_points = [points[0], points[len(points)//2], points[-1]]
+                for i in range(len(simplified_points) - 1):
+                    painter.drawLine(simplified_points[i], simplified_points[i + 1])
+            else:
+                # Az nokta varsa normal çiz
+                for i in range(len(points) - 1):
+                    painter.drawLine(points[i], points[i + 1])
+        elif stroke_data['type'] == 'line':
+            start = stroke_data['start_point']
+            end = stroke_data['end_point']
+            painter.drawLine(QPointF(start[0], start[1]), QPointF(end[0], end[1]))
+        elif stroke_data['type'] == 'rectangle':
+            if 'corners' in stroke_data:
+                corners = stroke_data['corners']
+                for i in range(4):
+                    p1 = QPointF(corners[i][0], corners[i][1])
+                    p2 = QPointF(corners[(i+1)%4][0], corners[(i+1)%4][1])
+                    painter.drawLine(p1, p2)
+            else:
+                tl, br = stroke_data['top_left'], stroke_data['bottom_right']
+                rect = QRectF(tl[0], tl[1], br[0]-tl[0], br[1]-tl[1])
+                painter.drawRect(rect)
+        elif stroke_data['type'] == 'circle':
+            center = stroke_data['center']
+            radius = stroke_data['radius']
+            rect = QRectF(center[0]-radius, center[1]-radius, 2*radius, 2*radius)
+            painter.drawEllipse(rect)
