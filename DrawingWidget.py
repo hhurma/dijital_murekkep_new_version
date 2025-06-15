@@ -455,32 +455,12 @@ class DrawingWidget(QWidget):
                 self._throttled_update()
                 
     def _throttled_update(self):
-        """Throttled update - çok sık güncellemeyi engelle"""
-        if not hasattr(self, '_last_update_time'):
-            self._last_update_time = 0
-            
-        import time
-        current_time = time.time()
-        # Stroke sayısına göre FPS ayarla
-        fps_limit = 15 if len(self.strokes) > 30 else 30
-        min_interval = 1.0 / fps_limit
-        
-        if current_time - self._last_update_time > min_interval:
-            self.update()
-            self._last_update_time = current_time
+        """Throttling devre dışı - direkt update"""
+        self.update()
             
     def _throttled_freehand_update(self):
-        """Freehand için minimal throttling - real-time yazım"""
-        if not hasattr(self, '_last_freehand_update_time'):
-            self._last_freehand_update_time = 0
-            
-        current_time = time.time()
-        # Mouse freehand için 90 FPS (tablet'tan biraz düşük)
-        min_interval = 1.0 / 90.0
-        
-        if current_time - self._last_freehand_update_time > min_interval:
-            self.update()
-            self._last_freehand_update_time = current_time
+        """Throttling devre dışı - direkt update"""
+        self.update()
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -655,17 +635,8 @@ class DrawingWidget(QWidget):
         self.tablet_handler.reset_tablet_state()
         
     def _throttled_tablet_update(self):
-        """Tablet için minimal throttling - real-time yazım"""
-        if not hasattr(self, '_last_tablet_update_time'):
-            self._last_tablet_update_time = 0
-            
-        current_time = time.time()
-        # Tablet yazımı için çok minimal throttling (120 FPS)
-        min_interval = 1.0 / 120.0
-        
-        if current_time - self._last_tablet_update_time > min_interval:
-            self.update()
-            self._last_tablet_update_time = current_time
+        """Throttling devre dışı - direkt update"""
+        self.update()
 
     # B-spline çizim aracı fonksiyonları
     def handle_bspline_press(self, event):
@@ -1010,13 +981,13 @@ class DrawingWidget(QWidget):
         
         # Stroke sayısına göre render optimizasyonu
         total_strokes = len(self.strokes)
-        use_culling = total_strokes > 10  # 10'dan fazla stroke varsa culling kullan
+        use_culling = total_strokes > 50  # Daha yüksek threshold - 50'den fazla stroke varsa culling kullan
         
         # Tüm tamamlanmış stroke'ları çiz
         for stroke_data in self.strokes:
-            # Culling kontrolü (çok fazla stroke varsa)
-            if use_culling and not self.stroke_intersects_scene(stroke_data, scene_rect):
-                continue
+            # Culling kontrolü (çok fazla stroke varsa) - şimdilik devre dışı
+            # if use_culling and not self.stroke_intersects_scene(stroke_data, scene_rect):
+            #     continue
                 
             # Image stroke kontrolü
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':

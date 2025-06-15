@@ -28,9 +28,7 @@ class FreehandTool:
         self.smoothing_buffer = []
         self.buffer_size = 3  # Buffer boyutu azaltıldı
         
-        # Update throttling
-        self._last_update_time = 0
-        self._update_interval = 1.0 / 60.0  # 60 FPS limit
+        # Throttling devre dışı
         
         # Adaptive smoothing için
         self.velocity_threshold = 20.0  # Hızlı çizimde daha az smoothing
@@ -98,12 +96,8 @@ class FreehandTool:
         self.current_stroke['pressures'].append(pressure)
     
     def _should_update(self):
-        """Update throttling kontrolü"""
-        current_time = time.time()
-        if current_time - self._last_update_time > self._update_interval:
-            self._last_update_time = current_time
-            return True
-        return False
+        """Throttling devre dışı - her zaman güncelle"""
+        return True
             
     def finish_stroke(self):
         """Serbest çizimi tamamla (optimized)"""

@@ -21,29 +21,17 @@ class TabletHandler(QObject):
         self.high_frequency_mode = False  # Tablet yüksek frekansta event gönderiyorsa
         
     def handle_tablet_event(self, event: QTabletEvent):
-        """Tablet event'lerini işle"""
-        current_time = time.time()
-        
-        # Tablet throttling - çok sık event'leri filtrele
-        if current_time - self.last_tablet_time < self.tablet_throttle_interval:
-            return None, None, False  # pos, pressure, should_process
-            
-        self.last_tablet_time = current_time
+        """Tablet event'lerini işle - throttling devre dışı"""
         self.is_tablet_active = True
         
         # Position al
         pos = QPointF(event.position())
         
-        # Pressure al ve smooth et
+        # Pressure al (smoothing devre dışı)
         raw_pressure = event.pressure()
-        smoothed_pressure = self._smooth_pressure(raw_pressure)
+        self.last_pressure = raw_pressure
         
-        # Önemli pressure değişikliklerini kontrol et (devre dışı - real-time yazım için)
-        # pressure_changed = abs(smoothed_pressure - self.last_pressure) > self.pressure_threshold
-        
-        self.last_pressure = smoothed_pressure
-        
-        return pos, smoothed_pressure, True
+        return pos, raw_pressure, True
         
     def _smooth_pressure(self, pressure):
         """Pressure değerini smooth et"""
