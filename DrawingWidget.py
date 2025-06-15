@@ -1,8 +1,10 @@
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath, QColor, QBrush
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect
+from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath, QColor, QBrush, QTabletEvent
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF
 from scipy.interpolate import splprep, splev
 import numpy as np
+import time
+from tablet_handler import TabletHandler
 
 # Araç modüllerini import et
 from selection_tool import SelectionTool
@@ -81,6 +83,10 @@ class DrawingWidget(QWidget):
         # Pan ayarları
         self.is_panning = False
         self.pan_start_point = QPointF(0, 0)
+        
+        # Tablet handler
+        self.tablet_handler = TabletHandler()
+        self.setAttribute(Qt.WidgetAttribute.WA_AcceptTouchEvents, False)  # Touch events'i devre dışı bırak
         
         # Eski stroke'ları temizle ve yeni formatla başla
         self.clear_all_strokes()
@@ -436,8 +442,8 @@ class DrawingWidget(QWidget):
             if event.buttons() == Qt.MouseButton.LeftButton:
                 self.handle_rotate_move(transformed_pos)
             else:
-                # Sadece mouse tracking için update
-                self.update()
+                # Throttled update - sadece mouse tracking için
+                self._throttled_update()
         elif self.active_tool == "scale":
             # Her zaman mouse pozisyonunu güncelle (görsel feedback için)
             transformed_pos = self.transform_mouse_pos(pos)
@@ -445,8 +451,36 @@ class DrawingWidget(QWidget):
             if event.buttons() == Qt.MouseButton.LeftButton:
                 self.handle_scale_move(transformed_pos)
             else:
-                # Sadece mouse tracking için update
-                self.update()
+                # Throttled update - sadece mouse tracking için
+                self._throttled_update()
+                
+    def _throttled_update(self):
+        """Throttled update - çok sık güncellemeyi engelle"""
+        if not hasattr(self, '_last_update_time'):
+            self._last_update_time = 0
+            
+        import time
+        current_time = time.time()
+        # Stroke sayısına göre FPS ayarla
+        fps_limit = 15 if len(self.strokes) > 30 else 30
+        min_interval = 1.0 / fps_limit
+        
+        if current_time - self._last_update_time > min_interval:
+            self.update()
+            self._last_update_time = current_time
+            
+    def _throttled_freehand_update(self):
+        """Freehand için minimal throttling - real-time yazım"""
+        if not hasattr(self, '_last_freehand_update_time'):
+            self._last_freehand_update_time = 0
+            
+        current_time = time.time()
+        # Mouse freehand için 90 FPS (tablet'tan biraz düşük)
+        min_interval = 1.0 / 90.0
+        
+        if current_time - self._last_freehand_update_time > min_interval:
+            self.update()
+            self._last_freehand_update_time = current_time
 
     def mouseReleaseEvent(self, event: QMouseEvent):
         if event.button() == Qt.MouseButton.MiddleButton:
@@ -479,6 +513,159 @@ class DrawingWidget(QWidget):
             elif self.active_tool == "scale":
                 transformed_pos = self.transform_mouse_pos(pos)
                 self.handle_scale_release(transformed_pos)
+                
+    def tabletEvent(self, event: QTabletEvent):
+        """Tablet kalemi event'lerini işle"""
+        # Tablet handler ile optimize et
+        pos, pressure, should_process = self.tablet_handler.handle_tablet_event(event)
+        
+        if not should_process:
+            event.accept()
+            return
+            
+        # Transform mouse position
+        transformed_pos = self.transform_mouse_pos(pos)
+        
+        # Event türüne göre işle
+        if event.type() == QTabletEvent.Type.TabletPress:
+            self._handle_tablet_press(transformed_pos, pressure)
+        elif event.type() == QTabletEvent.Type.TabletMove:
+            self._handle_tablet_move(transformed_pos, pressure)
+        elif event.type() == QTabletEvent.Type.TabletRelease:
+            self._handle_tablet_release(transformed_pos, pressure)
+            
+        event.accept()
+        
+    def _handle_tablet_press(self, pos, pressure):
+        """Tablet press event'i işle"""
+        if self.active_tool == "bspline":
+            if self.bspline_tool.select_control_point(pos, self.strokes):
+                self.save_current_state("Move control point")
+                self._throttled_update()
+                return
+            self.bspline_tool.start_stroke(pos, pressure)
+            self._throttled_update()
+        elif self.active_tool == "freehand":
+            self.freehand_tool.start_stroke(pos, pressure, True)  # True = tablet
+            self._throttled_update()
+        elif self.active_tool == "line":
+            self.line_tool.start_stroke(pos, pressure)
+            self._throttled_update()
+        elif self.active_tool == "rectangle":
+            self.rectangle_tool.start_stroke(pos, pressure)
+            self._throttled_update()
+        elif self.active_tool == "circle":
+            self.circle_tool.start_stroke(pos, pressure)
+            self._throttled_update()
+        elif self.active_tool == "select":
+            self.handle_select_press(pos)
+        elif self.active_tool == "move":
+            self.handle_move_press(pos)
+        elif self.active_tool == "rotate":
+            self.handle_rotate_press(pos)
+        elif self.active_tool == "scale":
+            self.handle_scale_press(pos)
+            
+    def _handle_tablet_move(self, pos, pressure):
+        """Tablet move event'i işle - optimize edilmiş"""
+        if self.active_tool == "bspline":
+            if self.bspline_tool.selected_control_point is not None:
+                if self.bspline_tool.move_control_point(pos, self.strokes):
+                    self._throttled_update()
+            elif self.bspline_tool.is_drawing:
+                self.bspline_tool.add_point(pos, pressure)
+                self._throttled_tablet_update()  # Tablet için özel throttling
+        elif self.active_tool == "freehand":
+            if self.freehand_tool.is_drawing:
+                self.freehand_tool.add_point(pos, pressure, True)  # True = tablet
+                self.update()  # INSTANT update - throttling yok
+        elif self.active_tool == "line":
+            if self.line_tool.is_drawing:
+                self.line_tool.add_point(pos, pressure)
+                self._throttled_tablet_update()
+        elif self.active_tool == "rectangle":
+            if self.rectangle_tool.is_drawing:
+                self.rectangle_tool.add_point(pos, pressure)
+                self._throttled_tablet_update()
+        elif self.active_tool == "circle":
+            if self.circle_tool.is_drawing:
+                self.circle_tool.add_point(pos, pressure)
+                self._throttled_tablet_update()
+        elif self.active_tool == "select":
+            self.handle_select_move(pos)
+        elif self.active_tool == "move":
+            self.handle_move_move(pos)
+        elif self.active_tool == "rotate":
+            self.rotate_tool.set_current_mouse_pos(pos)
+            self.handle_rotate_move(pos)
+        elif self.active_tool == "scale":
+            self.scale_tool.set_current_mouse_pos(pos)
+            self.handle_scale_move(pos)
+            
+    def _handle_tablet_release(self, pos, pressure):
+        """Tablet release event'i işle"""
+        if self.active_tool == "bspline":
+            if self.bspline_tool.selected_control_point is not None:
+                self.bspline_tool.clear_selection()
+                self.update()
+            elif self.bspline_tool.is_drawing:
+                stroke_data = self.bspline_tool.finish_stroke()
+                if stroke_data is not None:
+                    self.strokes.append(stroke_data)
+                    self.save_current_state("Add B-spline")
+                self.update()
+        elif self.active_tool == "freehand":
+            if self.freehand_tool.is_drawing:
+                stroke_data = self.freehand_tool.finish_stroke()
+                if stroke_data is not None:
+                    self.strokes.append(stroke_data)
+                    self.save_current_state("Add freehand")
+                self.update()
+        elif self.active_tool == "line":
+            if self.line_tool.is_drawing:
+                stroke_data = self.line_tool.finish_stroke()
+                if stroke_data is not None:
+                    self.strokes.append(stroke_data)
+                    self.save_current_state("Add line")
+                self.update()
+        elif self.active_tool == "rectangle":
+            if self.rectangle_tool.is_drawing:
+                stroke_data = self.rectangle_tool.finish_stroke()
+                if stroke_data is not None:
+                    self.strokes.append(stroke_data)
+                    self.save_current_state("Add rectangle")
+                self.update()
+        elif self.active_tool == "circle":
+            if self.circle_tool.is_drawing:
+                stroke_data = self.circle_tool.finish_stroke()
+                if stroke_data is not None:
+                    self.strokes.append(stroke_data)
+                    self.save_current_state("Add circle")
+                self.update()
+        elif self.active_tool == "select":
+            self.handle_select_release(pos)
+        elif self.active_tool == "move":
+            self.handle_move_release(pos)
+        elif self.active_tool == "rotate":
+            self.handle_rotate_release(pos)
+        elif self.active_tool == "scale":
+            self.handle_scale_release(pos)
+            
+        # Tablet işlemi bittiğinde reset
+        self.tablet_handler.reset_tablet_state()
+        
+    def _throttled_tablet_update(self):
+        """Tablet için minimal throttling - real-time yazım"""
+        if not hasattr(self, '_last_tablet_update_time'):
+            self._last_tablet_update_time = 0
+            
+        current_time = time.time()
+        # Tablet yazımı için çok minimal throttling (120 FPS)
+        min_interval = 1.0 / 120.0
+        
+        if current_time - self._last_tablet_update_time > min_interval:
+            self.update()
+            self._last_tablet_update_time = current_time
 
     # B-spline çizim aracı fonksiyonları
     def handle_bspline_press(self, event):
@@ -489,26 +676,26 @@ class DrawingWidget(QWidget):
         if self.bspline_tool.select_control_point(clicked_point_f, self.strokes):
             # Kontrol noktası seçildiğinde state kaydet
             self.save_current_state("Move control point")
-            self.update()
+            self._throttled_update()
             return
             
         # Kontrol noktası seçilmediyse, yeni çizim başlat
-        pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
+        pressure = self.tablet_handler.get_optimized_pressure(event)
         self.bspline_tool.start_stroke(clicked_point_f, pressure)
-        self.update()
+        self._throttled_update()
 
     def handle_bspline_move(self, event):
         # Eğer kontrol noktası seçiliyse, onu taşı
         if self.bspline_tool.selected_control_point is not None:
             new_pos = self.transform_mouse_pos(QPointF(event.pos()))
             if self.bspline_tool.move_control_point(new_pos, self.strokes):
-                self.update()
+                self._throttled_update()
         # Değilse, çizime devam et
         elif event.buttons() == Qt.MouseButton.LeftButton and self.bspline_tool.is_drawing:
-            pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
+            pressure = self.tablet_handler.get_optimized_pressure(event)
             transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
             self.bspline_tool.add_point(transformed_pos, pressure)
-            self.update()
+            self._throttled_freehand_update()
 
     def handle_bspline_release(self, event):
         # Eğer kontrol noktası taşınıyorsa, seçimi temizle
@@ -526,18 +713,24 @@ class DrawingWidget(QWidget):
     # Serbest çizim aracı fonksiyonları
     def handle_freehand_press(self, event):
         """Serbest çizim başlat"""
-        pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
+        pressure = self.tablet_handler.get_optimized_pressure(event)
         transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
-        self.freehand_tool.start_stroke(transformed_pos, pressure)
+        is_tablet = self.tablet_handler.is_tablet_in_use()
+        self.freehand_tool.start_stroke(transformed_pos, pressure, is_tablet)
         self.update()
 
     def handle_freehand_move(self, event):
         """Serbest çizim devam ettir"""
         if event.buttons() == Qt.MouseButton.LeftButton and self.freehand_tool.is_drawing:
-            pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
+            pressure = self.tablet_handler.get_optimized_pressure(event)
             transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
-            self.freehand_tool.add_point(transformed_pos, pressure)
-            self.update()
+            is_tablet = self.tablet_handler.is_tablet_in_use()
+            self.freehand_tool.add_point(transformed_pos, pressure, is_tablet)
+            # Tablet kullanımındaysa tablet throttling, değilse freehand throttling
+            if is_tablet:
+                self._throttled_tablet_update()
+            else:
+                self._throttled_freehand_update()
 
     def handle_freehand_release(self, event):
         """Serbest çizimi tamamla"""
@@ -562,7 +755,7 @@ class DrawingWidget(QWidget):
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
             self.line_tool.add_point(transformed_pos, pressure)
-            self.update()
+            self._throttled_freehand_update()
 
     def handle_line_release(self, event):
         """Çizgiyi tamamla"""
@@ -587,7 +780,7 @@ class DrawingWidget(QWidget):
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
             self.rectangle_tool.add_point(transformed_pos, pressure)
-            self.update()
+            self._throttled_freehand_update()
 
     def handle_rectangle_release(self, event):
         """Dikdörtgeni tamamla"""
@@ -612,7 +805,7 @@ class DrawingWidget(QWidget):
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.transform_mouse_pos(QPointF(event.pos()))
             self.circle_tool.add_point(transformed_pos, pressure)
-            self.update()
+            self._throttled_freehand_update()
 
     def handle_circle_release(self, event):
         """Çemberi tamamla"""
@@ -793,7 +986,6 @@ class DrawingWidget(QWidget):
 
     def paintEvent(self, event):
         painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Main window'dan güncel zoom ve pan değerlerini al
         current_zoom = self.zoom_level
@@ -810,16 +1002,37 @@ class DrawingWidget(QWidget):
         # Arka planı çiz
         self.draw_background(painter)
 
+        # Visible rect hesapla (performans için)
+        visible_rect = event.rect()
+        transform = painter.transform()
+        inverse_transform = transform.inverted()[0]
+        scene_rect = inverse_transform.mapRect(QRectF(visible_rect))
+        
+        # Stroke sayısına göre render optimizasyonu
+        total_strokes = len(self.strokes)
+        use_culling = total_strokes > 10  # 10'dan fazla stroke varsa culling kullan
+        
         # Tüm tamamlanmış stroke'ları çiz
         for stroke_data in self.strokes:
+            # Culling kontrolü (çok fazla stroke varsa)
+            if use_culling and not self.stroke_intersects_scene(stroke_data, scene_rect):
+                continue
+                
             # Image stroke kontrolü
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                # Resim stroke'ları için conditional antialiasing
+                if not stroke_data.is_loading:
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
                 stroke_data.render(painter)
                 continue
                 
             # Güvenlik kontrolü - eski stroke'lar için
             if 'type' not in stroke_data:
                 continue
+            
+            # Normal stroke'lar için antialiasing
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
                 
             if stroke_data['type'] == 'bspline':
                 self.bspline_tool.draw_stroke(painter, stroke_data)
@@ -847,6 +1060,7 @@ class DrawingWidget(QWidget):
             self.scale_tool.draw_scale_handles(painter, self.strokes, self.selection_tool.selected_strokes)
 
         # Aktif çizimi çiz
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
         if self.active_tool == "bspline":
             self.bspline_tool.draw_current_stroke(painter)
         elif self.active_tool == "freehand":
@@ -857,6 +1071,38 @@ class DrawingWidget(QWidget):
             self.rectangle_tool.draw_current_stroke(painter)
         elif self.active_tool == "circle":
             self.circle_tool.draw_current_stroke(painter)
+            
+    def stroke_intersects_scene(self, stroke_data, scene_rect):
+        """Stroke'un görünür alanda olup olmadığını kontrol et"""
+        try:
+            # Resim stroke'ları için
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                stroke_rect = QRectF(stroke_data.position.x(), stroke_data.position.y(), 
+                                   stroke_data.size.x(), stroke_data.size.y())
+                return scene_rect.intersects(stroke_rect)
+            
+            # Normal stroke'lar için
+            if 'points' in stroke_data and stroke_data['points']:
+                # Stroke bounds hesapla
+                points = stroke_data['points']
+                if not points:
+                    return True
+                    
+                min_x = min(p.x() for p in points)
+                max_x = max(p.x() for p in points)
+                min_y = min(p.y() for p in points)
+                max_y = max(p.y() for p in points)
+                
+                # Çizgi kalınlığını hesaba kat
+                width = stroke_data.get('width', 2)
+                stroke_rect = QRectF(min_x - width, min_y - width, 
+                                   max_x - min_x + 2*width, max_y - min_y + 2*width)
+                
+                return scene_rect.intersects(stroke_rect)
+                
+            return True  # Güvenli taraf - çiz
+        except:
+            return True  # Hata durumunda çiz
             
     def draw_background(self, painter):
         """Arka planı çiz"""

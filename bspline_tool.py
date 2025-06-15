@@ -1,6 +1,6 @@
 from PyQt6.QtCore import QPointF
 from PyQt6.QtGui import QPen, QPainter, QPainterPath
-from PyQt6.QtCore import Qt
+from PyQt6.QtCore import Qt, QPointF
 from scipy.interpolate import splprep, splev
 import numpy as np
 
@@ -90,6 +90,10 @@ class BSplineTool:
         pos_f = QPointF(pos)
         
         for stroke_index, stroke_data in enumerate(strokes):
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type'):
+                continue
+                
             if stroke_data.get('type') != 'bspline' and stroke_data.get('tool_type') != 'bspline':
                 continue
                 
@@ -111,6 +115,10 @@ class BSplineTool:
         stroke_index, cp_index = self.selected_control_point
         if stroke_index < len(strokes):
             stroke_data = strokes[stroke_index]
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type'):
+                return False
+                
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
                 stroke_data['control_points'][cp_index] = np.array([new_pos.x(), new_pos.y()])
                 return True
@@ -137,6 +145,10 @@ class BSplineTool:
             
     def draw_bspline(self, painter, stroke_data):
         """B-spline çiz"""
+        # Image stroke kontrolü
+        if hasattr(stroke_data, 'stroke_type'):
+            return
+            
         if stroke_data.get('type') != 'bspline' and stroke_data.get('tool_type') != 'bspline':
             return
             
@@ -197,5 +209,9 @@ class BSplineTool:
     def draw_all_bsplines(self, painter, strokes):
         """Tüm B-spline'ları çiz"""
         for stroke_data in strokes:
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type'):
+                continue
+                
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
                 self.draw_bspline(painter, stroke_data) 

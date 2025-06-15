@@ -43,6 +43,11 @@ class MainWindow(QMainWindow):
         self.image_cache_dir = os.path.join(os.path.dirname(__file__), "image_cache")
         self.cached_images = {}  # Hash -> cache path mapping
         
+        # Threaded image cache manager
+        from image_cache_manager import ImageCacheManager
+        self.image_cache_manager = ImageCacheManager(self.image_cache_dir, max_workers=2)
+        self.image_cache_manager.imageLoaded.connect(self.on_image_loaded)
+        
         self.setWindowTitle("Dijital Mürekkep - Çizim Uygulaması")
         
         # Uygulama ikonunu ayarla
@@ -710,6 +715,12 @@ class MainWindow(QMainWindow):
         size_names = {'small': 'Küçük', 'medium': 'Orta', 'large': 'Büyük'}
         self.show_status_message(f"Canvas boyutu: {size_names.get(size, size)}")
         
+    def on_image_loaded(self, image_hash, pixmap):
+        """Resim async yüklendiğinde canvas'ı güncelle"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            current_widget.update()  # Canvas'ı yeniden çiz
+        
     def update_canvas_sizes(self, size):
         """Canvas boyutlarını güncelle"""
         # Tüm açık tab'lara yeni boyutları uygula
@@ -911,8 +922,8 @@ class MainWindow(QMainWindow):
             if not current_widget:
                 return
             
-            # Resim stroke'u oluştur - sol üst köşeye yerleştir
-            image_stroke = ImageStroke(filename, QPointF(50, 50))
+            # Resim stroke'u oluştur - sol üst köşeye yerleştir (cache manager ile)
+            image_stroke = ImageStroke(filename, QPointF(50, 50), cache_manager=self.image_cache_manager)
             
             # Resmi cache'le (aynı resim tekrar eklenmemesi için)
             file_hash = image_stroke.file_hash
@@ -962,6 +973,9 @@ class MainWindow(QMainWindow):
         # Eğer kullanıcı manuel olarak kaydetmediyse image cache'i temizle
         if not self.current_session_file:
             self.clear_image_cache()
+        
+        # Threaded cache manager'ı kapat
+        self.image_cache_manager.shutdown()
         
         # Pencere boyutunu kaydet
         self.settings.set_window_size(self.width(), self.height())

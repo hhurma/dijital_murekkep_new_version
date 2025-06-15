@@ -7,37 +7,99 @@ import shutil
 class ImageStroke:
     """Resim stroke'u - canvas'a eklenen resimler için"""
     
-    def __init__(self, image_path, position, size=None, rotation=0, opacity=1.0):
+    def __init__(self, image_path, position, size=None, rotation=0, opacity=1.0, cache_manager=None):
         self.stroke_type = "image"
         self.image_path = image_path
         self.position = QPointF(position)  # Sol üst köşe pozisyonu
         self.rotation = rotation  # Derece cinsinden
         self.opacity = opacity
+        self.cache_manager = cache_manager
+        self.is_loading = False
+        self.render_pixmap = None  # Render için kullanılacak pixmap
         
-        # Orijinal resmi yükle
-        self.original_pixmap = QPixmap(image_path)
-        if self.original_pixmap.isNull():
-            raise ValueError(f"Resim yüklenemedi: {image_path}")
+        # Dosya hash'i (aynı resim kontrolü için)
+        self.file_hash = self._calculate_file_hash()
         
-        # Boyut ayarla (varsayılan olarak maksimum 400px genişlik/yükseklik)
+        # Boyut ayarla (varsayılan olarak maksimum 300px genişlik/yükseklik)
         if size is None:
             self.size = self._calculate_default_size()
         else:
             self.size = size
             
-        # Ölçeklenmiş pixmap'i oluştur
-        self.scaled_pixmap = self._create_scaled_pixmap()
-        
-        # Dosya hash'i (aynı resim kontrolü için)
-        self.file_hash = self._calculate_file_hash()
+        # Cache manager varsa async yükle, yoksa sync yükle
+        if self.cache_manager:
+            self._load_async()
+        else:
+            self._load_sync()
         
         # Cache'lenmiş dosya yolu
         self.cached_path = None
         
+    def _load_sync(self):
+        """Senkron resim yükleme (fallback)"""
+        self.original_pixmap = QPixmap(self.image_path)
+        if self.original_pixmap.isNull():
+            raise ValueError(f"Resim yüklenemedi: {self.image_path}")
+        self.render_pixmap = self._create_scaled_pixmap()
+        
+    def _load_async(self):
+        """Asenkron resim yükleme"""
+        # Cache'den kontrol et
+        cached = self.cache_manager.get_cached_image(self.file_hash)
+        if cached:
+            self.render_pixmap = cached
+            self.original_pixmap = cached
+        else:
+            # Placeholder pixmap oluştur
+            self.render_pixmap = self._create_placeholder()
+            self.is_loading = True
+            # Async yükleme başlat
+            self.cache_manager.imageLoaded.connect(self._on_image_loaded)
+            self.cache_manager.cache_image(self.image_path, self.size)
+            
+    def _create_placeholder(self):
+        """Yüklenirken gösterilecek placeholder"""
+        from PyQt6.QtGui import QPainter, QBrush, QColor, QPen
+        from PyQt6.QtCore import Qt
+        
+        placeholder = QPixmap(int(self.size.x()), int(self.size.y()))
+        placeholder.fill(QColor(240, 240, 240))
+        
+        painter = QPainter(placeholder)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        painter.setPen(QPen(QColor(180, 180, 180), 2))
+        painter.setBrush(QBrush(QColor(200, 200, 200)))
+        
+        # Basit loading göstergesi
+        margin = 20
+        painter.drawRect(margin, margin, placeholder.width() - 2*margin, placeholder.height() - 2*margin)
+        painter.drawText(placeholder.rect(), Qt.AlignmentFlag.AlignCenter, "Yükleniyor...")
+        painter.end()
+        
+        return placeholder
+        
+    def _on_image_loaded(self, image_hash, pixmap):
+        """Resim yüklendiğinde çağrılır"""
+        if image_hash == self.file_hash:
+            self.render_pixmap = pixmap
+            self.original_pixmap = pixmap
+            self.is_loading = False
+            # Disconnect to avoid memory leaks
+            self.cache_manager.imageLoaded.disconnect(self._on_image_loaded)
+        
     def _calculate_default_size(self):
-        """Varsayılan boyutu hesapla (en fazla 300px - %100 zoom için optimize)"""
-        original_size = self.original_pixmap.size()
-        max_size = 300  # %100 zoom için daha küçük boyut
+        """Varsayılan boyutu hesapla (en fazla 250px - %200 zoom için optimize)"""
+        # Sync loading için pixmap kontrolü
+        if not hasattr(self, 'original_pixmap') or not self.original_pixmap:
+            temp_pixmap = QPixmap(self.image_path)
+            if not temp_pixmap.isNull():
+                original_size = temp_pixmap.size()
+            else:
+                return QPointF(250, 250)  # Fallback
+        else:
+            original_size = self.original_pixmap.size()
+            
+        max_size = 250  # %200 zoom için daha küçük boyut
         
         if original_size.width() > max_size or original_size.height() > max_size:
             # Oranı koruyarak küçült
@@ -102,8 +164,9 @@ class ImageStroke:
         painter.save()
         
         # Optimize render ayarları (performans için)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+        if not self.is_loading:
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
         
         # Opacity ayarla
         painter.setOpacity(self.opacity)
@@ -121,10 +184,11 @@ class ImageStroke:
             painter.rotate(self.rotation)
             painter.translate(-center)
         
-        # Resmi çiz - yüksek kalite ile
-        target_rect = QRectF(0, 0, self.size.x(), self.size.y())
-        source_rect = QRectF(self.original_pixmap.rect())
-        painter.drawPixmap(target_rect, self.original_pixmap, source_rect)
+        # Render pixmap'i çiz (async yüklenmiş veya placeholder)
+        if self.render_pixmap and not self.render_pixmap.isNull():
+            target_rect = QRectF(0, 0, self.size.x(), self.size.y())
+            source_rect = QRectF(self.render_pixmap.rect())
+            painter.drawPixmap(target_rect, self.render_pixmap, source_rect)
         
         painter.restore()
     
