@@ -162,9 +162,9 @@ class SettingsWidget(QWidget):
         self.grid_group = QGroupBox("Çizgi/Kare Ayarları")
         grid_layout = QVBoxLayout()
         
-        # Grid rengi
+        # İnce çizgi rengi
         grid_color_layout = QHBoxLayout()
-        grid_color_layout.addWidget(QLabel("Çizgi Rengi:"))
+        grid_color_layout.addWidget(QLabel("İnce Çizgi Rengi:"))
         
         self.grid_color_button = QPushButton()
         self.grid_color_button.setFixedSize(30, 25)
@@ -174,6 +174,19 @@ class SettingsWidget(QWidget):
         grid_color_layout.addStretch()
         
         grid_layout.addLayout(grid_color_layout)
+        
+        # Kalın çizgi rengi
+        major_color_layout = QHBoxLayout()
+        major_color_layout.addWidget(QLabel("Kalın Çizgi Rengi:"))
+        
+        self.major_grid_color_button = QPushButton()
+        self.major_grid_color_button.setFixedSize(30, 25)
+        self.major_grid_color_button.clicked.connect(self.choose_major_grid_color)
+        self.update_major_grid_color_button()
+        major_color_layout.addWidget(self.major_grid_color_button)
+        major_color_layout.addStretch()
+        
+        grid_layout.addLayout(major_color_layout)
         
         # Grid boyutu
         size_layout = QHBoxLayout()
@@ -188,6 +201,64 @@ class SettingsWidget(QWidget):
         size_layout.addStretch()
         
         grid_layout.addLayout(size_layout)
+        
+        # İnce çizgi kalınlığı
+        width_layout = QHBoxLayout()
+        width_layout.addWidget(QLabel("İnce Çizgi Kalınlığı:"))
+        
+        self.width_spinbox = QSpinBox()
+        self.width_spinbox.setRange(1, 5)
+        self.width_spinbox.setValue(self.grid_width)
+        self.width_spinbox.setSuffix(" px")
+        self.width_spinbox.valueChanged.connect(self.on_grid_width_changed)
+        width_layout.addWidget(self.width_spinbox)
+        width_layout.addStretch()
+        
+        grid_layout.addLayout(width_layout)
+        
+        # Kalın çizgi kalınlığı
+        major_width_layout = QHBoxLayout()
+        major_width_layout.addWidget(QLabel("Kalın Çizgi Kalınlığı:"))
+        
+        self.major_width_spinbox = QSpinBox()
+        self.major_width_spinbox.setRange(1, 8)
+        self.major_width_spinbox.setValue(self.major_grid_width)
+        self.major_width_spinbox.setSuffix(" px")
+        self.major_width_spinbox.valueChanged.connect(self.on_major_grid_width_changed)
+        major_width_layout.addWidget(self.major_width_spinbox)
+        major_width_layout.addStretch()
+        
+        grid_layout.addLayout(major_width_layout)
+        
+        # Kalın çizgi aralığı
+        interval_layout = QHBoxLayout()
+        interval_layout.addWidget(QLabel("Kalın Çizgi Aralığı:"))
+        
+        self.interval_spinbox = QSpinBox()
+        self.interval_spinbox.setRange(2, 20)
+        self.interval_spinbox.setValue(self.major_grid_interval)
+        self.interval_spinbox.setSuffix(" çizgi")
+        self.interval_spinbox.valueChanged.connect(self.on_major_grid_interval_changed)
+        interval_layout.addWidget(self.interval_spinbox)
+        interval_layout.addStretch()
+        
+        grid_layout.addLayout(interval_layout)
+        
+        # Grid saydamlığı
+        opacity_layout = QHBoxLayout()
+        opacity_layout.addWidget(QLabel("Saydamlık:"))
+        
+        self.opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.opacity_slider.setRange(10, 100)  # %10 ile %100 arası
+        self.opacity_slider.setValue(int(self.grid_opacity * 100))
+        self.opacity_slider.valueChanged.connect(self.on_grid_opacity_changed)
+        opacity_layout.addWidget(self.opacity_slider)
+        
+        self.opacity_label = QLabel(f"{int(self.grid_opacity * 100)}%")
+        self.opacity_label.setMinimumWidth(35)
+        opacity_layout.addWidget(self.opacity_label)
+        
+        grid_layout.addLayout(opacity_layout)
         
         # Snap to grid seçeneği
         self.snap_checkbox = QCheckBox("Grid'e Yapıştır (Snap to Grid)")
@@ -220,6 +291,17 @@ class SettingsWidget(QWidget):
         """Grid renk butonunu güncelle"""
         color_hex = self.grid_color.name()
         self.grid_color_button.setStyleSheet(f"""
+            QPushButton {{
+                background-color: {color_hex};
+                border: 1px solid #999;
+                border-radius: 3px;
+            }}
+        """)
+        
+    def update_major_grid_color_button(self):
+        """Kalın grid renk butonunu güncelle"""
+        color_hex = self.major_grid_color.name()
+        self.major_grid_color_button.setStyleSheet(f"""
             QPushButton {{
                 background-color: {color_hex};
                 border: 1px solid #999;
@@ -274,9 +356,38 @@ class SettingsWidget(QWidget):
             self.update_grid_color_button()
             self.emit_background_changed()
             
+    def choose_major_grid_color(self):
+        """Kalın grid rengi seç"""
+        color = QColorDialog.getColor(self.major_grid_color, self)
+        if color.isValid():
+            self.major_grid_color = color
+            self.update_major_grid_color_button()
+            self.emit_background_changed()
+            
     def on_grid_size_changed(self, value):
         """Grid boyutu değiştiğinde"""
         self.grid_size = value
+        self.emit_background_changed()
+        
+    def on_grid_width_changed(self, value):
+        """İnce grid kalınlığı değiştiğinde"""
+        self.grid_width = value
+        self.emit_background_changed()
+        
+    def on_major_grid_width_changed(self, value):
+        """Kalın grid kalınlığı değiştiğinde"""
+        self.major_grid_width = value
+        self.emit_background_changed()
+        
+    def on_major_grid_interval_changed(self, value):
+        """Kalın grid aralığı değiştiğinde"""
+        self.major_grid_interval = value
+        self.emit_background_changed()
+        
+    def on_grid_opacity_changed(self, value):
+        """Grid saydamlığı değiştiğinde"""
+        self.grid_opacity = value / 100.0
+        self.opacity_label.setText(f"{value}%")
         self.emit_background_changed()
         
     def on_snap_changed(self, checked):
@@ -336,7 +447,13 @@ class SettingsWidget(QWidget):
                 
         self.update_bg_color_button()
         self.update_grid_color_button()
+        self.update_major_grid_color_button()
         self.size_spinbox.setValue(self.grid_size)
+        self.width_spinbox.setValue(self.grid_width)
+        self.major_width_spinbox.setValue(self.major_grid_width)
+        self.interval_spinbox.setValue(self.major_grid_interval)
+        self.opacity_slider.setValue(int(self.grid_opacity * 100))
+        self.opacity_label.setText(f"{int(self.grid_opacity * 100)}%")
         self.snap_checkbox.setChecked(self.snap_to_grid)
         
     def set_pdf_orientation(self, orientation):

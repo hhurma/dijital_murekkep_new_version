@@ -20,9 +20,8 @@ class EventHandler:
         elif event.button() == Qt.MouseButton.LeftButton:
             pos = QPointF(event.pos())
             
-            # Space tuşu basılıysa pan başlat
-            if event.modifiers() & Qt.KeyboardModifier.ShiftModifier or \
-               (hasattr(event, 'key') and event.key() == Qt.Key.Key_Space):
+            # Space tuşu basılıysa pan başlat (Shift tuşu ile pan özelliğini kaldırdık)
+            if (hasattr(event, 'key') and event.key() == Qt.Key.Key_Space):
                 self.drawing_widget.is_panning = True
                 self.drawing_widget.pan_start_point = pos
                 self.drawing_widget.setCursor(Qt.CursorShape.ClosedHandCursor)
@@ -288,6 +287,13 @@ class EventHandler:
         elif event.key() == Qt.Key.Key_Space and not self.drawing_widget.is_panning:
             # Space tuşu ile pan modu
             self.drawing_widget.setCursor(Qt.CursorShape.OpenHandCursor)
+        elif event.key() == Qt.Key.Key_Shift:
+            # Shift tuşu basıldığında scale_tool'a bildir
+            if hasattr(self.drawing_widget, 'scale_tool'):
+                self.drawing_widget.scale_tool.set_shift_pressed(True)
+                # Eğer aktif olarak ölçeklendirme yapılıyorsa, ekranı güncelle
+                if self.drawing_widget.scale_tool.is_scaling:
+                    self.drawing_widget.update()
 
     def handle_key_release(self, event):
         """Klavye tuşu bırakıldığında"""
@@ -297,6 +303,13 @@ class EventHandler:
             # Space tuşu bırakıldığında normal cursor
             if not self.drawing_widget.is_panning:
                 self.drawing_widget.setCursor(Qt.CursorShape.ArrowCursor)
+        elif event.key() == Qt.Key.Key_Shift:
+            # Shift tuşu bırakıldığında scale_tool'a bildir
+            if hasattr(self.drawing_widget, 'scale_tool'):
+                self.drawing_widget.scale_tool.set_shift_pressed(False)
+                # Eğer aktif olarak ölçeklendirme yapılıyorsa, ekranı güncelle
+                if self.drawing_widget.scale_tool.is_scaling:
+                    self.drawing_widget.update()
 
     def handle_wheel(self, event):
         """Mouse wheel eventi - zoom için"""

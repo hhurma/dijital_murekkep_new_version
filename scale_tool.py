@@ -16,6 +16,7 @@ class ScaleTool:
         self.active_handle = None    # Aktif tutamak
         self.handle_types = []       # Tutamak tipleri (corner, edge)
         self.background_settings = None  # Grid snap için
+        self.shift_pressed = False   # Shift tuşu durumu
         
     def get_selection_center(self, strokes, selected_strokes):
         """Seçilen stroke'ların merkezini hesapla"""
@@ -68,6 +69,25 @@ class ScaleTool:
         self.scale_handles = []
         self.handle_types = []
         
+        # Seçilen şekillerin tümü düz çizgi mi kontrol et
+        all_lines = True
+        single_line = None
+        
+        for selected_stroke in selected_strokes:
+            if selected_stroke < len(strokes):
+                stroke_data = strokes[selected_stroke]
+                if not hasattr(stroke_data, 'get') or stroke_data.get('type') != 'line':
+                    all_lines = False
+                    break
+                if single_line is None:
+                    single_line = stroke_data
+                    
+        # Tek bir düz çizgi seçiliyse, özel tutamaçlar oluştur
+        if all_lines and len(selected_strokes) == 1 and single_line is not None:
+            self.create_line_handles(single_line)
+            return
+            
+        # Diğer şekiller için standart tutamaçlar
         bounding_rect = self.get_selection_bounding_rect(strokes, selected_strokes)
         if not bounding_rect:
             return
@@ -103,6 +123,41 @@ class ScaleTool:
                                handle_size, handle_size)
             self.scale_handles.append(handle_rect)
             self.handle_types.append(handle_type)
+            
+    def create_line_handles(self, line_stroke):
+        """Düz çizgi için özel tutamaçlar oluştur"""
+        if not line_stroke or 'start_point' not in line_stroke or 'end_point' not in line_stroke:
+            return
+            
+        handle_size = 8
+        
+        # Başlangıç ve bitiş noktaları
+        start_point = QPointF(line_stroke['start_point'][0], line_stroke['start_point'][1])
+        end_point = QPointF(line_stroke['end_point'][0], line_stroke['end_point'][1])
+        
+        # Başlangıç ve bitiş noktalarında tutamaçlar
+        start_handle = QRectF(start_point.x() - handle_size/2, 
+                            start_point.y() - handle_size/2,
+                            handle_size, handle_size)
+        end_handle = QRectF(end_point.x() - handle_size/2, 
+                          end_point.y() - handle_size/2,
+                          handle_size, handle_size)
+        
+        # Tutamaçları ekle
+        self.scale_handles.append(start_handle)
+        self.handle_types.append("start")
+        
+        self.scale_handles.append(end_handle)
+        self.handle_types.append("end")
+        
+        # Orta nokta (çizgiyi taşımak için)
+        mid_point = QPointF((start_point.x() + end_point.x()) / 2, 
+                          (start_point.y() + end_point.y()) / 2)
+        mid_handle = QRectF(mid_point.x() - handle_size/2, 
+                          mid_point.y() - handle_size/2,
+                          handle_size, handle_size)
+        self.scale_handles.append(mid_handle)
+        self.handle_types.append("middle")
     
     def get_handle_at_point(self, pos):
         """Belirtilen noktadaki tutamağı bul"""
@@ -173,6 +228,110 @@ class ScaleTool:
         # Tutamak tipine göre boyutlandırma yöntemini belirle
         handle_type = self.handle_types[self.active_handle]
         
+        # Seçilen şekillerin tümü düz çizgi mi kontrol et
+        all_lines = True
+        for selected_stroke in selected_strokes:
+            if selected_stroke < len(strokes):
+                stroke_data = strokes[selected_stroke]
+                if not hasattr(stroke_data, 'get') or stroke_data.get('type') != 'line':
+                    all_lines = False
+                    break
+        
+        # Eğer tüm seçilen şekiller düz çizgi ise, özel ölçeklendirme uygula
+        if all_lines and len(selected_strokes) == 1:
+            # Tek bir düz çizgi seçiliyse, doğrudan scale_stroke metodunu kullan
+            selected_stroke = selected_strokes[0]
+            stroke_data = strokes[selected_stroke]
+            
+            # Orijinal stroke verilerini sakla
+            if not hasattr(self, 'original_stroke_data'):
+                self.original_stroke_data = {}
+            if id(stroke_data) not in self.original_stroke_data:
+                self.original_stroke_data[id(stroke_data)] = stroke_data.copy()
+            
+            original_data = self.original_stroke_data[id(stroke_data)]
+            original_start = QPointF(original_data['start_point'][0], original_data['start_point'][1])
+            original_end = QPointF(original_data['end_point'][0], original_data['end_point'][1])
+            
+            # Düz çizgi için özel tutamaçlar
+            if handle_type == "start":
+                # Başlangıç noktasını doğrudan güncelle
+                stroke_data['start_point'] = (snapped_pos.x(), snapped_pos.y())
+                return True
+            elif handle_type == "end":
+                # Bitiş noktasını doğrudan güncelle
+                stroke_data['end_point'] = (snapped_pos.x(), snapped_pos.y())
+                return True
+            elif handle_type == "middle":
+                # Orta noktadan taşıma - çizginin tamamını taşı
+                mid_x = (original_start.x() + original_end.x()) / 2
+                mid_y = (original_start.y() + original_end.y()) / 2
+                
+                # Taşıma miktarını hesapla
+                delta_x = snapped_pos.x() - mid_x
+                delta_y = snapped_pos.y() - mid_y
+                
+                # Yeni başlangıç ve bitiş noktaları
+                new_start_x = original_start.x() + delta_x
+                new_start_y = original_start.y() + delta_y
+                new_end_x = original_end.x() + delta_x
+                new_end_y = original_end.y() + delta_y
+                
+                # Çizgiyi güncelle
+                stroke_data['start_point'] = (new_start_x, new_start_y)
+                stroke_data['end_point'] = (new_end_x, new_end_y)
+                return True
+            
+            # Ölçek faktörünü hesapla
+            scale_factor = 1.5  # Varsayılan değer
+            
+            # Tutamak tipine göre ölçeklendirme faktörünü hesapla
+            # Çizgi uzunluğunu hesapla
+            original_length = math.sqrt((original_end.x() - original_start.x())**2 + (original_end.y() - original_start.y())**2)
+            
+            # Tutamak tipine göre yeni uzunluğu hesapla
+            if handle_type == "right":
+                # Sağ tutamak - sağ ucu hareket ettir
+                # Mouse pozisyonu ile sabit uç arasındaki mesafeyi hesapla
+                new_length = math.sqrt((snapped_pos.x() - original_start.x())**2 + (snapped_pos.y() - original_start.y())**2)
+                if original_length > 0:
+                    scale_factor = new_length / original_length
+            elif handle_type == "left":
+                # Sol tutamak - sol ucu hareket ettir
+                # Mouse pozisyonu ile sabit uç arasındaki mesafeyi hesapla
+                new_length = math.sqrt((snapped_pos.x() - original_end.x())**2 + (snapped_pos.y() - original_end.y())**2)
+                if original_length > 0:
+                    scale_factor = new_length / original_length
+            elif handle_type == "top" or handle_type == "bottom":
+                # Üst/alt tutamak - dikey uzunluğa göre ölçeklendir
+                # Çizginin yatay/dikey durumuna göre ölçeklendirme yap
+                dx = original_end.x() - original_start.x()
+                dy = original_end.y() - original_start.y()
+                
+                if abs(dx) > abs(dy):  # Yatay çizgi
+                    if handle_type == "top":
+                        fixed_point = original_start if original_start.y() >= original_end.y() else original_end
+                    else:
+                        fixed_point = original_start if original_start.y() <= original_end.y() else original_end
+                else:  # Dikey çizgi
+                    if handle_type == "top":
+                        fixed_point = original_start if original_start.y() <= original_end.y() else original_end
+                    else:
+                        fixed_point = original_start if original_start.y() >= original_end.y() else original_end
+                
+                new_length = math.sqrt((snapped_pos.x() - fixed_point.x())**2 + (snapped_pos.y() - fixed_point.y())**2)
+                if original_length > 0:
+                    scale_factor = new_length / original_length
+            
+            # Ölçek sınırlarını kontrol et
+            scale_factor = max(0.1, min(5.0, scale_factor))
+            
+            # Çizgiyi ölçeklendir
+            self.scale_stroke(stroke_data, original_data, scale_factor)
+            
+            return True
+            
+        # Diğer şekiller için standart ölçeklendirme
         if handle_type in ["top-left", "top-right", "bottom-left", "bottom-right"]:
             # Köşe tutamakları - proportional scaling
             delta = snapped_pos - self.scale_center
@@ -347,6 +506,15 @@ class ScaleTool:
         
         painter.save()
         
+        # Seçilen şekillerin tümü düz çizgi mi kontrol et
+        is_single_line = False
+        if len(selected_strokes) == 1:
+            selected_stroke = selected_strokes[0]
+            if selected_stroke < len(strokes):
+                stroke_data = strokes[selected_stroke]
+                if hasattr(stroke_data, 'get') and stroke_data.get('type') == 'line':
+                    is_single_line = True
+        
         # Tutamakları çiz
         for i, handle in enumerate(self.scale_handles):
             handle_type = self.handle_types[i]
@@ -355,20 +523,28 @@ class ScaleTool:
                 # Aktif tutamak farklı renkte
                 painter.setBrush(QBrush(Qt.GlobalColor.yellow))
                 painter.setPen(QPen(Qt.GlobalColor.red, 2))
+            elif handle_type in ["start", "end"]:
+                # Düz çizgi uç noktaları - kare şekil
+                painter.setBrush(QBrush(Qt.GlobalColor.green))
+                painter.setPen(QPen(Qt.GlobalColor.darkGreen, 2))
+            elif handle_type == "middle":
+                # Düz çizgi orta noktası - daire şekil
+                painter.setBrush(QBrush(Qt.GlobalColor.blue))
+                painter.setPen(QPen(Qt.GlobalColor.darkBlue, 2))
             elif handle_type in ["top-left", "top-right", "bottom-left", "bottom-right"]:
                 # Köşe tutamakları - kare şekil
                 painter.setBrush(QBrush(Qt.GlobalColor.white))
                 painter.setPen(QPen(Qt.GlobalColor.blue, 2))
             else:
-                # Kenar tutamakları - dikdörtgen şekil
+                # Kenar tutamakları - daire şekil
                 painter.setBrush(QBrush(Qt.GlobalColor.lightGray))
                 painter.setPen(QPen(Qt.GlobalColor.darkBlue, 2))
                 
-            if handle_type in ["top-left", "top-right", "bottom-left", "bottom-right"]:
-                # Köşe tutamakları kare olarak çiz
+            if handle_type in ["top-left", "top-right", "bottom-left", "bottom-right", "start", "end"]:
+                # Köşe tutamakları ve çizgi uç noktaları kare olarak çiz
                 painter.drawRect(handle)
             else:
-                # Kenar tutamakları daire olarak çiz
+                # Kenar tutamakları ve çizgi orta noktası daire olarak çiz
                 painter.drawEllipse(handle)
             
         # Boyutlandırma merkezi
@@ -380,12 +556,25 @@ class ScaleTool:
                                      self.scale_center.y() - center_size/2,
                                      center_size, center_size))
             
-        # Bounding rectangle çiz
-        bounding_rect = self.get_selection_bounding_rect(strokes, selected_strokes)
-        if bounding_rect:
-            painter.setPen(QPen(Qt.GlobalColor.gray, 1, Qt.PenStyle.DashLine))
-            painter.setBrush(QBrush())  # Şeffaf fill
-            painter.drawRect(bounding_rect)
+        # Bounding rectangle çiz (düz çizgi için çizme)
+        if not is_single_line:
+            bounding_rect = self.get_selection_bounding_rect(strokes, selected_strokes)
+            if bounding_rect:
+                painter.setPen(QPen(Qt.GlobalColor.gray, 1, Qt.PenStyle.DashLine))
+                painter.setBrush(QBrush())  # Şeffaf fill
+                painter.drawRect(bounding_rect)
+        else:
+            # Düz çizgi için çizgiyi vurgula
+            selected_stroke = selected_strokes[0]
+            if selected_stroke < len(strokes):
+                stroke_data = strokes[selected_stroke]
+                if 'start_point' in stroke_data and 'end_point' in stroke_data:
+                    start_point = QPointF(stroke_data['start_point'][0], stroke_data['start_point'][1])
+                    end_point = QPointF(stroke_data['end_point'][0], stroke_data['end_point'][1])
+                    
+                    # Çizgiyi vurgula
+                    painter.setPen(QPen(Qt.GlobalColor.gray, 1, Qt.PenStyle.DashLine))
+                    painter.drawLine(start_point, end_point)
                 
         painter.restore()
         
@@ -490,24 +679,53 @@ class ScaleTool:
                     stroke['control_points'].append([scaled_point.x(), scaled_point.y()])
         
         elif stroke_type == 'line':
-            if 'start_point' in original_data:
+            # Düz çizgi için özel ölçeklendirme
+            if 'start_point' in original_data and 'end_point' in original_data:
                 original_start = QPointF(original_data['start_point'][0], original_data['start_point'][1])
-                scaled_start = self.scale_point(original_start, self.scale_center, scale_factor)
+                original_end = QPointF(original_data['end_point'][0], original_data['end_point'][1])
                 
-                # Grid snap aktifse endpoint'i snap'le
+                # Aktif tutamak tipini kontrol et
+                handle_type = self.handle_types[self.active_handle] if self.active_handle is not None else None
+                
+                # Shift tuşu basılıysa her iki ucu da ölçeklendir
+                if self.shift_pressed:
+                    # Her iki ucu da merkeze göre ölçeklendir
+                    scaled_start = self.scale_point(original_start, self.scale_center, scale_factor)
+                    scaled_end = self.scale_point(original_end, self.scale_center, scale_factor)
+                else:
+                    # update_scale metodunda tutamak tipine göre ölçeklendirme yapıldı
+                    # Burada sadece scale_point_from_fixed kullanarak ölçeklendirme yapıyoruz
+                    if handle_type == "right":
+                        scaled_start = original_start
+                        scaled_end = self.scale_point_from_fixed(original_end, original_start, scale_factor)
+                    elif handle_type == "left":
+                        scaled_start = self.scale_point_from_fixed(original_start, original_end, scale_factor)
+                        scaled_end = original_end
+                    elif handle_type == "top":
+                        if original_start.y() <= original_end.y():
+                            scaled_start = self.scale_point_from_fixed(original_start, original_end, scale_factor)
+                            scaled_end = original_end
+                        else:
+                            scaled_start = original_start
+                            scaled_end = self.scale_point_from_fixed(original_end, original_start, scale_factor)
+                    elif handle_type == "bottom":
+                        if original_start.y() >= original_end.y():
+                            scaled_start = self.scale_point_from_fixed(original_start, original_end, scale_factor)
+                            scaled_end = original_end
+                        else:
+                            scaled_start = original_start
+                            scaled_end = self.scale_point_from_fixed(original_end, original_start, scale_factor)
+                    else:
+                        # Köşe tutamakları - her iki ucu da merkeze göre ölçeklendir
+                        scaled_start = self.scale_point(original_start, self.scale_center, scale_factor)
+                        scaled_end = self.scale_point(original_end, self.scale_center, scale_factor)
+                
+                # Grid snap aktifse endpoint'leri snap'le
                 if self.background_settings and self.background_settings.get('snap_to_grid', False):
                     scaled_start = GridSnapUtils.snap_point_to_grid_precise(scaled_start, self.background_settings)
-                
-                stroke['start_point'] = (scaled_start.x(), scaled_start.y())
-            
-            if 'end_point' in original_data:
-                original_end = QPointF(original_data['end_point'][0], original_data['end_point'][1])
-                scaled_end = self.scale_point(original_end, self.scale_center, scale_factor)
-                
-                # Grid snap aktifse endpoint'i snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
                     scaled_end = GridSnapUtils.snap_point_to_grid_precise(scaled_end, self.background_settings)
                 
+                stroke['start_point'] = (scaled_start.x(), scaled_start.y())
                 stroke['end_point'] = (scaled_end.x(), scaled_end.y())
         
         elif stroke_type == 'rectangle':
@@ -559,4 +777,64 @@ class ScaleTool:
                     if scaled_radius == 0:
                         scaled_radius = grid_size
                 
-                stroke['radius'] = scaled_radius 
+                stroke['radius'] = scaled_radius
+                
+    def distance_to_handle(self, point, handle_type):
+        """Bir noktanın belirli bir tutamaca olan uzaklığını hesapla"""
+        if not self.scale_handles or handle_type is None:
+            return float('inf')
+            
+        # Tutamak indeksini bul
+        handle_index = -1
+        for i, h_type in enumerate(self.handle_types):
+            if h_type == handle_type:
+                handle_index = i
+                break
+                
+        if handle_index == -1:
+            return float('inf')
+            
+        # Tutamak merkezi
+        handle = self.scale_handles[handle_index]
+        handle_center = QPointF(handle.center())
+        
+        # Düz çizgiler için özel kontroller
+        # Kenar tutamakları için özel kontrol
+        if handle_type == "left" or handle_type == "right":
+            # X koordinatına göre uzaklık (yatay tutamaçlar için)
+            return abs(point.x() - handle_center.x())
+        elif handle_type == "top" or handle_type == "bottom":
+            # Y koordinatına göre uzaklık (dikey tutamaçlar için)
+            return abs(point.y() - handle_center.y())
+        else:
+            # Köşe tutamakları için normal uzaklık hesapla
+            dx = point.x() - handle_center.x()
+            dy = point.y() - handle_center.y()
+            return math.sqrt(dx*dx + dy*dy)
+        
+    def set_shift_pressed(self, pressed):
+        """Shift tuşu durumunu ayarla"""
+        self.shift_pressed = pressed 
+
+    def scale_point_from_fixed(self, point_to_scale, fixed_point, scale_factor):
+        """Bir noktayı sabit bir noktaya göre ölçeklendir"""
+        # Sabit noktaya göre relatif pozisyon
+        relative_x = point_to_scale.x() - fixed_point.x()
+        relative_y = point_to_scale.y() - fixed_point.y()
+        
+        # Orijinal mesafe ve açıyı hesapla
+        original_distance = math.sqrt(relative_x**2 + relative_y**2)
+        if original_distance == 0:
+            return QPointF(point_to_scale)  # Sıfır uzunluk, değişiklik yok
+            
+        # Açıyı hesapla
+        angle = math.atan2(relative_y, relative_x)
+        
+        # Yeni mesafeyi hesapla
+        new_distance = original_distance * scale_factor
+        
+        # Yeni koordinatları hesapla (açıyı koruyarak)
+        new_x = fixed_point.x() + new_distance * math.cos(angle)
+        new_y = fixed_point.y() + new_distance * math.sin(angle)
+        
+        return QPointF(new_x, new_y) 
