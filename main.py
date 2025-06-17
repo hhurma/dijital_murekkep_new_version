@@ -454,6 +454,9 @@ class MainWindow(QMainWindow):
         # Şekil havuzu sinyali
         self.shape_properties_widget.addToShapeLibrary.connect(self.on_add_selected_to_shape_library)
         
+        # B-spline kontrol noktaları sinyali
+        self.shape_properties_widget.toggleControlPoints.connect(self.on_toggle_control_points)
+        
         self.shape_properties_dock.setWidget(self.shape_properties_widget)
         self.shape_properties_dock.setFloating(False)
         self.shape_properties_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
@@ -1293,6 +1296,32 @@ class MainWindow(QMainWindow):
             self.shape_library_widget.add_selected_shapes()
         else:
             self.show_status_message("Şekil havuzu açık değil.")
+            
+    def on_toggle_control_points(self):
+        """B-spline kontrol noktalarını göster/gizle"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget or not drawing_widget.selection_tool.selected_strokes:
+            return
+            
+        # Undo için state kaydet
+        drawing_widget.save_current_state("Toggle control points")
+        
+        # Seçili stroke'ların kontrol noktalarını aç/kapat
+        changed = False
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                
+                # B-spline kontrolü
+                if stroke.get('type') == 'bspline' or stroke.get('tool_type') == 'bspline':
+                    # Kontrol noktalarının görünürlüğünü değiştir
+                    current = stroke.get('show_control_points', False)
+                    stroke['show_control_points'] = not current
+                    changed = True
+                    
+        if changed:
+            drawing_widget.update()
+            self.show_status_message("Kontrol noktaları görünürlüğü değiştirildi")
     
     def align_shapes(self, alignment_type):
         """Seçili şekilleri hizalar"""

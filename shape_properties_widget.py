@@ -33,6 +33,9 @@ class ShapePropertiesWidget(QWidget):
     # Şekil havuzu sinyali
     addToShapeLibrary = pyqtSignal()  # Seçili şekilleri şekil havuzuna ekle
     
+    # B-spline kontrol noktaları sinyali
+    toggleControlPoints = pyqtSignal()  # B-spline kontrol noktalarını göster/gizle
+    
     LINE_STYLES = {
         Qt.PenStyle.SolidLine: 'Düz',
         Qt.PenStyle.DashLine: 'Kesikli',
@@ -55,6 +58,7 @@ class ShapePropertiesWidget(QWidget):
         self.selected_strokes = []
         self.stroke_data = []
         self.has_fillable_shapes = False  # Dikdörtgen/daire var mı
+        self.has_bspline_shapes = False   # B-spline şekilleri var mı
         
         self.setup_ui()
         
@@ -115,6 +119,19 @@ class ShapePropertiesWidget(QWidget):
         
         line_group.setLayout(line_layout)
         layout.addWidget(line_group)
+        
+        # B-spline özellikleri grubu
+        self.bspline_group = QGroupBox("B-Spline Özellikleri")
+        bspline_layout = QVBoxLayout()
+        
+        # Kontrol noktaları butonu
+        self.toggle_control_points_button = QPushButton("Noktaları Düzenle")
+        self.toggle_control_points_button.clicked.connect(self.on_toggle_control_points)
+        bspline_layout.addWidget(self.toggle_control_points_button)
+        
+        self.bspline_group.setLayout(bspline_layout)
+        layout.addWidget(self.bspline_group)
+        self.bspline_group.setVisible(False)  # Başlangıçta gizli
         
         # Dolgu özellikleri grubu (sadece dikdörtgen/daire için)
         self.fill_group = QGroupBox("Dolgu Özellikleri")
@@ -251,11 +268,14 @@ class ShapePropertiesWidget(QWidget):
         self.shape_library_group.setLayout(library_layout)
         layout.addWidget(self.shape_library_group)
         
+        # Boşluk ekle
         layout.addStretch()
+        
         self.setLayout(layout)
         
-        # Başlangıçta widget'ı gizle
-        self.set_no_selection()
+        # Başlangıçta UI'ı güncelle
+        self.update_ui_values()
+        self.update_button_states()
         
     def update_color_button(self):
         """Renk butonunu güncelle"""
@@ -432,37 +452,41 @@ class ShapePropertiesWidget(QWidget):
         self.show_properties()
         
     def analyze_selected_strokes(self):
-        """Seçilen şekilleri analiz et ve ortak özellikleri bul"""
-        if not self.selected_strokes:
+        """Seçilen stroke'ları analiz et ve ortak özellikleri bul"""
+        self.has_fillable_shapes = False
+        self.has_bspline_shapes = False
+        
+        if not self.stroke_data or not self.selected_strokes:
             return
             
-        # Seçilen stroke'ları topla
-        valid_strokes = []
-        self.has_fillable_shapes = False
-        
         for index in self.selected_strokes:
             if index < len(self.stroke_data):
                 stroke = self.stroke_data[index]
                 
-                # Image stroke'ları atla
-                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                # Image stroke kontrolü
+                if hasattr(stroke, 'stroke_type'):
                     continue
                     
-                # Eski stroke formatı kontrolü
-                if 'type' not in stroke:
-                    continue
-                    
-                valid_strokes.append(stroke)
-                
-                # Dolgu yapılabilir şekil kontrolü
-                if stroke['type'] in ['rectangle', 'circle']:
+                # Doldurulabilir şekilleri kontrol et
+                if stroke.get('type') in ['rectangle', 'circle'] or stroke.get('tool_type') in ['rectangle', 'circle']:
                     self.has_fillable_shapes = True
+                    
+                # B-spline şekillerini kontrol et
+                if stroke.get('type') == 'bspline' or stroke.get('tool_type') == 'bspline':
+                    self.has_bspline_shapes = True
         
-        if not valid_strokes:
-            return
+        # Dolgu özelliklerini göster/gizle
+        self.fill_group.setVisible(self.has_fillable_shapes)
+        
+        # B-spline özelliklerini göster/gizle
+        self.bspline_group.setVisible(self.has_bspline_shapes)
+        
+        # Ortak özellikleri analiz et
+        if self.selected_strokes:
+            self.analyze_common_properties([self.stroke_data[i] for i in self.selected_strokes if i < len(self.stroke_data)])
             
-        # Çoklu seçim için ortak değerleri bul
-        self.analyze_common_properties(valid_strokes)
+        self.update_ui_values()
+        self.update_button_states()
     
     def analyze_common_properties(self, strokes):
         """Çoklu seçimdeki ortak özellikleri analiz et"""
@@ -691,4 +715,46 @@ class ShapePropertiesWidget(QWidget):
         self.selected_strokes = []
         self.stroke_data = []
         self.has_fillable_shapes = False
-        self.setVisible(False) 
+        self.has_bspline_shapes = False
+        self.setVisible(False)
+
+    def on_toggle_control_points(self):
+        """Kontrol noktalarını göster/gizle"""
+        self.toggleControlPoints.emit()
+        
+    def analyze_selected_strokes(self):
+        """Seçilen stroke'ları analiz et ve UI'ı güncelle"""
+        self.has_fillable_shapes = False
+        self.has_bspline_shapes = False
+        
+        if not self.stroke_data or not self.selected_strokes:
+            return
+            
+        for index in self.selected_strokes:
+            if index < len(self.stroke_data):
+                stroke = self.stroke_data[index]
+                
+                # Image stroke kontrolü
+                if hasattr(stroke, 'stroke_type'):
+                    continue
+                    
+                # Doldurulabilir şekilleri kontrol et
+                if stroke.get('type') in ['rectangle', 'circle'] or stroke.get('tool_type') in ['rectangle', 'circle']:
+                    self.has_fillable_shapes = True
+                    
+                # B-spline şekillerini kontrol et
+                if stroke.get('type') == 'bspline' or stroke.get('tool_type') == 'bspline':
+                    self.has_bspline_shapes = True
+                    
+        # Dolgu özelliklerini göster/gizle
+        self.fill_group.setVisible(self.has_fillable_shapes)
+        
+        # B-spline özelliklerini göster/gizle
+        self.bspline_group.setVisible(self.has_bspline_shapes)
+        
+        # Ortak özellikleri analiz et
+        if self.selected_strokes:
+            self.analyze_common_properties([self.stroke_data[i] for i in self.selected_strokes if i < len(self.stroke_data)])
+            
+        self.update_ui_values()
+        self.update_button_states() 

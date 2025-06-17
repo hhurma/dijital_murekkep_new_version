@@ -12,6 +12,7 @@ class BSplineTool:
         self.current_color = Qt.GlobalColor.black
         self.current_width = 2
         self.line_style = Qt.PenStyle.SolidLine
+        self.show_control_points = False  # Kontrol noktalarının görünürlüğünü kontrol eden bayrak
         
     def start_stroke(self, pos, pressure=1.0):
         """Yeni bir çizim başlat"""
@@ -62,7 +63,8 @@ class BSplineTool:
                     'tool_type': 'bspline',  # Eski uyumluluk için
                     'color': self.current_color,
                     'width': self.current_width,
-                    'style': self.line_style  # 'style' field'ını kullan
+                    'style': self.line_style,  # 'style' field'ını kullan
+                    'show_control_points': self.show_control_points  # Kontrol noktalarının görünürlüğü
                 }
                 
                 self.current_stroke = []
@@ -95,6 +97,10 @@ class BSplineTool:
                 continue
                 
             if stroke_data.get('type') != 'bspline' and stroke_data.get('tool_type') != 'bspline':
+                continue
+                
+            # Kontrol noktaları görünür değilse seçilemesin
+            if not stroke_data.get('show_control_points', False):
                 continue
                 
             control_points = stroke_data['control_points']
@@ -187,12 +193,14 @@ class BSplineTool:
         painter.drawPath(path)
         painter.restore()
         
-        # Kontrol noktalarını çiz
-        painter.save()
-        painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
-        for cp in control_points:
-            painter.drawPoint(QPointF(cp[0], cp[1]))
-        painter.restore()
+        # Kontrol noktalarını çiz (eğer görünürlük açıksa)
+        show_points = stroke_data.get('show_control_points', False)
+        if show_points:
+            painter.save()
+            painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+            for cp in control_points:
+                painter.drawPoint(QPointF(cp[0], cp[1]))
+            painter.restore()
         
     def set_color(self, color):
         """Aktif rengi ayarla"""
@@ -218,4 +226,16 @@ class BSplineTool:
                 continue
                 
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
-                self.draw_bspline(painter, stroke_data) 
+                self.draw_bspline(painter, stroke_data)
+                
+    def set_show_control_points(self, show):
+        """Kontrol noktalarının görünürlüğünü ayarla"""
+        self.show_control_points = show
+        
+    def toggle_control_points_visibility(self, stroke_data):
+        """Belirli bir stroke'un kontrol noktalarının görünürlüğünü değiştir"""
+        if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
+            current = stroke_data.get('show_control_points', False)
+            stroke_data['show_control_points'] = not current
+            return True
+        return False 
