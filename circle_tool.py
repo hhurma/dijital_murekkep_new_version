@@ -7,7 +7,7 @@ from grid_snap_utils import GridSnapUtils
 class CircleTool:
     def __init__(self):
         self.is_drawing = False
-        self.center_point = None
+        self.start_point = None  # İlk tıklanan nokta (dikdörtgen gibi)
         self.current_point = None
         self.line_color = Qt.GlobalColor.black
         self.line_width = 2
@@ -25,7 +25,7 @@ class CircleTool:
         if self.background_settings and self.background_settings.get('snap_to_grid', False):
             pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
             
-        self.center_point = pos
+        self.start_point = pos
         self.current_point = pos
         
     def add_point(self, pos, pressure=1.0):
@@ -39,26 +39,34 @@ class CircleTool:
             
     def finish_stroke(self):
         """Çemberi tamamla"""
-        if self.is_drawing and self.center_point and self.current_point:
-            # Yarıçapı hesapla
-            radius = math.sqrt((self.current_point.x() - self.center_point.x())**2 + 
-                             (self.current_point.y() - self.center_point.y())**2)
+        if self.is_drawing and self.start_point and self.current_point:
+            # Bounding rectangle oluştur (dikdörtgen gibi)
+            rect = QRectF(self.start_point, self.current_point).normalized()
             
             # Çok küçük çemberleri engelle
-            if radius < 5:
+            if rect.width() < 5 or rect.height() < 5:
                 self.cancel_stroke()
                 return None
+            
+            # Merkez ve yarıçapı hesapla (elips için en/boy oranını koruyacağız)
+            center_x = rect.center().x()
+            center_y = rect.center().y()
+            radius_x = rect.width() / 2
+            radius_y = rect.height() / 2
+            # Daire için ortalama yarıçap kullan
+            radius = (radius_x + radius_y) / 2
                 
             stroke_data = {
                 'type': 'circle',
-                'center': (self.center_point.x(), self.center_point.y()),
+                'center': (center_x, center_y),
                 'radius': radius,
                 'color': self.line_color,
                 'line_width': self.line_width,
                 'line_style': self.line_style,
+                'fill': self.is_filled,
                 'fill_color': self.fill_color if self.is_filled and self.fill_color else None,
                 'fill_opacity': self.fill_opacity,
-                'is_filled': self.is_filled
+                'is_filled': self.is_filled  # Geriye uyumluluk için
             }
             
             self.cancel_stroke()
@@ -70,7 +78,7 @@ class CircleTool:
     def cancel_stroke(self):
         """Aktif çizimi iptal et"""
         self.is_drawing = False
-        self.center_point = None
+        self.start_point = None
         self.current_point = None
         
     def set_line_color(self, color):
@@ -147,16 +155,23 @@ class CircleTool:
         
     def draw_current_stroke(self, painter):
         """Aktif olarak çizilen çemberi çiz"""
-        if not self.is_drawing or not self.center_point or not self.current_point:
+        if not self.is_drawing or not self.start_point or not self.current_point:
             return
             
-        # Yarıçapı hesapla
-        radius = math.sqrt((self.current_point.x() - self.center_point.x())**2 + 
-                          (self.current_point.y() - self.center_point.y())**2)
+        # Bounding rectangle oluştur (dikdörtgen gibi)
+        rect = QRectF(self.start_point, self.current_point).normalized()
         
-        # Çember için bounding rectangle
-        rect = QRectF(self.center_point.x() - radius, self.center_point.y() - radius, 
-                     radius * 2, radius * 2)
+        # Daire için ortalama yarıçap hesapla
+        radius_x = rect.width() / 2
+        radius_y = rect.height() / 2
+        avg_radius = (radius_x + radius_y) / 2
+        
+        # Merkez noktası
+        center = rect.center()
+        
+        # Daire için kare bounding rect oluştur
+        circle_rect = QRectF(center.x() - avg_radius, center.y() - avg_radius,
+                           avg_radius * 2, avg_radius * 2)
         
         painter.save()
         
@@ -166,7 +181,7 @@ class CircleTool:
             painter.setBrush(fill_brush)
             painter.setOpacity(self.fill_opacity * 0.5)  # Daha şeffaf
             painter.setPen(Qt.PenStyle.NoPen)
-            painter.drawEllipse(rect)
+            painter.drawEllipse(circle_rect)
             painter.setOpacity(1.0)
         
         # Aktif çerçeve çiz
@@ -175,13 +190,11 @@ class CircleTool:
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         painter.setOpacity(0.7)
-        painter.drawEllipse(rect)
+        painter.drawEllipse(circle_rect)
         
-        # Merkez noktası ve yarıçap çizgisi
-        painter.setOpacity(0.5)
+        # Yardımcı çizgiler - bounding rectangle
+        painter.setOpacity(0.3)
         painter.setPen(QPen(self.line_color, 1, Qt.PenStyle.DotLine))
-        painter.drawLine(self.center_point, self.current_point)
-        painter.setPen(QPen(self.line_color, 3))
-        painter.drawPoint(self.center_point)
+        painter.drawRect(rect)
         
         painter.restore() 

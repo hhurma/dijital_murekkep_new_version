@@ -21,6 +21,7 @@ from opacity_widget import OpacityWidget
 from undo_redo_manager import UndoRedoManager
 from settings_manager import SettingsManager
 from session_manager import SessionManager
+from shape_properties_widget import ShapePropertiesWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -77,6 +78,9 @@ class MainWindow(QMainWindow):
         
         # Background dock widget oluştur
         self.create_background_dock()
+        
+        # Shape properties dock widget oluştur
+        self.create_shape_properties_dock()
         
         # Tab widget'ını layout'a ekle
         self.tab_widget = self.tab_manager.get_tab_widget()
@@ -420,6 +424,53 @@ class MainWindow(QMainWindow):
         # Varsayılan olarak gizli
         self.shape_library_dock.hide()
         
+    def create_shape_properties_dock(self):
+        """Şekil özellikleri dock widget'ı oluştur"""
+        self.shape_properties_dock = QDockWidget("Şekil Özellikleri", self)
+        self.shape_properties_widget = ShapePropertiesWidget()
+        
+        # Sinyalleri bağla
+        self.shape_properties_widget.colorChanged.connect(self.on_shape_color_changed)
+        self.shape_properties_widget.widthChanged.connect(self.on_shape_width_changed)
+        self.shape_properties_widget.lineStyleChanged.connect(self.on_shape_line_style_changed)
+        self.shape_properties_widget.fillColorChanged.connect(self.on_shape_fill_color_changed)
+        self.shape_properties_widget.fillEnabledChanged.connect(self.on_shape_fill_enabled_changed)
+        self.shape_properties_widget.fillOpacityChanged.connect(self.on_shape_fill_opacity_changed)
+        
+        # Grup işlemi sinyalleri
+        self.shape_properties_widget.groupShapes.connect(self.on_group_shapes)
+        self.shape_properties_widget.ungroupShapes.connect(self.on_ungroup_shapes)
+        
+        # Hizalama sinyalleri
+        self.shape_properties_widget.alignLeft.connect(self.on_align_left)
+        self.shape_properties_widget.alignRight.connect(self.on_align_right)
+        self.shape_properties_widget.alignTop.connect(self.on_align_top)
+        self.shape_properties_widget.alignBottom.connect(self.on_align_bottom)
+        self.shape_properties_widget.alignCenterH.connect(self.on_align_center_h)
+        self.shape_properties_widget.alignCenterV.connect(self.on_align_center_v)
+        self.shape_properties_widget.distributeH.connect(self.on_distribute_h)
+        self.shape_properties_widget.distributeV.connect(self.on_distribute_v)
+        
+        # Şekil havuzu sinyali
+        self.shape_properties_widget.addToShapeLibrary.connect(self.on_add_selected_to_shape_library)
+        
+        self.shape_properties_dock.setWidget(self.shape_properties_widget)
+        self.shape_properties_dock.setFloating(False)
+        self.shape_properties_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
+                                              QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.shape_properties_dock)
+        
+        # Varsayılan olarak gizli
+        self.shape_properties_dock.hide()
+        
+    def toggle_shape_properties_dock(self):
+        """Şekil özellikleri dock widget'ını aç/kapat"""
+        if self.shape_properties_dock.isVisible():
+            self.shape_properties_dock.hide()
+        else:
+            self.shape_properties_dock.show()
+        
     def toggle_shape_library_dock(self):
         """Şekil havuzu dock widget'ını aç/kapat"""
         if self.shape_library_dock.isVisible():
@@ -679,6 +730,156 @@ class MainWindow(QMainWindow):
         # Çizgi stilini ayarlara kaydet
         self.settings.set_line_style(style)
         self.settings.save_settings()
+    
+    def on_shape_color_changed(self, color):
+        """Seçilen şekillerin rengini değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape color")
+            
+            # Seçilen şekillerin rengini değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    stroke['color'] = color
+            
+            current_widget.update()
+            self.show_status_message("Şekil rengi değiştirildi")
+    
+    def on_shape_width_changed(self, width):
+        """Seçilen şekillerin kalınlığını değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape width")
+            
+            # Seçilen şekillerin kalınlığını değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    
+                    # Stroke tipine göre doğru field'ı kullan
+                    if stroke['type'] in ['rectangle', 'circle']:
+                        stroke['line_width'] = width
+                    else:
+                        # Line, bspline, freehand için 'width' kullan
+                        stroke['width'] = width
+            
+            current_widget.update()
+            self.show_status_message("Şekil kalınlığı değiştirildi")
+    
+    def on_shape_line_style_changed(self, line_style):
+        """Seçilen şekillerin çizgi stilini değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape line style")
+            
+            # Seçilen şekillerin çizgi stilini değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    
+                    # Stroke tipine göre doğru field'ı kullan
+                    if stroke['type'] in ['rectangle', 'circle']:
+                        stroke['line_style'] = line_style
+                    else:
+                        # Line, bspline, freehand için 'style' kullan
+                        stroke['style'] = line_style
+            
+            current_widget.update()
+            self.show_status_message("Şekil çizgi stili değiştirildi")
+    
+    def on_shape_fill_color_changed(self, color):
+        """Seçilen şekillerin dolgu rengini değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape fill color")
+            
+            # Sadece dikdörtgen ve daire şekillerini değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    # Sadece dikdörtgen ve daire için
+                    if stroke['type'] in ['rectangle', 'circle']:
+                        stroke['fill_color'] = color
+            
+            current_widget.update()
+            self.show_status_message("Şekil dolgu rengi değiştirildi")
+    
+    def on_shape_fill_enabled_changed(self, enabled):
+        """Seçilen şekillerin dolgu durumunu değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape fill enabled")
+            
+            # Sadece dikdörtgen ve daire şekillerini değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    # Sadece dikdörtgen ve daire için
+                    if stroke['type'] in ['rectangle', 'circle']:
+                        stroke['fill'] = enabled
+            
+            current_widget.update()
+            self.show_status_message("Şekil dolgu durumu değiştirildi")
+    
+    def on_shape_fill_opacity_changed(self, opacity):
+        """Seçilen şekillerin dolgu şeffaflığını değiştir"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change shape fill opacity")
+            
+            # Sadece rectangle ve circle'ların dolgu şeffaflığını değiştir
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    # Image stroke'ları atla
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        continue
+                    # Eski stroke formatı kontrolü
+                    if 'type' not in stroke:
+                        continue
+                    # Sadece rectangle ve circle
+                    if stroke['type'] in ['rectangle', 'circle']:
+                        stroke['fill_opacity'] = opacity
+            
+            current_widget.update()
+            self.show_status_message("Şekil dolgu şeffaflığı değiştirildi")
             
     def on_background_changed(self, settings):
         """Arka plan ayarları değiştiğinde aktif tab'a bildir"""
@@ -988,6 +1189,300 @@ class MainWindow(QMainWindow):
         
         super().closeEvent(event)
     
+    # Grup işlemi handler'ları
+    def on_group_shapes(self):
+        """Seçili şekilleri grupla"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or len(current_widget.selection_tool.selected_strokes) < 2:
+            return
+            
+        selected_indices = current_widget.selection_tool.selected_strokes[:]
+        
+        # Undo için state kaydet
+        current_widget.save_current_state("Group shapes")
+        
+        # Grup ID oluştur
+        import time
+        group_id = f"group_{int(time.time() * 1000)}"
+        
+        # Seçili stroke'ları grupla
+        for index in selected_indices:
+            if index < len(current_widget.strokes):
+                stroke = current_widget.strokes[index]
+                if hasattr(stroke, 'group_id'):
+                    stroke.group_id = group_id
+                elif isinstance(stroke, dict):
+                    stroke['group_id'] = group_id
+        
+        current_widget.update()
+        
+        # Shape properties widget'ını güncelle (buton durumları için)
+        current_widget.update_shape_properties()
+        
+        self.show_status_message(f"{len(selected_indices)} şekil gruplandı")
+    
+    def on_ungroup_shapes(self):
+        """Seçili şekillerin grubunu çöz"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.selection_tool.selected_strokes:
+            return
+            
+        selected_indices = current_widget.selection_tool.selected_strokes[:]
+        ungrouped_count = 0
+        
+        # Undo için state kaydet
+        current_widget.save_current_state("Ungroup shapes")
+        
+        # Seçili stroke'ların gruplarını çöz
+        for index in selected_indices:
+            if index < len(current_widget.strokes):
+                stroke = current_widget.strokes[index]
+                if hasattr(stroke, 'group_id'):
+                    if hasattr(stroke, 'group_id') and stroke.group_id:
+                        stroke.group_id = None
+                        ungrouped_count += 1
+                elif isinstance(stroke, dict) and 'group_id' in stroke:
+                    if stroke['group_id']:
+                        stroke['group_id'] = None
+                        ungrouped_count += 1
+        
+        current_widget.update()
+        
+        # Shape properties widget'ını güncelle (buton durumları için)
+        current_widget.update_shape_properties()
+        
+        if ungrouped_count > 0:
+            self.show_status_message(f"{ungrouped_count} şekil gruptan çıkarıldı")
+    
+    # Hizalama handler'ları
+    def on_align_left(self):
+        """Seçili şekilleri sola hizala"""
+        self.align_shapes('left')
+    
+    def on_align_right(self):
+        """Seçili şekilleri sağa hizala"""
+        self.align_shapes('right')
+    
+    def on_align_top(self):
+        """Seçili şekilleri yukarı hizala"""
+        self.align_shapes('top')
+    
+    def on_align_bottom(self):
+        """Seçili şekilleri aşağı hizala"""
+        self.align_shapes('bottom')
+    
+    def on_align_center_h(self):
+        """Seçili şekilleri yatay ortala"""
+        self.align_shapes('center_h')
+    
+    def on_align_center_v(self):
+        """Seçili şekilleri dikey ortala"""
+        self.align_shapes('center_v')
+    
+    def on_distribute_h(self):
+        """Seçili şekilleri yatay dağıt"""
+        self.distribute_shapes('horizontal')
+    
+    def on_distribute_v(self):
+        """Seçili şekilleri dikey dağıt"""
+        self.distribute_shapes('vertical')
+    
+    def on_add_selected_to_shape_library(self):
+        """Seçilen şekilleri şekil havuzuna ekler"""
+        if hasattr(self, 'shape_library_widget'):
+            self.shape_library_widget.add_selected_shapes()
+        else:
+            self.show_status_message("Şekil havuzu açık değil.")
+    
+    def align_shapes(self, alignment_type):
+        """Seçili şekilleri hizalar"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget or len(drawing_widget.selection_tool.selected_strokes) < 2:
+            return
+            
+        selected_indices = drawing_widget.selection_tool.selected_strokes[:]
+        
+        # Undo için state kaydet
+        drawing_widget.save_current_state(f"Align {alignment_type}")
+        
+        # Seçili şekillerin sınırlarını hesapla
+        bounds = []
+        for index in selected_indices:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                bound = self.get_stroke_bounds(stroke)
+                if bound:
+                    bounds.append((index, bound))
+        
+        if len(bounds) < 2:
+            return
+        
+        # Hizalama referansını belirle (ilk şeklin sınırları)
+        ref_bound = bounds[0][1]
+        
+        # Hizalama tipine göre referans değeri
+        if alignment_type == 'left':
+            ref_value = ref_bound[0]  # min_x
+        elif alignment_type == 'right':
+            ref_value = ref_bound[2]  # max_x
+        elif alignment_type == 'top':
+            ref_value = ref_bound[1]  # min_y
+        elif alignment_type == 'bottom':
+            ref_value = ref_bound[3]  # max_y
+        elif alignment_type == 'center_h':
+            ref_value = (ref_bound[0] + ref_bound[2]) / 2  # center_x
+        elif alignment_type == 'center_v':
+            ref_value = (ref_bound[1] + ref_bound[3]) / 2  # center_y
+        
+        # Diğer şekilleri hizala
+        for index, bound in bounds[1:]:
+            stroke = drawing_widget.strokes[index]
+            
+            if alignment_type == 'left':
+                offset_x = ref_value - bound[0]
+                offset_y = 0
+            elif alignment_type == 'right':
+                offset_x = ref_value - bound[2]
+                offset_y = 0
+            elif alignment_type == 'top':
+                offset_x = 0
+                offset_y = ref_value - bound[1]
+            elif alignment_type == 'bottom':
+                offset_x = 0
+                offset_y = ref_value - bound[3]
+            elif alignment_type == 'center_h':
+                current_center_x = (bound[0] + bound[2]) / 2
+                offset_x = ref_value - current_center_x
+                offset_y = 0
+            elif alignment_type == 'center_v':
+                current_center_y = (bound[1] + bound[3]) / 2
+                offset_x = 0
+                offset_y = ref_value - current_center_y
+            
+            # Offset uygula
+            self.apply_offset_to_stroke_inplace(stroke, offset_x, offset_y)
+        
+        drawing_widget.update()
+        self.show_status_message(f"Şekiller {alignment_type} hizalandı")
+    
+    def distribute_shapes(self, direction):
+        """Şekilleri dağıt"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget or len(drawing_widget.selection_tool.selected_strokes) < 3:
+            return
+            
+        selected_indices = drawing_widget.selection_tool.selected_strokes[:]
+        
+        # Undo için state kaydet
+        drawing_widget.save_current_state(f"Distribute {direction}")
+        
+        # Seçili şekillerin sınırlarını hesapla
+        shapes_with_bounds = []
+        for index in selected_indices:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                bound = self.get_stroke_bounds(stroke)
+                if bound:
+                    if direction == 'horizontal':
+                        center = (bound[0] + bound[2]) / 2  # center_x
+                    else:  # vertical
+                        center = (bound[1] + bound[3]) / 2  # center_y
+                    shapes_with_bounds.append((index, stroke, center))
+        
+        if len(shapes_with_bounds) < 3:
+            return
+        
+        # Merkez konumlarına göre sırala
+        shapes_with_bounds.sort(key=lambda x: x[2])
+        
+        # İlk ve son şekil arasındaki mesafeyi eşit böl
+        first_center = shapes_with_bounds[0][2]
+        last_center = shapes_with_bounds[-1][2]
+        total_distance = last_center - first_center
+        step = total_distance / (len(shapes_with_bounds) - 1)
+        
+        # Orta şekilleri yeniden konumlandır
+        for i in range(1, len(shapes_with_bounds) - 1):
+            index, stroke, current_center = shapes_with_bounds[i]
+            target_center = first_center + (i * step)
+            
+            if direction == 'horizontal':
+                offset_x = target_center - current_center
+                offset_y = 0
+            else:  # vertical
+                offset_x = 0
+                offset_y = target_center - current_center
+            
+            self.apply_offset_to_stroke_inplace(stroke, offset_x, offset_y)
+        
+        drawing_widget.update()
+        self.show_status_message(f"Şekiller {direction} dağıtıldı")
+    
+    def get_stroke_bounds(self, stroke):
+        """Stroke'un sınırlarını hesapla (min_x, min_y, max_x, max_y)"""
+        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+            bounds = stroke.get_bounds()
+            return (bounds.left(), bounds.top(), bounds.right(), bounds.bottom())
+        
+        if 'type' not in stroke:
+            return None
+            
+        points = self.get_stroke_points_for_bounds(stroke)
+        if not points:
+            return None
+            
+        min_x = min(p[0] for p in points)
+        max_x = max(p[0] for p in points)
+        min_y = min(p[1] for p in points)
+        max_y = max(p[1] for p in points)
+        
+        return (min_x, min_y, max_x, max_y)
+    
+    def apply_offset_to_stroke_inplace(self, stroke, offset_x, offset_y):
+        """Stroke'a offset uygula (in-place)"""
+        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+            stroke.position += QPointF(offset_x, offset_y)
+            return
+            
+        if 'type' not in stroke:
+            return
+            
+        if stroke['type'] == 'freehand':
+            if 'points' in stroke:
+                for point in stroke['points']:
+                    if isinstance(point, dict):
+                        point['x'] += offset_x
+                        point['y'] += offset_y
+                        
+        elif stroke['type'] == 'bspline':
+            if 'control_points' in stroke:
+                for cp in stroke['control_points']:
+                    cp[0] += offset_x
+                    cp[1] += offset_y
+                    
+        elif stroke['type'] == 'line':
+            if 'start_point' in stroke:
+                start = stroke['start_point']
+                stroke['start_point'] = (start[0] + offset_x, start[1] + offset_y)
+            if 'end_point' in stroke:
+                end = stroke['end_point']
+                stroke['end_point'] = (end[0] + offset_x, end[1] + offset_y)
+                
+        elif stroke['type'] == 'rectangle':
+            if 'corners' in stroke:
+                for i, corner in enumerate(stroke['corners']):
+                    stroke['corners'][i] = (corner[0] + offset_x, corner[1] + offset_y)
+            elif 'top_left' in stroke and 'bottom_right' in stroke:
+                tl = stroke['top_left']
+                br = stroke['bottom_right']
+                stroke['top_left'] = (tl[0] + offset_x, tl[1] + offset_y)
+                stroke['bottom_right'] = (br[0] + offset_x, br[1] + offset_y)
+                
+        elif stroke['type'] == 'circle':
+            if 'center' in stroke:
+                center = stroke['center']
+                stroke['center'] = (center[0] + offset_x, center[1] + offset_y)
+
     def clear_image_cache(self):
         """Image cache klasörünü temizle"""
         try:

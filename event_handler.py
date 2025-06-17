@@ -484,6 +484,8 @@ class EventHandler:
             if selected is None:
                 # Dikdörtgen seçimi başarısızsa, nokta seçimi dene
                 self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes)
+            # Seçim değişti - shape properties dock'unu güncelle
+            self.drawing_widget.update_shape_properties()
             self.drawing_widget.update()
 
     def handle_move_press(self, pos):
@@ -503,6 +505,8 @@ class EventHandler:
             if self.drawing_widget.selection_tool.selected_strokes:
                 self.drawing_widget._move_state_saved = True
                 self.drawing_widget.move_tool.start_move(pos)
+                # Seçim değişti - shape properties dock'unu güncelle
+                self.drawing_widget.update_shape_properties()
                 self.drawing_widget.update()
 
     def handle_move_move(self, pos):
@@ -538,6 +542,8 @@ class EventHandler:
             if self.drawing_widget.selection_tool.selected_strokes:
                 # Tutamakları oluştur ama döndürmeyi başlatma
                 self.drawing_widget.rotate_tool.create_rotation_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
+                # Seçim değişti - shape properties dock'unu güncelle
+                self.drawing_widget.update_shape_properties()
                 self.drawing_widget.update()
 
     def handle_rotate_move(self, pos):
@@ -576,6 +582,8 @@ class EventHandler:
             if self.drawing_widget.selection_tool.selected_strokes:
                 # Tutamakları oluştur ama boyutlandırmayı başlatma
                 self.drawing_widget.scale_tool.create_scale_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
+                # Seçim değişti - shape properties dock'unu güncelle
+                self.drawing_widget.update_shape_properties()
                 self.drawing_widget.update()
 
     def handle_scale_move(self, pos):

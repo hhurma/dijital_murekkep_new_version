@@ -54,7 +54,7 @@ class BSplineTool:
                 # Stroke data oluştur
                 stroke_data = {
                     'type': 'bspline',  # Modüler sistem için 'type' anahtarı
-                    'control_points': np.array(tck[1]).T,
+                    'control_points': np.array(tck[1]).T.tolist(),  # Liste olarak kaydet
                     'knots': tck[0],
                     'degree': tck[2],
                     'u': u,
@@ -62,7 +62,7 @@ class BSplineTool:
                     'tool_type': 'bspline',  # Eski uyumluluk için
                     'color': self.current_color,
                     'width': self.current_width,
-                    'line_style': self.line_style
+                    'style': self.line_style  # 'style' field'ını kullan
                 }
                 
                 self.current_stroke = []
@@ -120,7 +120,7 @@ class BSplineTool:
                 return False
                 
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
-                stroke_data['control_points'][cp_index] = np.array([new_pos.x(), new_pos.y()])
+                stroke_data['control_points'][cp_index] = [new_pos.x(), new_pos.y()]
                 return True
                 
         return False
@@ -161,7 +161,7 @@ class BSplineTool:
         painter.save()
         color = stroke_data.get('color', Qt.GlobalColor.black)
         width = stroke_data.get('width', 2)
-        line_style = stroke_data.get('line_style', Qt.PenStyle.SolidLine)
+        line_style = stroke_data.get('style', Qt.PenStyle.SolidLine)
         
         # Color string ise QColor'a çevir
         from PyQt6.QtGui import QColor
@@ -173,6 +173,10 @@ class BSplineTool:
         pen = QPen(color, width, line_style, 
                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
+        
+        # Control points'i numpy array'e çevir
+        if isinstance(control_points, list):
+            control_points = np.array(control_points)
         
         tck = (knots, control_points.T, degree)
         x_fine, y_fine = splev(np.linspace(0, u[-1], 200), tck)

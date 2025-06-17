@@ -16,6 +16,7 @@ class ImageStroke:
         self.cache_manager = cache_manager
         self.is_loading = False
         self.render_pixmap = None  # Render için kullanılacak pixmap
+        self.group_id = None  # Grup ID'si
         
         # Dosya hash'i (aynı resim kontrolü için)
         self.file_hash = self._calculate_file_hash()
@@ -194,23 +195,27 @@ class ImageStroke:
     
     def copy(self):
         """Kopyasını oluştur"""
-        return ImageStroke(
+        new_stroke = ImageStroke(
             self.image_path,
             self.position,
             self.size,
             self.rotation,
             self.opacity
         )
+        new_stroke.group_id = self.group_id
+        return new_stroke
     
     def __deepcopy__(self, memo):
         """Deep copy desteği"""
-        return ImageStroke(
+        new_stroke = ImageStroke(
             self.image_path,
             QPointF(self.position),
             QPointF(self.size),
             self.rotation,
             self.opacity
         )
+        new_stroke.group_id = self.group_id
+        return new_stroke
     
     def cache_image(self, cache_dir):
         """Resmi cache klasörüne kopyala"""
@@ -242,7 +247,8 @@ class ImageStroke:
             'size': [self.size.x(), self.size.y()],
             'rotation': self.rotation,
             'opacity': self.opacity,
-            'file_hash': self.file_hash
+            'file_hash': self.file_hash,
+            'group_id': self.group_id
         }
     
     @classmethod
@@ -259,6 +265,7 @@ class ImageStroke:
             data.get('opacity', 1.0)
         )
         
+        image_stroke.group_id = data.get('group_id', None)
         return image_stroke
     
     def get_center(self):

@@ -61,8 +61,19 @@ class SelectionTool:
                 image_bounds = stroke_data.get_bounds()
                 if self.selection_rect.intersects(image_bounds):
                     if stroke_index not in self.selected_strokes:
-                        self.selected_strokes.append(stroke_index)
-                        newly_selected.append(stroke_index)
+                        # Grup üyelerini kontrol et
+                        group_id = self.get_stroke_group_id(stroke_data)
+                        if group_id:
+                            # Bu stroke bir gruba ait - grup üyelerini ekle
+                            group_members = self.find_group_members(strokes, group_id)
+                            for member_index in group_members:
+                                if member_index not in self.selected_strokes:
+                                    self.selected_strokes.append(member_index)
+                                    newly_selected.append(member_index)
+                        else:
+                            # Tek stroke ekle
+                            self.selected_strokes.append(stroke_index)
+                            newly_selected.append(stroke_index)
                 continue
                 
             # Güvenlik kontrolü - eski stroke'lar için
@@ -78,11 +89,22 @@ class SelectionTool:
             if not stroke_selected and stroke_data['type'] == 'bspline':
                 stroke_selected = self.check_curve_intersection(stroke_data, self.selection_rect)
             
-            # Stroke seçildiyse listeye ekle
+            # Stroke seçildiyse listeye ekle (grup desteği ile)
             if stroke_selected:
                 if stroke_index not in self.selected_strokes:
-                    self.selected_strokes.append(stroke_index)
-                    newly_selected.append(stroke_index)
+                    # Grup üyelerini kontrol et
+                    group_id = self.get_stroke_group_id(stroke_data)
+                    if group_id:
+                        # Bu stroke bir gruba ait - grup üyelerini ekle
+                        group_members = self.find_group_members(strokes, group_id)
+                        for member_index in group_members:
+                            if member_index not in self.selected_strokes:
+                                self.selected_strokes.append(member_index)
+                                newly_selected.append(member_index)
+                    else:
+                        # Tek stroke ekle
+                        self.selected_strokes.append(stroke_index)
+                        newly_selected.append(stroke_index)
                     
         return newly_selected if newly_selected else self.selected_strokes
         
@@ -95,7 +117,7 @@ class SelectionTool:
             # Image stroke kontrolü
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
                 if stroke_data.contains_point(pos):
-                    return self.toggle_stroke_selection(stroke_index)
+                    return self.toggle_stroke_selection(stroke_index, strokes)
                 continue
                 
             # Güvenlik kontrolü - eski stroke'lar için
@@ -104,7 +126,7 @@ class SelectionTool:
                 
             # Modüler yakınlık kontrolü
             if StrokeHandler.is_point_near_stroke(stroke_data, pos, tolerance):
-                return self.toggle_stroke_selection(stroke_index)
+                return self.toggle_stroke_selection(stroke_index, strokes)
             
             # B-spline için ek eğri kontrolü
             if stroke_data['type'] == 'bspline':
@@ -115,6 +137,10 @@ class SelectionTool:
                     degree = stroke_data['degree']
                     u = stroke_data['u']
                     
+                    # Control points'i numpy array'e çevir
+                    if isinstance(control_points, list):
+                        control_points = np.array(control_points)
+                    
                     # B-spline eğrisini değerlendir
                     tck = (knots, control_points.T, degree)
                     u_values = np.linspace(0, u[-1], 100)  # Eğri üzerinde 100 nokta
@@ -124,7 +150,7 @@ class SelectionTool:
                     for i in range(len(x_curve)):
                         curve_point = QPointF(x_curve[i], y_curve[i])
                         if (pos - curve_point).manhattanLength() < tolerance:
-                            return self.toggle_stroke_selection(stroke_index)
+                            return self.toggle_stroke_selection(stroke_index, strokes)
                 except:
                     pass
                     
@@ -145,6 +171,10 @@ class SelectionTool:
             degree = stroke_data['degree']
             u = stroke_data['u']
             
+            # Control points'i numpy array'e çevir
+            if isinstance(control_points, list):
+                control_points = np.array(control_points)
+            
             # B-spline eğrisini değerlendir
             tck = (knots, control_points.T, degree)
             u_values = np.linspace(0, u[-1], 50)  # Daha az nokta ile hızlı kontrol
@@ -160,19 +190,96 @@ class SelectionTool:
         except:
             return False
         
-    def toggle_stroke_selection(self, stroke_index):
-        """Stroke seçimini toggle et (ekle/kaldır)"""
+    def toggle_stroke_selection(self, stroke_index, strokes=None):
+        """Stroke seçimini toggle et (ekle/kaldır) - grup desteği ile"""
+        if strokes is None:
+            # Eski davranış - geriye uyumluluk için
+            if self.ctrl_pressed:
+                if stroke_index in self.selected_strokes:
+                    self.selected_strokes.remove(stroke_index)
+                else:
+                    self.selected_strokes.append(stroke_index)
+            else:
+                self.selected_strokes = [stroke_index]
+            return self.selected_strokes
+        
+        # Grup desteği ile yeni davranış
+        target_strokes = [stroke_index]
+        
+        # Seçilen stroke'un grup ID'sini kontrol et
+        if stroke_index < len(strokes):
+            stroke = strokes[stroke_index]
+            group_id = self.get_stroke_group_id(stroke)
+            
+            if group_id:
+                # Bu stroke bir gruba ait - grup üyelerini bul
+                group_members = self.find_group_members(strokes, group_id)
+                target_strokes = group_members
+        
         if self.ctrl_pressed:
             # Ctrl basılıysa toggle yap
-            if stroke_index in self.selected_strokes:
-                self.selected_strokes.remove(stroke_index)
+            # Eğer target stroke'lardan herhangi biri seçiliyse, hepsini kaldır
+            if any(idx in self.selected_strokes for idx in target_strokes):
+                for idx in target_strokes:
+                    if idx in self.selected_strokes:
+                        self.selected_strokes.remove(idx)
             else:
-                self.selected_strokes.append(stroke_index)
+                # Hiçbiri seçili değilse, hepsini ekle
+                for idx in target_strokes:
+                    if idx not in self.selected_strokes:
+                        self.selected_strokes.append(idx)
         else:
-            # Ctrl basılı değilse, sadece bu stroke'u seç
-            self.selected_strokes = [stroke_index]
+            # Ctrl basılı değilse, sadece bu stroke'ları seç
+            self.selected_strokes = target_strokes[:]
             
         return self.selected_strokes
+    
+    def get_stroke_group_id(self, stroke):
+        """Stroke'un grup ID'sini al"""
+        if hasattr(stroke, 'group_id'):
+            return getattr(stroke, 'group_id', None)
+        elif isinstance(stroke, dict):
+            return stroke.get('group_id', None)
+        return None
+    
+    def find_group_members(self, strokes, group_id):
+        """Belirtilen grup ID'sine sahip tüm stroke'ları bul"""
+        if not group_id:
+            return []
+            
+        group_members = []
+        for i, stroke in enumerate(strokes):
+            stroke_group_id = self.get_stroke_group_id(stroke)
+            if stroke_group_id == group_id:
+                group_members.append(i)
+                
+        return group_members
+    
+    def is_selection_grouped(self, strokes):
+        """Seçili stroke'ların hepsi aynı gruba ait mi kontrol et"""
+        if len(self.selected_strokes) < 2:
+            return False
+            
+        # İlk stroke'un grup ID'sini al
+        if not self.selected_strokes or self.selected_strokes[0] >= len(strokes):
+            return False
+            
+        first_stroke = strokes[self.selected_strokes[0]]
+        first_group_id = self.get_stroke_group_id(first_stroke)
+        
+        if not first_group_id:
+            return False
+            
+        # Diğer stroke'ların aynı grup ID'sine sahip olup olmadığını kontrol et
+        for stroke_index in self.selected_strokes[1:]:
+            if stroke_index >= len(strokes):
+                continue
+            stroke = strokes[stroke_index]
+            group_id = self.get_stroke_group_id(stroke)
+            if group_id != first_group_id:
+                return False
+                
+        return True
         
     def clear_selection(self):
         """Seçimi temizle"""
@@ -298,6 +405,10 @@ class SelectionTool:
             
         painter.save()
         
+        # Grup seçimi mi kontrol et - renk seçimi için
+        is_grouped = self.is_selection_grouped(strokes)
+        highlight_color = Qt.GlobalColor.blue if is_grouped else Qt.GlobalColor.green
+        
         # Kesin seçili stroke'ları vurgula
         for stroke_index in self.selected_strokes:
             if stroke_index < len(strokes):
@@ -307,7 +418,7 @@ class SelectionTool:
                 if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
                     # Resim için özel vurgulama
                     bounds = stroke_data.get_bounds()
-                    pen = QPen(Qt.GlobalColor.green, 3, Qt.PenStyle.SolidLine)
+                    pen = QPen(highlight_color, 3, Qt.PenStyle.SolidLine)
                     painter.setPen(pen)
                     painter.drawRect(bounds)
                     continue
@@ -316,7 +427,7 @@ class SelectionTool:
                 if hasattr(stroke_data, 'get') and 'type' not in stroke_data:
                     continue
                 elif hasattr(stroke_data, 'get'):
-                    StrokeHandler.draw_stroke_highlight(painter, stroke_data, Qt.GlobalColor.green, 8)
+                    StrokeHandler.draw_stroke_highlight(painter, stroke_data, highlight_color, 8)
                     
         # Preview (geçici) seçili stroke'ları açık yeşil ile vurgula
         for stroke_index in self.preview_strokes:
@@ -375,7 +486,9 @@ class SelectionTool:
                 bounding_rect = QRectF(min_x - padding, min_y - padding, 
                                      max_x - min_x + 2*padding, max_y - min_y + 2*padding)
                 
-                pen = QPen(Qt.GlobalColor.green, 2, Qt.PenStyle.DashLine)
+                # Grup seçimi ise mavi, normal seçim ise yeşil
+                bounding_color = Qt.GlobalColor.blue if is_grouped else Qt.GlobalColor.green
+                pen = QPen(bounding_color, 2, Qt.PenStyle.DashLine)
                 painter.setPen(pen)
                 painter.drawRect(bounding_rect)
                 

@@ -235,8 +235,9 @@ class StrokeHandler:
             points = stroke_data['points']
             for i in range(len(points)):
                 # Merkeze göre relatif pozisyon
-                rel_x = points[i].x() - center_x
-                rel_y = points[i].y() - center_y
+                point_qf = ensure_qpointf(points[i])
+                rel_x = point_qf.x() - center_x
+                rel_y = point_qf.y() - center_y
                 
                 # Ölçekleme uygula
                 new_x = rel_x * scale_x

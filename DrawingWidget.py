@@ -309,8 +309,26 @@ class DrawingWidget(QWidget):
             if next_state is not None:
                 self.strokes = next_state
                 self.update()
-                # Seçimi temizle
-                self.selection_tool.clear_selection()
+                        # Seçimi temizle
+        self.selection_tool.clear_selection()
+        # Shape properties dock'unu kapat
+        self.update_shape_properties()
+
+    def update_shape_properties(self):
+        """Seçim değiştiğinde shape properties dock'unu güncelle"""
+        if self.main_window and hasattr(self.main_window, 'shape_properties_widget'):
+            selected_strokes = self.selection_tool.selected_strokes
+            
+            if selected_strokes:
+                # Seçim var - dock'u göster ve güncelle
+                self.main_window.shape_properties_widget.set_selected_strokes(selected_strokes, self.strokes)
+                if hasattr(self.main_window, 'shape_properties_dock'):
+                    self.main_window.shape_properties_dock.show()
+            else:
+                # Seçim yok - dock'u gizle
+                self.main_window.shape_properties_widget.set_no_selection()
+                if hasattr(self.main_window, 'shape_properties_dock'):
+                    self.main_window.shape_properties_dock.hide()
 
     def clear_all_strokes(self):
         """Tüm çizimleri temizle"""

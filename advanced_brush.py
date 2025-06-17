@@ -157,7 +157,7 @@ class SimpleBrush:
     """Basit ve hızlı brush - varsayılan kullanım"""
     
     @staticmethod
-    def draw_simple_stroke(painter: QPainter, points: List[QPointF], color, width: float, tablet_mode=False):
+    def draw_simple_stroke(painter: QPainter, points: List[QPointF], color, width: float, tablet_mode=False, line_style=Qt.PenStyle.SolidLine):
         """Ultra hızlı basit stroke çizimi"""
         if len(points) < 2:
             return
@@ -166,6 +166,11 @@ class SimpleBrush:
         pen.setWidthF(max(1.0, width))
         pen.setCapStyle(Qt.PenCapStyle.RoundCap)
         pen.setJoinStyle(Qt.PenJoinStyle.RoundJoin)
+        
+        # Line style ayarla
+        if isinstance(line_style, int):
+            line_style = Qt.PenStyle(line_style)
+        pen.setStyle(line_style)
         
         painter.save()
         painter.setPen(pen)

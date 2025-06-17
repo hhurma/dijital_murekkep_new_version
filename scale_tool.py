@@ -130,6 +130,16 @@ class ScaleTool:
             
         self.is_scaling = True
         
+        # Orijinal stroke verilerini kaydet
+        if not hasattr(self, 'original_stroke_data'):
+            self.original_stroke_data = {}
+        for stroke_index in selected_strokes:
+            if stroke_index < len(strokes):
+                stroke_data = strokes[stroke_index]
+                # Image stroke kontrolü
+                if not hasattr(stroke_data, 'stroke_type'):
+                    self.original_stroke_data[id(stroke_data)] = stroke_data.copy()
+        
         # Başlangıç mesafesini hesapla (sadece köşe tutamakları için)
         handle_type = self.handle_types[self.active_handle]
         if handle_type in ["top-left", "top-right", "bottom-left", "bottom-right"]:
@@ -171,15 +181,15 @@ class ScaleTool:
             if current_distance == 0 or self.initial_distance == 0:
                 return False
                 
+            # Orijinal boyuttan direkt scale faktörü hesapla
             new_scale_factor = current_distance / self.initial_distance
-            scale_change = new_scale_factor / self.scale_factor
             
             # Minimum scale değişimini kontrol et
-            if abs(scale_change - 1.0) < 0.1:  # %10'dan az değişim varsa atla
+            if abs(new_scale_factor - self.scale_factor) < 0.001:  # Çok küçük değişim varsa atla
                 return False
             
             # Minimum ve maksimum scale sınırları
-            scale_change = max(0.1, min(5.0, scale_change))
+            new_scale_factor = max(0.1, min(5.0, new_scale_factor))
             
             # Tüm seçili stroke'ları boyutlandır
             for selected_stroke in selected_strokes:
@@ -191,24 +201,17 @@ class ScaleTool:
                         # İlk kez scale ediliyorsa orijinal boyutu sakla
                         if not hasattr(self, 'original_image_sizes'):
                             self.original_image_sizes = {}
-                        if not hasattr(self, 'total_scale_factors'):
-                            self.total_scale_factors = {}
                         if id(stroke_data) not in self.original_image_sizes:
                             self.original_image_sizes[id(stroke_data)] = QPointF(stroke_data.size)
-                            self.total_scale_factors[id(stroke_data)] = 1.0
-                        
-                        # Toplam scale faktörünü güncelle
-                        self.total_scale_factors[id(stroke_data)] = new_scale_factor
                         
                         # Orijinal boyuttan yeni boyutu hesapla
                         original_size = self.original_image_sizes[id(stroke_data)]
-                        total_factor = self.total_scale_factors[id(stroke_data)]
-                        new_size = QPointF(original_size.x() * total_factor, original_size.y() * total_factor)
+                        new_size = QPointF(original_size.x() * new_scale_factor, original_size.y() * new_scale_factor)
                         stroke_data.set_size(new_size)
                         continue
                     
-                    # Hassas grid snap ile scale uygula
-                    self.scale_stroke_precise(stroke_data, scale_change)
+                    # Orijinal boyuttan direkt scale uygula (daha stabil)
+                    self.scale_stroke_precise(stroke_data, new_scale_factor)
                 
             self.scale_factor = new_scale_factor
             
@@ -259,7 +262,7 @@ class ScaleTool:
                     scale_change_y = max(0.1, min(5.0, scale_change_y))
             
             # Minimum scale değişimini kontrol et
-            if (abs(scale_change_x - 1.0) < 0.1 and abs(scale_change_y - 1.0) < 0.1):  # %10'dan az değişim varsa atla
+            if (abs(scale_change_x - 1.0) < 0.001 and abs(scale_change_y - 1.0) < 0.001):  # %0.1'den az değişim varsa atla
                 return False
             
             # Tüm seçili stroke'ları tek seferde scale uygula
@@ -317,6 +320,9 @@ class ScaleTool:
             delattr(self, 'original_image_sizes')
         if hasattr(self, 'total_scale_factors'):
             delattr(self, 'total_scale_factors')
+        # Orijinal stroke verilerini temizle
+        if hasattr(self, 'original_stroke_data'):
+            delattr(self, 'original_stroke_data')
         
     def get_scale_factor(self, pos):
         """Şu anki scale faktörünü döndür"""
@@ -420,18 +426,17 @@ class ScaleTool:
             if initial_distance > 0:
                 scale_factor = current_distance / initial_distance
                 
-                # Minimum ölçek değişimi kontrolü - grid snap aktifse daha hassas
-                min_scale_change = 0.02 if self.background_settings and self.background_settings.get('snap_to_grid', False) else 0.05
+                # Minimum ölçek değişimi kontrolü - çok hassas yapıldı
+                min_scale_change = 0.001  # %0.1 değişim bile algılansın
                 if abs(scale_factor - 1.0) < min_scale_change:
                     return
                 
-                # Grid snap aktifse ölçek faktörünü grid'e uygun hale getir
+                # Grid snap aktifse ölçek faktörünü daha hassas hale getir
                 if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    grid_size = self.background_settings.get('grid_size', 20)
-                    # Ölçek faktörünü 0.1 katlarına yuvarlama
-                    scale_factor = round(scale_factor * 10) / 10
-                    if scale_factor <= 0.1:
-                        scale_factor = 0.1
+                    # Ölçek faktörünü 0.01 katlarına yuvarlama (daha hassas)
+                    scale_factor = round(scale_factor * 100) / 100
+                    if scale_factor <= 0.01:
+                        scale_factor = 0.01
                 
                 # Seçili stroke'ları ölçeklendir
                 for stroke in self.selected_strokes:

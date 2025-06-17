@@ -47,7 +47,7 @@ class FreehandTool:
             'pressures': [pressure],
             'color': self.current_color,
             'width': self.current_width,
-            'line_style': self.line_style,
+            'style': self.line_style,  # 'style' field'ını kullan
             'brush_mode': self.brush_mode,
             'advanced_style': self.advanced_style,
             'tablet_mode': is_tablet
@@ -149,7 +149,10 @@ class FreehandTool:
         else:
             # Varsayılan hızlı çizim - tablet mode bilgisini stroke'tan al
             tablet_mode = stroke_data.get('tablet_mode', False)
-            SimpleBrush.draw_simple_stroke(painter, qpoint_list, color, width, tablet_mode)
+            line_style = stroke_data.get('style', Qt.PenStyle.SolidLine)
+            if isinstance(line_style, int):
+                line_style = Qt.PenStyle(line_style)
+            SimpleBrush.draw_simple_stroke(painter, qpoint_list, color, width, tablet_mode, line_style)
     
     def set_color(self, color):
         """Aktif rengi ayarla"""
@@ -164,7 +167,7 @@ class FreehandTool:
         
         # Aktif çizim için her zaman simple brush kullan (performans)
         tablet_mode = self.current_stroke.get('tablet_mode', False)
-        SimpleBrush.draw_simple_stroke(painter, points, self.current_color, self.current_width, tablet_mode)
+        SimpleBrush.draw_simple_stroke(painter, points, self.current_color, self.current_width, tablet_mode, self.line_style)
     
     def set_width(self, width):
         """Aktif çizgi kalınlığını ayarla"""

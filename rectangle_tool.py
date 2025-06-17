@@ -56,9 +56,10 @@ class RectangleTool:
                 'color': self.line_color,
                 'line_width': self.line_width,
                 'line_style': self.line_style,
+                'fill': self.is_filled,
                 'fill_color': self.fill_color if self.is_filled and self.fill_color else None,
                 'fill_opacity': self.fill_opacity,
-                'is_filled': self.is_filled
+                'is_filled': self.is_filled  # Geriye uyumluluk için
             }
             
             self.cancel_stroke()
