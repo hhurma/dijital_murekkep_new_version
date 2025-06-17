@@ -125,7 +125,7 @@ class ShapePropertiesWidget(QWidget):
         bspline_layout = QVBoxLayout()
         
         # Kontrol noktaları butonu
-        self.toggle_control_points_button = QPushButton("Noktaları Düzenle")
+        self.toggle_control_points_button = QPushButton("Noktaları Göster")
         self.toggle_control_points_button.clicked.connect(self.on_toggle_control_points)
         bspline_layout.addWidget(self.toggle_control_points_button)
         
@@ -721,6 +721,13 @@ class ShapePropertiesWidget(QWidget):
     def on_toggle_control_points(self):
         """Kontrol noktalarını göster/gizle"""
         self.toggleControlPoints.emit()
+        
+    def update_control_points_button(self, show_points):
+        """Kontrol noktaları butonunu güncelle"""
+        if show_points:
+            self.toggle_control_points_button.setText("Noktaları Gizle")
+        else:
+            self.toggle_control_points_button.setText("Noktaları Göster")
         
     def analyze_selected_strokes(self):
         """Seçilen stroke'ları analiz et ve UI'ı güncelle"""

@@ -1308,6 +1308,8 @@ class MainWindow(QMainWindow):
         
         # Seçili stroke'ların kontrol noktalarını aç/kapat
         changed = False
+        show_points = False  # Noktaların gösterilip gösterilmeyeceğini takip et
+        
         for index in drawing_widget.selection_tool.selected_strokes:
             if index < len(drawing_widget.strokes):
                 stroke = drawing_widget.strokes[index]
@@ -1317,9 +1319,26 @@ class MainWindow(QMainWindow):
                     # Kontrol noktalarının görünürlüğünü değiştir
                     current = stroke.get('show_control_points', False)
                     stroke['show_control_points'] = not current
+                    show_points = not current  # Yeni durumu kaydet
                     changed = True
                     
         if changed:
+            # Buton metnini güncelle
+            if hasattr(self, 'shape_properties_widget'):
+                self.shape_properties_widget.update_control_points_button(show_points)
+                
+            if show_points:
+                # Noktalar gösterildiğinde B-spline aracını aktif et
+                self.set_tool("bspline")
+                drawing_widget.set_active_tool("bspline")
+                
+                # Seçim dörtgenini kaldır (seçimi temizle)
+                drawing_widget.selection_tool.clear_selection()
+            else:
+                # Noktalar gizlendiğinde seçim aracını aktif et
+                self.set_tool("select")
+                drawing_widget.set_active_tool("select")
+                
             drawing_widget.update()
             self.show_status_message("Kontrol noktaları görünürlüğü değiştirildi")
     
