@@ -108,16 +108,16 @@ class SelectionTool:
                     
         return newly_selected if newly_selected else self.selected_strokes
         
-    def select_stroke_at_point(self, pos, strokes, tolerance=15):
-        """Belirli bir noktadaki stroke'u seç"""
-        from scipy.interpolate import splev
-        import numpy as np
-        
-        for stroke_index, stroke_data in enumerate(strokes):
+    def get_stroke_at_point(self, pos, strokes, tolerance=15):
+        """Belirtilen noktada stroke index'ini bul (seçmeden) - üstteki stroke'lar önce"""
+        # Stroke'ları tersten kontrol et (üstteki stroke'lar önce)
+        for stroke_index in range(len(strokes) - 1, -1, -1):
+            stroke_data = strokes[stroke_index]
+            
             # Image stroke kontrolü
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
                 if stroke_data.contains_point(pos):
-                    return self.toggle_stroke_selection(stroke_index, strokes)
+                    return stroke_index
                 continue
                 
             # Güvenlik kontrolü - eski stroke'lar için
@@ -126,34 +126,20 @@ class SelectionTool:
                 
             # Modüler yakınlık kontrolü
             if StrokeHandler.is_point_near_stroke(stroke_data, pos, tolerance):
-                return self.toggle_stroke_selection(stroke_index, strokes)
-            
-            # B-spline için ek eğri kontrolü
-            if stroke_data['type'] == 'bspline':
-                try:
-                    from scipy.interpolate import splev
-                    control_points = stroke_data['control_points']
-                    knots = stroke_data['knots']
-                    degree = stroke_data['degree']
-                    u = stroke_data['u']
-                    
-                    # Control points'i numpy array'e çevir
-                    if isinstance(control_points, list):
-                        control_points = np.array(control_points)
-                    
-                    # B-spline eğrisini değerlendir
-                    tck = (knots, control_points.T, degree)
-                    u_values = np.linspace(0, u[-1], 100)  # Eğri üzerinde 100 nokta
-                    x_curve, y_curve = splev(u_values, tck)
-                    
-                    # Eğri üzerindeki her noktaya mesafe kontrolü
-                    for i in range(len(x_curve)):
-                        curve_point = QPointF(x_curve[i], y_curve[i])
-                        if (pos - curve_point).manhattanLength() < tolerance:
-                            return self.toggle_stroke_selection(stroke_index, strokes)
-                except:
-                    pass
-                    
+                return stroke_index
+                
+        return None
+
+    def select_stroke_at_point(self, pos, strokes, tolerance=15):
+        """Belirli bir noktadaki stroke'u seç"""
+        from scipy.interpolate import splev
+        import numpy as np
+        
+        # Önce get_stroke_at_point kullan (daha basit ve hızlı)
+        found_index = self.get_stroke_at_point(pos, strokes, tolerance)
+        if found_index is not None:
+            return self.toggle_stroke_selection(found_index, strokes)
+        
         # Hiçbir şey seçilmediyse ve Ctrl basılı değilse, seçimi temizle
         if not self.ctrl_pressed:
             self.selected_strokes = []

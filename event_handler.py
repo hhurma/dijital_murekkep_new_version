@@ -478,7 +478,8 @@ class EventHandler:
             self.drawing_widget.update()
 
     def handle_select_press(self, pos):
-        """Seçim başlat"""
+        """Seçim başlat - hybrid sistem: hem tek tıklama hem sürükleme"""
+        # Her zaman seçim dikdörtgenini başlat (sürükleme için)
         self.drawing_widget.selection_tool.start_selection(pos)
         self.drawing_widget.update()
 
@@ -491,128 +492,265 @@ class EventHandler:
             self.drawing_widget.update()
 
     def handle_select_release(self, pos):
-        """Seçimi tamamla"""
+        """Seçimi tamamla - hybrid sistem"""
         if self.drawing_widget.selection_tool.is_selecting:
-            selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
-            if selected is None:
-                # Dikdörtgen seçimi başarısızsa, nokta seçimi dene
-                self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes)
+            # Seçim dikdörtgeninin boyutunu kontrol et
+            selection_rect = self.drawing_widget.selection_tool.selection_rect
+            
+            # Eğer dikdörtgen çok küçükse (5px'den küçük), tek tıklama olarak değerlendir
+            if (selection_rect and 
+                selection_rect.width() < 5 and selection_rect.height() < 5):
+                # Tek tıklama - nokta seçimi yap (tolerance artırıldı)
+                self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
+                self.drawing_widget.selection_tool.is_selecting = False
+            else:
+                # Sürükleme - dikdörtgen seçimi yap
+                selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
+                
             # Seçim değişti - shape properties dock'unu güncelle
             self.drawing_widget.update_shape_properties()
             self.drawing_widget.update()
 
     def handle_move_press(self, pos):
-        """Taşıma başlat"""
+        """Taşıma başlat - hybrid sistem: tek tıklama + sürükleme seçimi"""
         # Eğer zaten state kaydedildiyse, tekrar kaydetme
         if self.drawing_widget._move_state_saved:
             return
         
-        # Eğer zaten seçim varsa, taşımayı başlat
-        if self.drawing_widget.selection_tool.selected_strokes:
+        # Önce tıklanan yerde nesne var mı kontrol et (tolerance artırıldı)
+        clicked_stroke = self.drawing_widget.selection_tool.get_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
+        
+        if clicked_stroke is not None:
+            # Tıklanan yerde nesne var - seç ve taşımayı başlat
+            self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
             self.drawing_widget._move_state_saved = True
             self.drawing_widget.move_tool.start_move(pos)
+            self.drawing_widget.update_shape_properties()
             self.drawing_widget.update()
-        else:
-            # Seçim yoksa, önce seçim yap
-            selected = self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes)
-            if self.drawing_widget.selection_tool.selected_strokes:
+        elif self.drawing_widget.selection_tool.selected_strokes:
+            # Seçili nesneler var ama tıklanan yerde nesne yok
+            # Seçili nesnelerden birinin üzerinde mi kontrol et
+            selected_clicked = any(self.drawing_widget.selection_tool.get_stroke_at_point(pos, [self.drawing_widget.strokes[i]], tolerance=25) is not None 
+                                 for i in self.drawing_widget.selection_tool.selected_strokes)
+            
+            if selected_clicked:
+                # Seçili nesne üzerine tıklandı - taşımayı başlat
                 self.drawing_widget._move_state_saved = True
                 self.drawing_widget.move_tool.start_move(pos)
-                # Seçim değişti - shape properties dock'unu güncelle
-                self.drawing_widget.update_shape_properties()
                 self.drawing_widget.update()
+            else:
+                # Seçili nesne dışında bir yere tıklandı - sürükleme seçimi başlat
+                self.drawing_widget.selection_tool.start_selection(pos)
+                self.drawing_widget.update()
+        else:
+            # Nesne yok ve mevcut seçim de yok - sürükleme seçimi başlat
+            self.drawing_widget.selection_tool.start_selection(pos)
+            self.drawing_widget.update()
 
     def handle_move_move(self, pos):
-        """Taşıma devam ettir"""
-        selected_strokes = self.drawing_widget.selection_tool.selected_strokes
-        if self.drawing_widget.move_tool.update_move(pos, self.drawing_widget.strokes, selected_strokes):
+        """Taşıma devam ettir veya seçim güncelle"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modunda - dikdörtgen güncelle
+            self.drawing_widget.selection_tool.update_selection(pos)
+            self.drawing_widget.preview_selection()
             self.drawing_widget.update()
+        else:
+            # Taşıma modunda
+            selected_strokes = self.drawing_widget.selection_tool.selected_strokes
+            if self.drawing_widget.move_tool.update_move(pos, self.drawing_widget.strokes, selected_strokes):
+                self.drawing_widget.update()
 
     def handle_move_release(self, pos):
-        """Taşımayı tamamla"""
-        # Move bitişinde final state'i kaydet
-        if self.drawing_widget._move_state_saved:
-            self.drawing_widget.save_current_state("Move end")
-        
-        self.drawing_widget.move_tool.finish_move()
-        self.drawing_widget._move_state_saved = False
+        """Taşımayı tamamla veya seçimi bitir"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modundan çık - hybrid seçim sistemi
+            selection_rect = self.drawing_widget.selection_tool.selection_rect
+            
+            if (selection_rect and 
+                selection_rect.width() < 5 and selection_rect.height() < 5):
+                # Tek tıklama - boşluk tıklaması, seçimi kaldır
+                self.drawing_widget.selection_tool.clear_selection()
+                self.drawing_widget.selection_tool.is_selecting = False
+            else:
+                # Sürükleme - dikdörtgen seçimi
+                selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
+                if selected:
+                    # Seçim yapıldıysa taşımaya geç
+                    self.drawing_widget._move_state_saved = True
+                    self.drawing_widget.move_tool.start_move(pos)
+                    
+            self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update()
+        else:
+            # Taşıma bitişinde final state'i kaydet
+            if self.drawing_widget._move_state_saved:
+                self.drawing_widget.save_current_state("Move end")
+            
+            self.drawing_widget.move_tool.finish_move()
+            self.drawing_widget._move_state_saved = False
 
     def handle_rotate_press(self, pos):
-        """Döndürme başlat"""
+        """Döndürme başlat - hybrid sistem"""
         # Eğer zaten state kaydedildiyse, tekrar kaydetme
         if self.drawing_widget._rotate_state_saved:
             return
             
-        # Eğer zaten seçilmiş stroke'lar varsa, tutamak kontrolü yap
-        if self.drawing_widget.selection_tool.selected_strokes:
+        # Önce tıklanan yerde nesne var mı kontrol et (tolerance artırıldı)
+        clicked_stroke = self.drawing_widget.selection_tool.get_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
+        
+        if clicked_stroke is not None:
+            # Tıklanan yerde nesne var - seç ve döndürme handles oluştur
+            self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
             if self.drawing_widget.rotate_tool.start_rotate(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
                 self.drawing_widget._rotate_state_saved = True
-                self.drawing_widget.update()
-                return
-        else:
-            # Seçim yoksa, önce seçim yap
-            selected = self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes)
-            if self.drawing_widget.selection_tool.selected_strokes:
-                # Tutamakları oluştur ama döndürmeyi başlatma
+            else:
+                # Tutamakları oluştur
                 self.drawing_widget.rotate_tool.create_rotation_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
-                # Seçim değişti - shape properties dock'unu güncelle
-                self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update()
+        elif self.drawing_widget.selection_tool.selected_strokes:
+            # Seçili nesneler var - döndürme tutamağına mı yoksa nesneye mi tıklandı kontrol et
+            if self.drawing_widget.rotate_tool.start_rotate(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+                # Döndürme tutamağına tıklandı
+                self.drawing_widget._rotate_state_saved = True
                 self.drawing_widget.update()
-
-    def handle_rotate_move(self, pos):
-        """Döndürme devam ettir"""
-        # Mouse pozisyonunu kaydet (görsel feedback için)
-        self.drawing_widget.rotate_tool.set_current_mouse_pos(pos)
-        
-        # Döndürme işlemi varsa güncelle
-        if self.drawing_widget.rotate_tool.update_rotate(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+            else:
+                # Tutamak değil - seçili nesnelerden birinin üzerinde mi kontrol et
+                selected_clicked = any(self.drawing_widget.selection_tool.get_stroke_at_point(pos, [self.drawing_widget.strokes[i]], tolerance=25) is not None 
+                                     for i in self.drawing_widget.selection_tool.selected_strokes)
+                
+                if not selected_clicked:
+                    # Seçili nesne dışında bir yere tıklandı - sürükleme seçimi başlat
+                    self.drawing_widget.selection_tool.start_selection(pos)
+                    self.drawing_widget.update()
+        else:
+            # Nesne yok ve mevcut seçim de yok - sürükleme seçimi başlat
+            self.drawing_widget.selection_tool.start_selection(pos)
             self.drawing_widget.update()
 
+    def handle_rotate_move(self, pos):
+        """Döndürme devam ettir veya seçim güncelle"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modunda - dikdörtgen güncelle
+            self.drawing_widget.selection_tool.update_selection(pos)
+            self.drawing_widget.preview_selection()
+            self.drawing_widget.update()
+        else:
+            # Döndürme modunda
+            # Mouse pozisyonunu kaydet (görsel feedback için)
+            self.drawing_widget.rotate_tool.set_current_mouse_pos(pos)
+            
+            # Döndürme işlemi varsa güncelle
+            if self.drawing_widget.rotate_tool.update_rotate(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+                self.drawing_widget.update()
+
     def handle_rotate_release(self, pos):
-        """Döndürmeyi tamamla"""
-        # Rotate bitişinde final state'i kaydet
-        if self.drawing_widget._rotate_state_saved:
-            self.drawing_widget.save_current_state("Rotate end")
-        
-        self.drawing_widget.rotate_tool.finish_rotate()
-        self.drawing_widget._rotate_state_saved = False
+        """Döndürmeyi tamamla veya seçimi bitir"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modundan çık - hybrid seçim sistemi
+            selection_rect = self.drawing_widget.selection_tool.selection_rect
+            
+            if (selection_rect and 
+                selection_rect.width() < 5 and selection_rect.height() < 5):
+                # Tek tıklama - boşluk tıklaması, seçimi kaldır
+                self.drawing_widget.selection_tool.clear_selection()
+                self.drawing_widget.selection_tool.is_selecting = False
+            else:
+                # Sürükleme - dikdörtgen seçimi
+                selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
+                if selected:
+                    # Seçim yapıldıysa rotate handles oluştur
+                    self.drawing_widget.rotate_tool.create_rotation_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
+                    
+            self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update()
+        else:
+            # Rotate bitişinde final state'i kaydet
+            if self.drawing_widget._rotate_state_saved:
+                self.drawing_widget.save_current_state("Rotate end")
+            
+            self.drawing_widget.rotate_tool.finish_rotate()
+            self.drawing_widget._rotate_state_saved = False
 
     def handle_scale_press(self, pos):
-        """Boyutlandırma başlat"""
+        """Boyutlandırma başlat - hybrid sistem"""
         # Eğer zaten state kaydedildiyse, tekrar kaydetme
         if self.drawing_widget._scale_state_saved:
             return
             
-        # Eğer zaten seçilmiş stroke'lar varsa, tutamak kontrolü yap
-        if self.drawing_widget.selection_tool.selected_strokes:
+        # Önce tıklanan yerde nesne var mı kontrol et (tolerance artırıldı)
+        clicked_stroke = self.drawing_widget.selection_tool.get_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
+        
+        if clicked_stroke is not None:
+            # Tıklanan yerde nesne var - seç ve boyutlandırma handles oluştur
+            self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
             if self.drawing_widget.scale_tool.start_scale(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
                 self.drawing_widget._scale_state_saved = True
-                self.drawing_widget.update()
-                return
-        else:
-            # Seçim yoksa, önce seçim yap
-            selected = self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes)
-            if self.drawing_widget.selection_tool.selected_strokes:
-                # Tutamakları oluştur ama boyutlandırmayı başlatma
+            else:
+                # Tutamakları oluştur
                 self.drawing_widget.scale_tool.create_scale_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
-                # Seçim değişti - shape properties dock'unu güncelle
-                self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update()
+        elif self.drawing_widget.selection_tool.selected_strokes:
+            # Seçili nesneler var - boyutlandırma tutamağına mı yoksa nesneye mi tıklandı kontrol et
+            if self.drawing_widget.scale_tool.start_scale(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+                # Boyutlandırma tutamağına tıklandı
+                self.drawing_widget._scale_state_saved = True
                 self.drawing_widget.update()
-
-    def handle_scale_move(self, pos):
-        """Boyutlandırma devam ettir"""
-        # Mouse pozisyonunu kaydet (görsel feedback için)
-        self.drawing_widget.scale_tool.set_current_mouse_pos(pos)
-        
-        # Boyutlandırma işlemi varsa güncelle
-        if self.drawing_widget.scale_tool.update_scale(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+            else:
+                # Tutamak değil - seçili nesnelerden birinin üzerinde mi kontrol et
+                selected_clicked = any(self.drawing_widget.selection_tool.get_stroke_at_point(pos, [self.drawing_widget.strokes[i]], tolerance=25) is not None 
+                                     for i in self.drawing_widget.selection_tool.selected_strokes)
+                
+                if not selected_clicked:
+                    # Seçili nesne dışında bir yere tıklandı - sürükleme seçimi başlat
+                    self.drawing_widget.selection_tool.start_selection(pos)
+                    self.drawing_widget.update()
+        else:
+            # Nesne yok ve mevcut seçim de yok - sürükleme seçimi başlat
+            self.drawing_widget.selection_tool.start_selection(pos)
             self.drawing_widget.update()
 
+    def handle_scale_move(self, pos):
+        """Boyutlandırma devam ettir veya seçim güncelle"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modunda - dikdörtgen güncelle
+            self.drawing_widget.selection_tool.update_selection(pos)
+            self.drawing_widget.preview_selection()
+            self.drawing_widget.update()
+        else:
+            # Boyutlandırma modunda
+            # Mouse pozisyonunu kaydet (görsel feedback için)
+            self.drawing_widget.scale_tool.set_current_mouse_pos(pos)
+            
+            # Boyutlandırma işlemi varsa güncelle
+            if self.drawing_widget.scale_tool.update_scale(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes):
+                self.drawing_widget.update()
+
     def handle_scale_release(self, pos):
-        """Boyutlandırmayı tamamla"""
-        # Scale bitişinde final state'i kaydet
-        if self.drawing_widget._scale_state_saved:
-            self.drawing_widget.save_current_state("Scale end")
-        
-        self.drawing_widget.scale_tool.finish_scale()
-        self.drawing_widget._scale_state_saved = False 
+        """Boyutlandırmayı tamamla veya seçimi bitir"""
+        if self.drawing_widget.selection_tool.is_selecting:
+            # Seçim modundan çık - hybrid seçim sistemi
+            selection_rect = self.drawing_widget.selection_tool.selection_rect
+            
+            if (selection_rect and 
+                selection_rect.width() < 5 and selection_rect.height() < 5):
+                # Tek tıklama - boşluk tıklaması, seçimi kaldır
+                self.drawing_widget.selection_tool.clear_selection()
+                self.drawing_widget.selection_tool.is_selecting = False
+            else:
+                # Sürükleme - dikdörtgen seçimi
+                selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
+                if selected:
+                    # Seçim yapıldıysa scale handles oluştur
+                    self.drawing_widget.scale_tool.create_scale_handles(self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
+                    
+            self.drawing_widget.update_shape_properties()
+            self.drawing_widget.update()
+        else:
+            # Scale bitişinde final state'i kaydet
+            if self.drawing_widget._scale_state_saved:
+                self.drawing_widget.save_current_state("Scale end")
+            
+            self.drawing_widget.scale_tool.finish_scale()
+            self.drawing_widget._scale_state_saved = False 
