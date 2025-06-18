@@ -278,6 +278,30 @@ class RotateTool:
     def set_background_settings(self, settings):
         """Arka plan ayarlarını güncelle (grid snap için)"""
         self.background_settings = settings
+        
+    def rotate_point(self, point, center, angle_degrees):
+        """Bir noktayı merkez etrafında belirtilen açıyla döndür"""
+        import math
+        
+        # Açıyı radyana çevir
+        angle_rad = math.radians(angle_degrees)
+        
+        # Noktayı merkeze göre göreli koordinatlara çevir
+        relative_x = point.x() - center.x()
+        relative_y = point.y() - center.y()
+        
+        # Döndürme matrisi uygula
+        cos_angle = math.cos(angle_rad)
+        sin_angle = math.sin(angle_rad)
+        
+        rotated_x = relative_x * cos_angle - relative_y * sin_angle
+        rotated_y = relative_x * sin_angle + relative_y * cos_angle
+        
+        # Merkezi geri ekle
+        result_x = rotated_x + center.x()
+        result_y = rotated_y + center.y()
+        
+        return QPointF(result_x, result_y)
     
     def rotate_stroke_precise(self, stroke_data, angle_degrees):
         """Stroke'u hassas grid snap ile döndür"""
