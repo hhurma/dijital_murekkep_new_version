@@ -4,7 +4,7 @@ from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton,
                             QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
                             QMenuBar, QDockWidget)
 from PyQt6.QtCore import Qt, QPointF
-from PyQt6.QtGui import QAction, QIcon, QActionGroup
+from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence
 import qtawesome as qta
 from splash_screen import show_splash_screen
 from DrawingWidget import DrawingWidget
@@ -92,6 +92,16 @@ class MainWindow(QMainWindow):
         # Toolbar ile aktif tab arasında bağlantı kur
         self.connect_toolbar_to_active_tab()
 
+        # Clipboard için
+        self.clipboard_strokes = []  # Kopyalanan/kesilen stroke'lar
+        self.clipboard_offset = QPointF(20, 20)  # Yapıştırma offseti
+        
+        # Actions'ları ayarla
+        self.setup_actions()
+        
+        # Menü çubuğunu oluştur
+        self.setup_menubar()
+        
     def create_toolbar(self):
         """Araç çubuğunu oluştur"""
         toolbar = QToolBar("Ana Araçlar")
@@ -437,6 +447,46 @@ class MainWindow(QMainWindow):
         self.shape_properties_widget.fillEnabledChanged.connect(self.on_shape_fill_enabled_changed)
         self.shape_properties_widget.fillOpacityChanged.connect(self.on_shape_fill_opacity_changed)
         
+        # Resim özellikleri sinyalleri
+        self.shape_properties_widget.imageOpacityChanged.connect(self.on_image_opacity_changed)
+        self.shape_properties_widget.imageBorderEnabledChanged.connect(self.on_image_border_enabled_changed)
+        self.shape_properties_widget.imageBorderColorChanged.connect(self.on_image_border_color_changed)
+        self.shape_properties_widget.imageBorderWidthChanged.connect(self.on_image_border_width_changed)
+        self.shape_properties_widget.imageBorderStyleChanged.connect(self.on_image_border_style_changed)
+        self.shape_properties_widget.imageShadowEnabledChanged.connect(self.on_image_shadow_enabled_changed)
+        self.shape_properties_widget.imageShadowColorChanged.connect(self.on_image_shadow_color_changed)
+        self.shape_properties_widget.imageShadowOffsetChanged.connect(self.on_image_shadow_offset_changed)
+        self.shape_properties_widget.imageShadowBlurChanged.connect(self.on_image_shadow_blur_changed)
+        self.shape_properties_widget.imageShadowSizeChanged.connect(self.on_image_shadow_size_changed)
+        self.shape_properties_widget.imageShadowInnerChanged.connect(self.on_image_shadow_inner_changed)
+        self.shape_properties_widget.imageShadowQualityChanged.connect(self.on_image_shadow_quality_changed)
+        self.shape_properties_widget.imageFilterChanged.connect(self.on_image_filter_changed)
+        self.shape_properties_widget.imageTransparencyChanged.connect(self.on_image_transparency_changed)
+        self.shape_properties_widget.imageBlurChanged.connect(self.on_image_blur_changed)
+        self.shape_properties_widget.imageCornerRadiusChanged.connect(self.on_image_corner_radius_changed)
+        self.shape_properties_widget.imageShadowOpacityChanged.connect(self.on_image_shadow_opacity_changed)
+        
+        # Dikdörtgen özellikleri sinyalleri
+        self.shape_properties_widget.rectangleCornerRadiusChanged.connect(self.on_rectangle_corner_radius_changed)
+        self.shape_properties_widget.rectangleShadowEnabledChanged.connect(self.on_rectangle_shadow_enabled_changed)
+        self.shape_properties_widget.rectangleShadowColorChanged.connect(self.on_rectangle_shadow_color_changed)
+        self.shape_properties_widget.rectangleShadowOffsetChanged.connect(self.on_rectangle_shadow_offset_changed)
+        self.shape_properties_widget.rectangleShadowBlurChanged.connect(self.on_rectangle_shadow_blur_changed)
+        self.shape_properties_widget.rectangleShadowSizeChanged.connect(self.on_rectangle_shadow_size_changed)
+        self.shape_properties_widget.rectangleShadowOpacityChanged.connect(self.on_rectangle_shadow_opacity_changed)
+        self.shape_properties_widget.rectangleShadowInnerChanged.connect(self.on_rectangle_shadow_inner_changed)
+        self.shape_properties_widget.rectangleShadowQualityChanged.connect(self.on_rectangle_shadow_quality_changed)
+        
+        # Çember özellikleri sinyalleri
+        self.shape_properties_widget.circleShadowEnabledChanged.connect(self.on_circle_shadow_enabled_changed)
+        self.shape_properties_widget.circleShadowColorChanged.connect(self.on_circle_shadow_color_changed)
+        self.shape_properties_widget.circleShadowOffsetChanged.connect(self.on_circle_shadow_offset_changed)
+        self.shape_properties_widget.circleShadowBlurChanged.connect(self.on_circle_shadow_blur_changed)
+        self.shape_properties_widget.circleShadowSizeChanged.connect(self.on_circle_shadow_size_changed)
+        self.shape_properties_widget.circleShadowOpacityChanged.connect(self.on_circle_shadow_opacity_changed)
+        self.shape_properties_widget.circleShadowInnerChanged.connect(self.on_circle_shadow_inner_changed)
+        self.shape_properties_widget.circleShadowQualityChanged.connect(self.on_circle_shadow_quality_changed)
+        
         # Grup işlemi sinyalleri
         self.shape_properties_widget.groupShapes.connect(self.on_group_shapes)
         self.shape_properties_widget.ungroupShapes.connect(self.on_ungroup_shapes)
@@ -464,8 +514,8 @@ class MainWindow(QMainWindow):
         
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.shape_properties_dock)
         
-        # Varsayılan olarak gizli
-        self.shape_properties_dock.hide()
+        # Başlangıçta gizli, resim seçildiğinde görünür olacak
+        self.shape_properties_dock.setVisible(False)
         
     def toggle_shape_properties_dock(self):
         """Şekil özellikleri dock widget'ını aç/kapat"""
@@ -1126,17 +1176,8 @@ class MainWindow(QMainWindow):
             if not current_widget:
                 return
             
-            # Resim stroke'u oluştur - sol üst köşeye yerleştir (cache manager ile)
-            image_stroke = ImageStroke(filename, QPointF(50, 50), cache_manager=self.image_cache_manager)
-            
-            # Resmi cache'le (aynı resim tekrar eklenmemesi için)
-            file_hash = image_stroke.file_hash
-            if file_hash not in self.cached_images:
-                cached_path = image_stroke.cache_image(self.image_cache_dir)
-                self.cached_images[file_hash] = cached_path
-            else:
-                # Daha önce cache'lenmiş, cache path'i kullan
-                image_stroke.image_path = self.cached_images[file_hash]
+            # Resim stroke'u oluştur - sol üst köşeye yerleştir (cache manager olmadan)
+            image_stroke = ImageStroke(filename, QPointF(50, 50), cache_manager=None)
             
             # Undo için state kaydet
             current_widget.save_current_state("Add image")
@@ -1224,6 +1265,291 @@ class MainWindow(QMainWindow):
         
         self.show_status_message(f"{len(selected_indices)} şekil gruplandı")
     
+    # Resim özellikleri handler'ları
+    def on_image_opacity_changed(self, opacity):
+        """Resim şeffaflığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image opacity")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.set_opacity(opacity)
+            
+            current_widget.update()
+    
+    def on_image_border_enabled_changed(self, enabled):
+        """Resim kenarlığı etkin/pasif değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Toggle image border")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.has_border = enabled
+            
+            current_widget.update()
+    
+    def on_image_border_color_changed(self, color):
+        """Resim kenarlık rengi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image border color")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        from PyQt6.QtGui import QColor
+                        stroke.border_color = QColor(color)
+            
+            current_widget.update()
+    
+    def on_image_border_width_changed(self, width):
+        """Resim kenarlık kalınlığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image border width")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.border_width = width
+            
+            current_widget.update()
+    
+    def on_image_border_style_changed(self, style):
+        """Resim kenarlık stili değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image border style")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.border_style = style
+            
+            current_widget.update()
+    
+    def on_image_shadow_enabled_changed(self, enabled):
+        """Resim gölgesi etkin/pasif değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Toggle image shadow")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.has_shadow = enabled
+            
+            current_widget.update()
+    
+    def on_image_shadow_color_changed(self, color):
+        """Resim gölge rengi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image shadow color")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        from PyQt6.QtGui import QColor
+                        stroke.shadow_color = QColor(color)
+            
+            current_widget.update()
+    
+    def on_image_shadow_offset_changed(self, offset_x, offset_y):
+        """Resim gölge offseti değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image shadow offset")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.shadow_offset_x = offset_x
+                        stroke.shadow_offset_y = offset_y
+            
+                        current_widget.update()
+
+    def on_image_shadow_blur_changed(self, blur):
+        """Resim gölge bulanıklığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image shadow blur")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.shadow_blur = blur
+            
+            current_widget.update()
+
+    def on_image_shadow_size_changed(self, size):
+        """Resim gölge boyutu değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image shadow size")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.shadow_size = size
+            
+            current_widget.update()
+
+    def on_image_shadow_inner_changed(self, inner):
+        """Resim iç gölge değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image inner shadow")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.inner_shadow = inner
+            
+            current_widget.update()
+
+    def on_image_shadow_quality_changed(self, quality):
+        """Resim gölge kalitesi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image shadow quality")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.shadow_quality = quality
+            
+            current_widget.update()
+
+    def on_image_filter_changed(self, filter_type, intensity):
+        """Resim filtresi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and current_widget.selection_tool.selected_strokes:
+            # Undo için state kaydet
+            current_widget.save_current_state("Change image filter")
+            
+            # Seçili resim stroke'larını güncelle
+            for stroke_index in current_widget.selection_tool.selected_strokes:
+                if stroke_index < len(current_widget.strokes):
+                    stroke = current_widget.strokes[stroke_index]
+                    if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                        stroke.filter_type = filter_type
+                        stroke.filter_intensity = intensity
+            
+            current_widget.update()
+
+    def on_image_transparency_changed(self, transparency):
+        """Resim ekstra şeffaflığı değişti"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+            
+        # Undo için state kaydet
+        drawing_widget.save_current_state("Image Transparency Change")
+            
+        # Seçili resim strokes'larını güncelle
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    stroke.transparency = transparency
+                    
+        drawing_widget.update()
+        
+    def on_image_blur_changed(self, blur_radius):
+        """Resim bulanıklığı değişti"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+            
+        # Undo için state kaydet
+        drawing_widget.save_current_state("Image Blur Change")
+            
+        # Seçili resim strokes'larını güncelle
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    stroke.blur_radius = blur_radius
+                    
+        drawing_widget.update()
+
+    def on_image_corner_radius_changed(self, corner_radius):
+        """Resim kenar yuvarlama değişti"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+            
+        # Undo için state kaydet
+        drawing_widget.save_current_state("Image Corner Radius Change")
+            
+        # Seçili resim strokes'larını güncelle
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    stroke.corner_radius = corner_radius
+                    
+        drawing_widget.update()
+
+    def on_image_shadow_opacity_changed(self, shadow_opacity):
+        """Resim gölge şeffaflığı değişti"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+            
+        # Undo için state kaydet
+        drawing_widget.save_current_state("Image Shadow Opacity Change")
+            
+        # Seçili resim strokes'larını güncelle
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    stroke.shadow_opacity = shadow_opacity
+                    
+        drawing_widget.update()
+
     def on_ungroup_shapes(self):
         """Seçili şekillerin grubunu çöz"""
         current_widget = self.get_current_drawing_widget()
@@ -1531,6 +1857,316 @@ class MainWindow(QMainWindow):
                 center = stroke['center']
                 stroke['center'] = (center[0] + offset_x, center[1] + offset_y)
 
+    # Dikdörtgen özellikleri event handler'ları
+    def on_rectangle_corner_radius_changed(self, corner_radius):
+        """Dikdörtgen kenar yuvarlama değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle corner radius")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['corner_radius'] = corner_radius
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_enabled_changed(self, enabled):
+        """Dikdörtgen gölge etkin/pasif değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow enabled")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['has_shadow'] = enabled
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_color_changed(self, color):
+        """Dikdörtgen gölge rengi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow color")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_color'] = color
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_offset_changed(self, offset_x, offset_y):
+        """Dikdörtgen gölge offseti değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow offset")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_offset_x'] = offset_x
+                            stroke['shadow_offset_y'] = offset_y
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_blur_changed(self, blur):
+        """Dikdörtgen gölge bulanıklığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow blur")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_blur'] = blur
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_size_changed(self, size):
+        """Dikdörtgen gölge boyutu değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow size")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_size'] = size
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_opacity_changed(self, opacity):
+        """Dikdörtgen gölge şeffaflığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow opacity")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_opacity'] = opacity
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_inner_changed(self, inner):
+        """Dikdörtgen iç/dış gölge değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow type")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['inner_shadow'] = inner
+                
+                current_widget.update()
+    
+    def on_rectangle_shadow_quality_changed(self, quality):
+        """Dikdörtgen gölge kalitesi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change rectangle shadow quality")
+                
+                # Sadece dikdörtgen stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'rectangle':
+                            stroke['shadow_quality'] = quality
+                
+                current_widget.update()
+                
+    # Çember özellikleri event handler'ları
+    def on_circle_shadow_enabled_changed(self, enabled):
+        """Çember gölge etkin/pasif değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow enabled")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['has_shadow'] = enabled
+                
+                current_widget.update()
+    
+    def on_circle_shadow_color_changed(self, color):
+        """Çember gölge rengi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow color")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_color'] = color
+                
+                current_widget.update()
+    
+    def on_circle_shadow_offset_changed(self, offset_x, offset_y):
+        """Çember gölge offseti değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow offset")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_offset_x'] = offset_x
+                            stroke['shadow_offset_y'] = offset_y
+                
+                current_widget.update()
+    
+    def on_circle_shadow_blur_changed(self, blur):
+        """Çember gölge bulanıklığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow blur")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_blur'] = blur
+                
+                current_widget.update()
+    
+    def on_circle_shadow_size_changed(self, size):
+        """Çember gölge boyutu değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow size")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_size'] = size
+                
+                current_widget.update()
+    
+    def on_circle_shadow_opacity_changed(self, opacity):
+        """Çember gölge şeffaflığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow opacity")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_opacity'] = opacity
+                
+                current_widget.update()
+    
+    def on_circle_shadow_inner_changed(self, inner):
+        """Çember iç/dış gölge değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow type")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['inner_shadow'] = inner
+                
+                current_widget.update()
+    
+    def on_circle_shadow_quality_changed(self, quality):
+        """Çember gölge kalitesi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                # Undo için state kaydet
+                current_widget.save_current_state("Change circle shadow quality")
+                
+                # Sadece çember stroke'larını güncelle
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if stroke.get('type') == 'circle':
+                            stroke['shadow_quality'] = quality
+                
+                current_widget.update()
+
     def clear_image_cache(self):
         """Image cache klasörünü temizle"""
         try:
@@ -1541,6 +2177,117 @@ class MainWindow(QMainWindow):
             self.cached_images.clear()
         except Exception as e:
             print(f"Image cache temizlenirken hata: {e}")
+
+    def setup_actions(self):
+        """Menü ve toolbar aksiyonlarını ayarla"""
+        # Edit menüsü için kes/kopyala/yapıştır aksiyonları
+        self.copy_action = QAction("Kopyala", self)
+        self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        self.copy_action.triggered.connect(self.copy_selected_strokes)
+        
+        self.cut_action = QAction("Kes", self)
+        self.cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        self.cut_action.triggered.connect(self.cut_selected_strokes)
+        
+        self.paste_action = QAction("Yapıştır", self)
+        self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        self.paste_action.triggered.connect(self.paste_strokes)
+        
+    def setup_menubar(self):
+        """Menü çubuğunu oluştur"""
+        menubar = self.menuBar()
+        
+        # Edit menüsü
+        edit_menu = menubar.addMenu("Düzenle")
+        edit_menu.addAction(self.copy_action)
+        edit_menu.addAction(self.cut_action)
+        edit_menu.addAction(self.paste_action)
+        
+    def copy_selected_strokes(self):
+        """Seçili stroke'ları kopyala"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.selection_tool.selected_strokes:
+            self.show_status_message("Kopyalanacak öğe seçilmedi")
+            return
+        
+        self.clipboard_strokes = []
+        
+        # Seçili stroke'ları clipboard'a kopyala
+        for index in current_widget.selection_tool.selected_strokes:
+            if index < len(current_widget.strokes):
+                stroke = current_widget.strokes[index]
+                # Deep copy yap
+                import copy
+                copied_stroke = copy.deepcopy(stroke)
+                self.clipboard_strokes.append(copied_stroke)
+        
+        self.show_status_message(f"{len(self.clipboard_strokes)} öğe kopyalandı")
+        
+    def cut_selected_strokes(self):
+        """Seçili stroke'ları kes"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.selection_tool.selected_strokes:
+            self.show_status_message("Kesilecek öğe seçilmedi")
+            return
+        
+        # Önce kopyala
+        self.copy_selected_strokes()
+        
+        # Undo için state kaydet
+        current_widget.save_current_state("Cut strokes")
+        
+        # Seçili stroke'ları sil (geriye doğru sıralayarak index problemi olmasın)
+        sorted_indices = sorted(current_widget.selection_tool.selected_strokes, reverse=True)
+        for index in sorted_indices:
+            if index < len(current_widget.strokes):
+                current_widget.strokes.pop(index)
+        
+        # Seçimi temizle
+        current_widget.selection_tool.clear_selection()
+        current_widget.update_shape_properties()
+        current_widget.update()
+        
+        self.show_status_message(f"{len(self.clipboard_strokes)} öğe kesildi")
+        
+    def paste_strokes(self):
+        """Clipboard'daki stroke'ları yapıştır"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            return
+            
+        if not self.clipboard_strokes:
+            self.show_status_message("Yapıştırılacak öğe yok")
+            return
+        
+        # Undo için state kaydet
+        current_widget.save_current_state("Paste strokes")
+        
+        import copy
+        pasted_indices = []
+        
+        # Clipboard'daki her stroke'u yapıştır
+        for clipboard_stroke in self.clipboard_strokes:
+            # Deep copy yap
+            new_stroke = copy.deepcopy(clipboard_stroke)
+            
+            # Offset uygula (üst üste yapıştırılmasın)
+            self.apply_offset_to_stroke_inplace(new_stroke, self.clipboard_offset.x(), self.clipboard_offset.y())
+            
+            # Stroke'u ekle
+            current_widget.strokes.append(new_stroke)
+            pasted_indices.append(len(current_widget.strokes) - 1)
+        
+        # Yapıştırılan stroke'ları seç
+        current_widget.selection_tool.selected_strokes = pasted_indices
+        current_widget.update_shape_properties()
+        current_widget.update()
+        
+        # Offset'i artır (bir sonraki yapıştırma için)
+        self.clipboard_offset += QPointF(20, 20)
+        if self.clipboard_offset.x() > 100:  # Reset after 5 pastes
+            self.clipboard_offset = QPointF(20, 20)
+        
+        self.show_status_message(f"{len(self.clipboard_strokes)} öğe yapıştırıldı")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

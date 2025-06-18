@@ -40,7 +40,7 @@ class OpacityWidget(QWidget):
                 height: 14px;
                 margin: -5px 0;
                 border-radius: 7px;
-                box-shadow: 0 1px 3px rgba(0,0,0,0.3);
+                border: 1px solid rgba(0,0,0,0.3);
             }
             QSlider::handle:horizontal:hover {
                 background: #1976D2;
