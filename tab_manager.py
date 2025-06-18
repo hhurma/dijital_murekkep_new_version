@@ -127,8 +127,6 @@ class TabManager:
         
         # Zoom level'ı %100 olarak ayarla
         drawing_widget.set_zoom_level(1.0)  # %100 zoom
-        if hasattr(self.main_window, 'zoom_widget'):
-            self.main_window.zoom_widget.zoom_manager.set_zoom_level(1.0)  # %100 olarak göster
         
         return drawing_widget
     

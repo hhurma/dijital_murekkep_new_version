@@ -10,15 +10,8 @@ from splash_screen import show_splash_screen
 from DrawingWidget import DrawingWidget
 from pdf_exporter import PDFExporter
 from tab_manager import TabManager
-from zoom_manager import ZoomWidget
 from color_palette import ColorPalette
 from line_width_widget import LineWidthWidget
-from fill_widget import FillWidget
-from fill_color_widget import FillColorWidget
-from line_style_widget import LineStyleWidget
-from background_widget import BackgroundWidget
-from opacity_widget import OpacityWidget
-from undo_redo_manager import UndoRedoManager
 from settings_manager import SettingsManager
 from session_manager import SessionManager
 from shape_properties_widget import ShapePropertiesWidget
@@ -178,33 +171,6 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # Zoom araçları
-        self.zoom_in_action = QAction(qta.icon('fa5s.search-plus', color='#4CAF50'), "Yakınlaştır", self)
-        self.zoom_in_action.setShortcut("Ctrl++")
-        self.zoom_in_action.setToolTip("Yakınlaştır (Ctrl++)")
-        self.zoom_in_action.triggered.connect(self.zoom_in)
-        toolbar.addAction(self.zoom_in_action)
-        
-        self.zoom_out_action = QAction(qta.icon('fa5s.search-minus', color='#FF5722'), "Uzaklaştır", self)
-        self.zoom_out_action.setShortcut("Ctrl+-")
-        self.zoom_out_action.setToolTip("Uzaklaştır (Ctrl+-)")
-        self.zoom_out_action.triggered.connect(self.zoom_out)
-        toolbar.addAction(self.zoom_out_action)
-        
-        self.zoom_reset_action = QAction(qta.icon('fa5s.expand', color='#2196F3'), "Zoom Sıfırla", self)
-        self.zoom_reset_action.setShortcut("Ctrl+0")
-        self.zoom_reset_action.setToolTip("Zoom sıfırla (Ctrl+0)")
-        self.zoom_reset_action.triggered.connect(self.zoom_reset)
-        toolbar.addAction(self.zoom_reset_action)
-        
-        # Zoom widget
-        self.zoom_widget = ZoomWidget()
-        self.zoom_widget.zoomChanged.connect(self.on_zoom_changed)
-        self.zoom_widget.panChanged.connect(self.on_pan_changed)
-        toolbar.addWidget(self.zoom_widget)
-        
-        toolbar.addSeparator()
-        
         # Undo/Redo
         self.undo_action = QAction(qta.icon('fa5s.undo', color='#FF9800'), "Geri Al", self)
         self.undo_action.setShortcut("Ctrl+Z")
@@ -238,25 +204,7 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
-        # Fill/Dolgu
-        self.fill_widget = FillWidget()
-        self.fill_widget.fillChanged.connect(self.on_fill_changed)
-        toolbar.addWidget(self.fill_widget)
-        
-        # Fill Color/Dolgu Rengi
-        self.fill_color_widget = FillColorWidget()
-        self.fill_color_widget.fillColorChanged.connect(self.on_fill_color_changed)
-        toolbar.addWidget(self.fill_color_widget)
-        
-        # Line Style/Çizgi Stili
-        self.line_style_widget = LineStyleWidget()
-        self.line_style_widget.styleChanged.connect(self.on_line_style_changed)
-        toolbar.addWidget(self.line_style_widget)
-        
-        # Opacity/Şeffaflık
-        self.opacity_widget = OpacityWidget()
-        self.opacity_widget.opacityChanged.connect(self.on_opacity_changed)
-        toolbar.addWidget(self.opacity_widget)
+
         
         toolbar.addSeparator()
         
@@ -1028,15 +976,21 @@ class MainWindow(QMainWindow):
     
     def zoom_in(self):
         """Yakınlaştır"""
-        self.zoom_widget.zoom_in()
-    
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'zoom_manager'):
+            current_widget.zoom_manager.zoom_in()
+        
     def zoom_out(self):
         """Uzaklaştır"""
-        self.zoom_widget.zoom_out()
-    
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'zoom_manager'):
+            current_widget.zoom_manager.zoom_out()
+        
     def zoom_reset(self):
         """Zoom'u sıfırla"""
-        self.zoom_widget.reset_zoom()
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'zoom_manager'):
+            current_widget.zoom_manager.reset_zoom()
     
     def on_zoom_changed(self, zoom_level):
         """Zoom değiştiğinde aktif tab'a bildir"""
@@ -1092,10 +1046,6 @@ class MainWindow(QMainWindow):
         # UI widget'larını güncelle
         self.color_palette.load_from_settings()
         self.line_width_widget.set_width(self.settings.get_line_width())
-        self.fill_widget.set_filled(self.settings.get_fill_enabled())
-        self.fill_color_widget.set_fill_color(self.settings.get_fill_color())
-        self.opacity_widget.set_opacity(self.settings.get_opacity())
-        self.line_style_widget.set_style(self.settings.get_line_style())
         self.settings_widget.set_background_settings(bg_settings)
         
     def save_session(self):

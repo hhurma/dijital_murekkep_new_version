@@ -12,13 +12,13 @@ class CanvasRenderer:
         """Ana paintEvent metodunu işle"""
         painter = QPainter(self.drawing_widget)
         
-        # Main window'dan güncel zoom ve pan değerlerini al
+        # Zoom manager'dan güncel zoom ve pan değerlerini al
         current_zoom = self.drawing_widget.zoom_level
         current_offset = self.drawing_widget.zoom_offset
         
-        if self.drawing_widget.main_window and hasattr(self.drawing_widget.main_window, 'zoom_widget'):
-            current_zoom = self.drawing_widget.main_window.zoom_widget.get_zoom_level()
-            current_offset = self.drawing_widget.main_window.zoom_widget.get_pan_offset()
+        if hasattr(self.drawing_widget, 'zoom_manager'):
+            current_zoom = self.drawing_widget.zoom_manager.get_zoom_level()
+            current_offset = self.drawing_widget.zoom_manager.get_pan_offset()
         
         # Zoom ve pan transformasyonu uygula
         painter.scale(current_zoom, current_zoom)

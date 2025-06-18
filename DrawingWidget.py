@@ -264,13 +264,13 @@ class DrawingWidget(QWidget):
     
     def transform_mouse_pos(self, pos):
         """Mouse pozisyonunu zoom ve pan'e göre dönüştür"""
-        # Main window'dan güncel zoom ve pan değerlerini al
+        # Zoom manager'dan güncel zoom ve pan değerlerini al
         current_zoom = self.zoom_level
         current_offset = self.zoom_offset
         
-        if self.main_window and hasattr(self.main_window, 'zoom_widget'):
-            current_zoom = self.main_window.zoom_widget.get_zoom_level()
-            current_offset = self.main_window.zoom_widget.get_pan_offset()
+        if hasattr(self, 'zoom_manager'):
+            current_zoom = self.zoom_manager.get_zoom_level()
+            current_offset = self.zoom_manager.get_pan_offset()
         
         # Önce pan offset'ini çıkar, sonra zoom'u tersine çevir
         transformed_x = (pos.x() - current_offset.x()) / current_zoom

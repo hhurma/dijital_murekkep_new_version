@@ -61,13 +61,13 @@ class EventHandler:
         
         # Pan işlemi kontrol et
         if self.drawing_widget.is_panning:
-            if self.drawing_widget.main_window and hasattr(self.drawing_widget.main_window, 'zoom_widget'):
-                # Pan delta hesapla
-                delta = pos - self.drawing_widget.pan_start_point
-                current_offset = self.drawing_widget.main_window.zoom_widget.get_pan_offset()
+            # Pan delta hesapla
+            delta = pos - self.drawing_widget.pan_start_point
+            if hasattr(self.drawing_widget, 'zoom_manager'):
+                current_offset = self.drawing_widget.zoom_manager.get_pan_offset()
                 new_offset = current_offset + delta
-                self.drawing_widget.main_window.zoom_widget.set_pan_offset(new_offset)
-                self.drawing_widget.pan_start_point = pos
+                self.drawing_widget.zoom_manager.set_pan_offset(new_offset)
+            self.drawing_widget.pan_start_point = pos
             return
         
         if self.drawing_widget.active_tool == "bspline":
@@ -313,16 +313,16 @@ class EventHandler:
 
     def handle_wheel(self, event):
         """Mouse wheel eventi - zoom için"""
-        if self.drawing_widget.main_window and hasattr(self.drawing_widget.main_window, 'zoom_widget'):
+        if hasattr(self.drawing_widget, 'zoom_manager'):
             # Mouse pozisyonunu al
             mouse_pos = QPointF(event.position())
             
             # Wheel delta'ya göre zoom
             delta = event.angleDelta().y()
             if delta > 0:
-                self.drawing_widget.main_window.zoom_widget.wheel_zoom_in(mouse_pos)
+                self.drawing_widget.zoom_manager.wheel_zoom_in(mouse_pos)
             else:
-                self.drawing_widget.main_window.zoom_widget.wheel_zoom_out(mouse_pos)
+                self.drawing_widget.zoom_manager.wheel_zoom_out(mouse_pos)
         
         event.accept()
 
