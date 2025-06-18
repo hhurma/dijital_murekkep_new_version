@@ -260,8 +260,35 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
+        # Kes/Kopyala/Yapıştır/Sil butonları
+        copy_action_toolbar = QAction(qta.icon('fa5s.copy', color='#2196F3'), "Kopyala", self)
+        copy_action_toolbar.setShortcut("Ctrl+C")
+        copy_action_toolbar.setToolTip("Seçili öğeleri kopyala (Ctrl+C)")
+        copy_action_toolbar.triggered.connect(self.copy_selected_strokes)
+        toolbar.addAction(copy_action_toolbar)
+        
+        cut_action_toolbar = QAction(qta.icon('fa5s.cut', color='#FF9800'), "Kes", self)
+        cut_action_toolbar.setShortcut("Ctrl+X")
+        cut_action_toolbar.setToolTip("Seçili öğeleri kes (Ctrl+X)")
+        cut_action_toolbar.triggered.connect(self.cut_selected_strokes)
+        toolbar.addAction(cut_action_toolbar)
+        
+        paste_action_toolbar = QAction(qta.icon('fa5s.paste', color='#4CAF50'), "Yapıştır", self)
+        paste_action_toolbar.setShortcut("Ctrl+V")
+        paste_action_toolbar.setToolTip("Clipboard'dan yapıştır (Ctrl+V)")
+        paste_action_toolbar.triggered.connect(self.paste_strokes)
+        toolbar.addAction(paste_action_toolbar)
+        
+        delete_action_toolbar = QAction(qta.icon('fa5s.times', color='#F44336'), "Sil", self)
+        delete_action_toolbar.setShortcut("Del")
+        delete_action_toolbar.setToolTip("Seçili öğeleri sil (Del)")
+        delete_action_toolbar.triggered.connect(self.delete_selected_strokes)
+        toolbar.addAction(delete_action_toolbar)
+        
+        toolbar.addSeparator()
+        
         # Diğer işlemler
-        self.clear_action = QAction(qta.icon('fa5s.trash', color='#F44336'), "Temizle", self)
+        self.clear_action = QAction(qta.icon('fa5s.trash-alt', color='#F44336'), "Temizle", self)
         self.clear_action.setToolTip("Aktif tab'ı temizle")
         self.clear_action.triggered.connect(self.clear_all)
         toolbar.addAction(self.clear_action)
@@ -2193,6 +2220,11 @@ class MainWindow(QMainWindow):
         self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
         self.paste_action.triggered.connect(self.paste_strokes)
         
+        # Silme aksiyonu
+        self.delete_action = QAction("Sil", self)
+        self.delete_action.setShortcut(QKeySequence.StandardKey.Delete)
+        self.delete_action.triggered.connect(self.delete_selected_strokes)
+        
     def setup_menubar(self):
         """Menü çubuğunu oluştur"""
         menubar = self.menuBar()
@@ -2202,6 +2234,8 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.copy_action)
         edit_menu.addAction(self.cut_action)
         edit_menu.addAction(self.paste_action)
+        edit_menu.addSeparator()
+        edit_menu.addAction(self.delete_action)
         
     def copy_selected_strokes(self):
         """Seçili stroke'ları kopyala"""
@@ -2288,6 +2322,31 @@ class MainWindow(QMainWindow):
             self.clipboard_offset = QPointF(20, 20)
         
         self.show_status_message(f"{len(self.clipboard_strokes)} öğe yapıştırıldı")
+        
+    def delete_selected_strokes(self):
+        """Seçili stroke'ları sil"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.selection_tool.selected_strokes:
+            self.show_status_message("Silinecek öğe seçilmedi")
+            return
+        
+        # Undo için state kaydet
+        current_widget.save_current_state("Delete strokes")
+        
+        # Seçili stroke'ları sil (geriye doğru sıralayarak index problemi olmasın)
+        sorted_indices = sorted(current_widget.selection_tool.selected_strokes, reverse=True)
+        deleted_count = len(sorted_indices)
+        
+        for index in sorted_indices:
+            if index < len(current_widget.strokes):
+                current_widget.strokes.pop(index)
+        
+        # Seçimi temizle
+        current_widget.selection_tool.clear_selection()
+        current_widget.update_shape_properties()
+        current_widget.update()
+        
+        self.show_status_message(f"{deleted_count} öğe silindi")
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
