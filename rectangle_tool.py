@@ -1,7 +1,8 @@
 from PyQt6.QtCore import QPointF, QRectF, QSize
-from PyQt6.QtGui import QPainter, QPen, QBrush
+from PyQt6.QtGui import QPainter, QPen, QBrush, QColor, QPainterPath, QPolygonF
 from PyQt6.QtCore import Qt
 from grid_snap_utils import GridSnapUtils
+from shadow_renderer import ShadowRenderer
 
 class RectangleTool:
     def __init__(self):
@@ -181,291 +182,39 @@ class RectangleTool:
             rect = QRectF(top_left, bottom_right).normalized()
             points = [rect.topLeft(), rect.topRight(), rect.bottomRight(), rect.bottomLeft()]
         
-        # Dikdörtgen bounds'ını hesapla
-        rect = QRectF(points[0], points[2]).normalized()
-        
         painter.save()
         
-        # 1. Dış gölge çiz (varsa)
+        # Rectangle bounds hesapla
+        min_x = min(p.x() for p in points)
+        min_y = min(p.y() for p in points)
+        max_x = max(p.x() for p in points)
+        max_y = max(p.y() for p in points)
+        rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+        
+        # 1. Dış gölge çiz
         if stroke_data.get('has_shadow', False) and not stroke_data.get('inner_shadow', False):
-            self._draw_rectangle_shadow(painter, stroke_data, rect)
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
         
-        # 2. Ana dikdörtgeni çiz (dolgu + iç gölge + çerçeve)
-        self._draw_rectangle_shape(painter, stroke_data, rect)
+        # 2. Ana dikdörtgeni çiz (dolgu + çerçeve)
+        self._draw_rectangle_shape(painter, stroke_data, points)
         
-        painter.restore()
-        
-    def _draw_rectangle_shadow(self, painter, stroke_data, rect):
-        """Dikdörtgen gölgesi çiz"""
-        from PyQt6.QtGui import QColor, QPixmap, QPainter
-        from PyQt6.QtWidgets import QGraphicsScene, QGraphicsRectItem, QGraphicsBlurEffect
-        
-        shadow_color = stroke_data.get('shadow_color', Qt.GlobalColor.black)
-        shadow_blur = stroke_data.get('shadow_blur', 10)
-        shadow_size = stroke_data.get('shadow_size', 0)
-        shadow_opacity = stroke_data.get('shadow_opacity', 0.7)
-        shadow_offset_x = stroke_data.get('shadow_offset_x', 5)
-        shadow_offset_y = stroke_data.get('shadow_offset_y', 5)
-        inner_shadow = stroke_data.get('inner_shadow', False)
-        corner_radius = stroke_data.get('corner_radius', 0)
-        shadow_quality = stroke_data.get('shadow_quality', 'medium')
-        
-        # Gölge rengini tam opak yap
-        if isinstance(shadow_color, str):
-            shadow_color = QColor(shadow_color)
-        elif hasattr(shadow_color, 'name'):
-            shadow_color = QColor(shadow_color)
-        
-        # Shadow opacity 1.0 ise color alpha'sını override et
-        if shadow_opacity >= 1.0:
-            shadow_color.setAlphaF(1.0)
-        
-        # Blur yoksa basit gölge çiz
-        if shadow_blur <= 0:
-            self._draw_simple_shadow(painter, stroke_data, rect)
-            return
-        
-        # Blur radius ayarla (kaliteye göre)
-        blur_radius = self._get_adjusted_blur_radius(shadow_blur, shadow_quality)
-        
-        # Gölge pixmap boyutunu hesapla
-        margin = max(25, blur_radius * 2, shadow_size * 2)
-        shadow_pixmap_size = QSize(
-            int(rect.width() + margin * 2 + abs(shadow_offset_x)),
-            int(rect.height() + margin * 2 + abs(shadow_offset_y))
-        )
-        
-        # Gölge pixmap oluştur
-        shadow_pixmap = QPixmap(shadow_pixmap_size)
-        shadow_pixmap.fill(Qt.GlobalColor.transparent)
-        
-        shadow_painter = QPainter(shadow_pixmap)
-        shadow_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # Gölge şeklini çiz (pixmap merkezinde)
-        shape_rect = QRectF(
-            margin,
-            margin,
-            rect.width() + shadow_size * 2,
-            rect.height() + shadow_size * 2
-        )
-        
-        shadow_painter.setBrush(QBrush(shadow_color))
-        shadow_painter.setPen(Qt.PenStyle.NoPen)
-        
-        if corner_radius > 0:
-            shadow_painter.drawRoundedRect(shape_rect, corner_radius, corner_radius)
-        else:
-            shadow_painter.drawRect(shape_rect)
-        
-        shadow_painter.end()
-        
-        # İç gölge mi dış gölge mi kontrol et
-        if inner_shadow:
-
-            # İç gölge için özel işlem
-            inner_shadow_pixmap = self._create_inner_shadow_pixmap(shadow_pixmap, rect, margin, blur_radius, shadow_color, shadow_offset_x, shadow_offset_y, corner_radius, shadow_size)
-            
-            # Ana painter'e iç gölgeyi çiz
-            painter.save()
-            painter.setOpacity(shadow_opacity)
-            
-            # İç gölge için clip path kullan
-            from PyQt6.QtGui import QPainterPath
-            clip_path = QPainterPath()
-            if corner_radius > 0:
-                clip_path.addRoundedRect(rect, corner_radius, corner_radius)
-            else:
-                clip_path.addRect(rect)
-            painter.setClipPath(clip_path)
-            
-            # İç gölge pixmap'i ana şeklin pozisyonuna göre çiz
-            shadow_pos_x = int(rect.x())
-            shadow_pos_y = int(rect.y())
-            painter.drawPixmap(shadow_pos_x, shadow_pos_y, inner_shadow_pixmap)
-            painter.restore()
-        else:
-            # Dış gölge için blur efekti uygula
-            if blur_radius > 0:
-                blurred_shadow = self._apply_blur_to_pixmap(shadow_pixmap, blur_radius)
-            else:
-                blurred_shadow = shadow_pixmap
-            
-            # Ana painter'e dış gölgeyi çiz
-            painter.save()
-            painter.setOpacity(shadow_opacity)
-            
-            shadow_pos_x = int(rect.x() + shadow_offset_x - margin)
-            shadow_pos_y = int(rect.y() + shadow_offset_y - margin)
-            
-            painter.drawPixmap(shadow_pos_x, shadow_pos_y, blurred_shadow)
-            painter.restore()
-        
-    def _draw_simple_shadow(self, painter, stroke_data, rect):
-        """Blur olmadan basit gölge çiz"""
-        shadow_color = stroke_data.get('shadow_color', Qt.GlobalColor.black)
-        shadow_size = stroke_data.get('shadow_size', 0)
-        shadow_opacity = stroke_data.get('shadow_opacity', 0.7)
-        shadow_offset_x = stroke_data.get('shadow_offset_x', 5)
-        shadow_offset_y = stroke_data.get('shadow_offset_y', 5)
-        corner_radius = stroke_data.get('corner_radius', 0)
-        inner_shadow = stroke_data.get('inner_shadow', False)
-        
-        painter.save()
-        
-        if inner_shadow:
-            # İç gölge için clip path kullan
-            from PyQt6.QtGui import QPainterPath
-            clip_path = QPainterPath()
-            if corner_radius > 0:
-                clip_path.addRoundedRect(rect, corner_radius, corner_radius)
-            else:
-                clip_path.addRect(rect)
-            painter.setClipPath(clip_path)
-            
-            # İç gölge için rect'i ters offset uygula
-            shadow_rect = QRectF(
-                rect.x() - shadow_offset_x,
-                rect.y() - shadow_offset_y,
-                rect.width() + shadow_size * 2,
-                rect.height() + shadow_size * 2
-            )
-        else:
-            # Gölge rect hesapla
-            shadow_rect = QRectF(
-                rect.x() + shadow_offset_x,
-                rect.y() + shadow_offset_y,
-                rect.width() + shadow_size * 2,
-                rect.height() + shadow_size * 2
-            )
-        
-        painter.setOpacity(shadow_opacity)
-        painter.setBrush(QBrush(shadow_color))
-        painter.setPen(Qt.PenStyle.NoPen)
-        
-        if corner_radius > 0:
-            painter.drawRoundedRect(shadow_rect, corner_radius, corner_radius)
-        else:
-            painter.drawRect(shadow_rect)
+        # 3. İç gölge çiz (dolgudan sonra)
+        if stroke_data.get('has_shadow', False) and stroke_data.get('inner_shadow', False):
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
         
         painter.restore()
-    
-    def _get_adjusted_blur_radius(self, shadow_blur, shadow_quality):
-        """Performans ayarına göre blur yarıçapını ayarla"""
-        base_blur = shadow_blur * 3  # 3x güçlendir
         
-        if shadow_quality == "low":
-            return max(3, int(base_blur * 0.5))
-        elif shadow_quality == "high":
-            return int(base_blur * 2.0)
-        else:  # medium
-            return int(base_blur * 1.2)
-    
-    def _apply_blur_to_pixmap(self, pixmap, radius):
-        """Pixmap'e blur efekti uygula"""
-        if radius <= 0:
-            return pixmap
-            
-        from PyQt6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
-        from PyQt6.QtGui import QPixmap
-        
-        # QGraphicsScene kullanarak blur efekti uygula
-        scene = QGraphicsScene()
-        item = QGraphicsPixmapItem(pixmap)
-        scene.addItem(item)
-        
-        # Blur efekti oluştur
-        blur_effect = QGraphicsBlurEffect()
-        blur_effect.setBlurRadius(radius)
-        item.setGraphicsEffect(blur_effect)
-        
-        # Yeni pixmap oluştur
-        blurred_pixmap = QPixmap(pixmap.size())
-        blurred_pixmap.fill(Qt.GlobalColor.transparent)
-        
-        painter = QPainter(blurred_pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        scene.render(painter)
-        painter.end()
-        
-        return blurred_pixmap
-        
-    def _create_inner_shadow_pixmap(self, base_shadow_pixmap, rect, margin, blur_radius, shadow_color, offset_x, offset_y, corner_radius, shadow_size):
-        """İç gölge için özel pixmap oluştur - basitleştirilmiş yaklaşım"""
-
-        from PyQt6.QtGui import QPixmap, QPainter, QBrush, QRadialGradient, QColor
-        
-        # 1. Ana şekil boyutunda pixmap oluştur
-        inner_shadow = QPixmap(int(rect.width()), int(rect.height()))
-        inner_shadow.fill(Qt.GlobalColor.transparent)
-        
-        inner_painter = QPainter(inner_shadow)
-        inner_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
-        # 2. Ana şekli çiz (gölge rengi ile)
-        inner_painter.setBrush(QBrush(shadow_color))
-        inner_painter.setPen(Qt.PenStyle.NoPen)
-        
-        full_rect = QRectF(0, 0, rect.width(), rect.height())
-        if corner_radius > 0:
-            inner_painter.drawRoundedRect(full_rect, corner_radius, corner_radius)
-        else:
-            inner_painter.drawRect(full_rect)
-        
-                 # 3. İç kısmını temizle (dikdörtgen şeklinde iç gölge için)
-        inner_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-        
-        # Gölge genişliği hesapla (shadow_size kullan)
-        shadow_inset = max(shadow_size, 3)  # Shadow size'ı kullan, minimum 3px
-        
-        # İç dikdörtgeni temizle (offset ile)
-        inner_rect = QRectF(
-            shadow_inset - offset_x,
-            shadow_inset - offset_y,
-            rect.width() - (shadow_inset * 2) + (offset_x * 2),
-            rect.height() - (shadow_inset * 2) + (offset_y * 2)
-        )
-        
-        # Geçerli alan içinde mi kontrol et
-        if inner_rect.width() > 0 and inner_rect.height() > 0:
-            inner_painter.setBrush(QBrush(Qt.GlobalColor.black))
-            inner_painter.setPen(Qt.PenStyle.NoPen)
-            
-            # Corner radius varsa bunu da hesapla
-            inner_corner_radius = max(0, corner_radius - shadow_inset) if corner_radius > 0 else 0
-            
-            if inner_corner_radius > 0:
-                inner_painter.drawRoundedRect(inner_rect, inner_corner_radius, inner_corner_radius)
-            else:
-                inner_painter.drawRect(inner_rect)
-        
-        inner_painter.end()
-        
-        # 4. Blur uygula (eğer varsa)
-        if blur_radius > 0:
-            inner_shadow = self._apply_blur_to_pixmap(inner_shadow, int(blur_radius * 0.8))
-        
-        return inner_shadow
-        
-    def _create_tinted_pixmap(self, pixmap, color):
-        """Belirtilen renkte renklendirilmiş pixmap oluştur (gölge için)"""
-        from PyQt6.QtGui import QPixmap, QPainter
-        tinted = QPixmap(pixmap.size())
-        tinted.fill(color)
-        tinted_painter = QPainter(tinted)
-        tinted_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationIn)
-        tinted_painter.drawPixmap(0, 0, pixmap)
-        tinted_painter.end()
-        return tinted
-        
-    def _draw_rectangle_shape(self, painter, stroke_data, rect):
+    def _draw_rectangle_shape(self, painter, stroke_data, points):
         """Ana dikdörtgen şeklini çiz"""
-        from PyQt6.QtGui import QColor
-        
-        corner_radius = stroke_data.get('corner_radius', 0)
-        
         painter.save()
         
+        # Create a QPainterPath from the points
+        path = QPainterPath()
+        path.moveTo(points[0])
+        for i in range(1, len(points)):
+            path.lineTo(points[i])
+        path.closeSubpath()
+
         # 1. Dolgu çiz (varsa)
         if stroke_data.get('fill_color'):
             fill_brush = QBrush(stroke_data['fill_color'])
@@ -473,22 +222,15 @@ class RectangleTool:
             painter.setOpacity(stroke_data.get('fill_opacity', 1.0))
             painter.setPen(Qt.PenStyle.NoPen)
             
-            if corner_radius > 0:
-                painter.drawRoundedRect(rect, corner_radius, corner_radius)
-            else:
-                painter.drawRect(rect)
+            # Draw the filled polygon. Rounded corners are ignored for rotated shapes.
+            painter.drawPath(path)
             painter.setOpacity(1.0)
         
-        # 2. İç gölge çiz (varsa) - dolgudan sonra, çerçeveden önce
-        if stroke_data.get('has_shadow', False) and stroke_data.get('inner_shadow', False):
-            self._draw_rectangle_shadow(painter, stroke_data, rect)
-        
-        # 3. Çerçeve çiz
+        # 2. Çerçeve çiz
         line_style = stroke_data.get('line_style', Qt.PenStyle.SolidLine)
         color = stroke_data.get('color', stroke_data.get('line_color', Qt.GlobalColor.black))
         width = stroke_data.get('line_width', stroke_data.get('width', 2))
         
-        # Color string ise QColor'a çevir
         if isinstance(color, str):
             color = QColor(color)
         if isinstance(line_style, int):
@@ -499,10 +241,8 @@ class RectangleTool:
         painter.setPen(pen)
         painter.setBrush(Qt.BrushStyle.NoBrush)
         
-        if corner_radius > 0:
-            painter.drawRoundedRect(rect, corner_radius, corner_radius)
-        else:
-            painter.drawRect(rect)
+        # Draw the outline of the polygon. Rounded corners are ignored for rotated shapes.
+        painter.drawPath(path)
         
         painter.restore()
         
@@ -515,24 +255,20 @@ class RectangleTool:
         
         painter.save()
         
-        # Aktif gölge çiz (varsa) - hafif şeffaf
-        if self.has_shadow:
-            shadow_rect = QRectF(
-                rect.x() + self.shadow_offset_x,
-                rect.y() + self.shadow_offset_y,
-                rect.width() + self.shadow_size * 2,
-                rect.height() + self.shadow_size * 2
-            )
-            
-            painter.setOpacity(self.shadow_opacity * 0.3)  # Çok şeffaf
-            painter.setBrush(QBrush(self.shadow_color))
-            painter.setPen(Qt.PenStyle.NoPen)
-            
-            if self.corner_radius > 0:
-                painter.drawRoundedRect(shadow_rect, self.corner_radius, self.corner_radius)
-            else:
-                painter.drawRect(shadow_rect)
-            painter.setOpacity(1.0)
+        # Aktif dış gölge çiz
+        if self.has_shadow and not self.inner_shadow:
+            stroke_data = {
+                'has_shadow': True,
+                'shadow_color': self.shadow_color,
+                'shadow_blur': self.shadow_blur,
+                'shadow_size': self.shadow_size,
+                'shadow_opacity': self.shadow_opacity * 0.3,  # Daha şeffaf
+                'shadow_offset_x': self.shadow_offset_x,
+                'shadow_offset_y': self.shadow_offset_y,
+                'inner_shadow': False,
+                'shadow_quality': self.shadow_quality
+            }
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
         
         # Aktif dolgu çiz (varsa)
         if self.is_filled and self.fill_color:
@@ -547,6 +283,21 @@ class RectangleTool:
                 painter.drawRect(rect)
             painter.setOpacity(1.0)
         
+        # Aktif iç gölge çiz (dolgudan sonra)
+        if self.has_shadow and self.inner_shadow:
+            stroke_data = {
+                'has_shadow': True,
+                'shadow_color': self.shadow_color,
+                'shadow_blur': self.shadow_blur,
+                'shadow_size': self.shadow_size,
+                'shadow_opacity': self.shadow_opacity * 0.2,  # Daha da şeffaf
+                'shadow_offset_x': self.shadow_offset_x,
+                'shadow_offset_y': self.shadow_offset_y,
+                'inner_shadow': True,
+                'shadow_quality': self.shadow_quality
+            }
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
+        
         # Aktif çerçeve çiz
         pen = QPen(self.line_color, self.line_width, self.line_style,
                    Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
@@ -559,4 +310,4 @@ class RectangleTool:
         else:
             painter.drawRect(rect)
         
-        painter.restore() 
+        painter.restore()
