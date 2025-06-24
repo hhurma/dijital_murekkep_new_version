@@ -134,6 +134,15 @@ class StrokeHandler:
         cos_a = np.cos(angle_rad)
         sin_a = np.sin(angle_rad)
         
+        # Gölge verilerini koru
+        shadow_backup = {}
+        shadow_keys = ['has_shadow', 'shadow_color', 'shadow_blur', 'shadow_size', 
+                      'shadow_opacity', 'shadow_offset_x', 'shadow_offset_y', 
+                      'inner_shadow', 'shadow_quality']
+        for key in shadow_keys:
+            if key in stroke_data:
+                shadow_backup[key] = stroke_data[key]
+        
         if stroke_data['type'] == 'bspline':
             control_points = stroke_data['control_points']
             for i in range(len(control_points)):
@@ -212,6 +221,10 @@ class StrokeHandler:
             new_x = rel_x * cos_a - rel_y * sin_a + center_x
             new_y = rel_x * sin_a + rel_y * cos_a + center_y
             stroke_data['center'] = (new_x, new_y)
+        
+        # Gölge verilerini geri yükle
+        for key, value in shadow_backup.items():
+            stroke_data[key] = value
     
     @staticmethod
     def scale_stroke(stroke_data, center_x, center_y, scale_x, scale_y):

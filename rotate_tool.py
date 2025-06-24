@@ -216,6 +216,17 @@ class RotateTool:
         self.start_angle = 0
         self.active_handle = None
         self.rotation_handles = []
+        
+        # Orijinal stroke data'yı güncelle (temizleme yerine)
+        if hasattr(self, 'original_stroke_data'):
+            # Döndürülmüş data'yı yeni orijinal olarak kaydet
+            for stroke_id in self.original_stroke_data.keys():
+                # Bu strokes listesinde karşılık gelen stroke'u bul ve güncelle
+                # Not: Bu manuel yaklaşım yerine stroke referanslarını korumak daha iyi olacak
+                pass
+            # Bu sefer temizleme, bir sonraki rotate için hazır olsun
+            delattr(self, 'original_stroke_data')
+        
         # Resim cache'ini temizle
         if hasattr(self, 'original_image_data'):
             delattr(self, 'original_image_data')
@@ -306,10 +317,23 @@ class RotateTool:
             
             self.original_stroke_data[id(stroke_data)] = original_copy
         
+        # Mevcut gölge verilerini koru
+        current_shadow_data = {}
+        shadow_keys = ['has_shadow', 'shadow_color', 'shadow_blur', 'shadow_size', 
+                      'shadow_opacity', 'shadow_offset_x', 'shadow_offset_y', 
+                      'inner_shadow', 'shadow_quality']
+        for key in shadow_keys:
+            if key in stroke_data:
+                current_shadow_data[key] = stroke_data[key]
+        
         # Önce orijinal data'yı geri yükle
         original_data = self.original_stroke_data[id(stroke_data)]
         stroke_data.clear()
         stroke_data.update(original_data.copy())
+        
+        # Mevcut gölge verilerini geri yükle
+        for key, value in current_shadow_data.items():
+            stroke_data[key] = value
         
         # Sonra total angle ile döndür
         total_angle = self.last_angle - self.start_angle

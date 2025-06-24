@@ -184,23 +184,16 @@ class RectangleTool:
         
         painter.save()
         
-        # Rectangle bounds hesapla
-        min_x = min(p.x() for p in points)
-        min_y = min(p.y() for p in points)
-        max_x = max(p.x() for p in points)
-        max_y = max(p.y() for p in points)
-        rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
-        
         # 1. Dış gölge çiz
         if stroke_data.get('has_shadow', False) and not stroke_data.get('inner_shadow', False):
-            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', points, stroke_data)
         
         # 2. Ana dikdörtgeni çiz (dolgu + çerçeve)
         self._draw_rectangle_shape(painter, stroke_data, points)
         
         # 3. İç gölge çiz (dolgudan sonra)
         if stroke_data.get('has_shadow', False) and stroke_data.get('inner_shadow', False):
-            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
+            ShadowRenderer.draw_shape_shadow(painter, 'rectangle', points, stroke_data)
         
         painter.restore()
         

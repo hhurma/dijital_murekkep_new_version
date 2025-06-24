@@ -6,8 +6,8 @@ class ShadowRenderer:
     """Tüm şekiller için ortak gölge rendering sınıfı"""
     
     @staticmethod
-    def draw_shape_shadow(painter, shape_type, shape_rect, stroke_data):
-        """Ana gölge çizim methodu"""
+    def draw_shape_shadow(painter, shape_type, shape_rect_or_points, stroke_data):
+        """Ana gölge çizim methodu - rect veya points array alabilir"""
         if not stroke_data.get('has_shadow', False):
             return
             
@@ -15,12 +15,12 @@ class ShadowRenderer:
         inner_shadow = stroke_data.get('inner_shadow', False)
         
         if shadow_blur <= 0:
-            ShadowRenderer._draw_simple_shadow(painter, shape_type, shape_rect, stroke_data)
+            ShadowRenderer._draw_simple_shadow(painter, shape_type, shape_rect_or_points, stroke_data)
         else:
-            ShadowRenderer._draw_blurred_shadow(painter, shape_type, shape_rect, stroke_data)
+            ShadowRenderer._draw_blurred_shadow(painter, shape_type, shape_rect_or_points, stroke_data)
     
     @staticmethod
-    def _draw_simple_shadow(painter, shape_type, shape_rect, stroke_data):
+    def _draw_simple_shadow(painter, shape_type, shape_rect_or_points, stroke_data):
         """Blur olmadan basit gölge"""
         shadow_color = stroke_data.get('shadow_color', Qt.GlobalColor.black)
         shadow_size = stroke_data.get('shadow_size', 0)
@@ -36,44 +36,99 @@ class ShadowRenderer:
             
         painter.save()
         
-        if inner_shadow:
-            # İç gölge için clip path
-            clip_path = QPainterPath()
+        # Points array mi yoksa QRect mi?
+        if isinstance(shape_rect_or_points, list):
+            # Döndürülmüş şekil - points kullan
+            points = shape_rect_or_points
+            shape_path = QPainterPath()
             if shape_type == 'circle':
-                clip_path.addEllipse(shape_rect)
+                # Circle için center ve radius hesapla
+                center_x = sum(p.x() for p in points) / len(points)
+                center_y = sum(p.y() for p in points) / len(points)
+                # Yaklaşık radius hesapla
+                radius = ((points[1].x() - points[0].x())**2 + (points[1].y() - points[0].y())**2)**0.5 / 2
+                shape_path.addEllipse(center_x - radius, center_y - radius, radius*2, radius*2)
             else:  # rectangle
-                clip_path.addRect(shape_rect)
-            painter.setClipPath(clip_path)
+                shape_path.moveTo(points[0])
+                for i in range(1, len(points)):
+                    shape_path.lineTo(points[i])
+                shape_path.closeSubpath()
             
-            # İç gölge rect - ters offset
-            shadow_rect = QRectF(
-                shape_rect.x() - shadow_offset_x,
-                shape_rect.y() - shadow_offset_y,
-                shape_rect.width() + shadow_size * 2,
-                shape_rect.height() + shadow_size * 2
-            )
+            if inner_shadow:
+                # İç gölge için clip
+                painter.setClipPath(shape_path)
+                
+                # Shadow offset için points'leri kaydır
+                shadow_points = []
+                for p in points:
+                    shadow_points.append(QPointF(p.x() - shadow_offset_x, p.y() - shadow_offset_y))
+            else:
+                # Dış gölge için points'leri kaydır
+                shadow_points = []
+                for p in points:
+                    shadow_points.append(QPointF(p.x() + shadow_offset_x, p.y() + shadow_offset_y))
+            
+            # Shadow path oluştur
+            shadow_path = QPainterPath()
+            if shape_type == 'circle':
+                center_x = sum(p.x() for p in shadow_points) / len(shadow_points)
+                center_y = sum(p.y() for p in shadow_points) / len(shadow_points)
+                radius = ((shadow_points[1].x() - shadow_points[0].x())**2 + (shadow_points[1].y() - shadow_points[0].y())**2)**0.5 / 2
+                shadow_path.addEllipse(center_x - radius - shadow_size, center_y - radius - shadow_size, 
+                                     (radius + shadow_size)*2, (radius + shadow_size)*2)
+            else:  # rectangle
+                shadow_path.moveTo(shadow_points[0])
+                for i in range(1, len(shadow_points)):
+                    shadow_path.lineTo(shadow_points[i])
+                shadow_path.closeSubpath()
+            
+            painter.setOpacity(shadow_opacity)
+            painter.setBrush(QBrush(shadow_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            painter.drawPath(shadow_path)
+            
         else:
-            # Dış gölge rect
-            shadow_rect = QRectF(
-                shape_rect.x() + shadow_offset_x,
-                shape_rect.y() + shadow_offset_y,
-                shape_rect.width() + shadow_size * 2,
-                shape_rect.height() + shadow_size * 2
-            )
-        
-        painter.setOpacity(shadow_opacity)
-        painter.setBrush(QBrush(shadow_color))
-        painter.setPen(Qt.PenStyle.NoPen)
-        
-        if shape_type == 'circle':
-            painter.drawEllipse(shadow_rect)
-        else:  # rectangle
-            painter.drawRect(shadow_rect)
+            # Normal QRectF - eski kod
+            shape_rect = shape_rect_or_points
+            
+            if inner_shadow:
+                # İç gölge için clip path
+                clip_path = QPainterPath()
+                if shape_type == 'circle':
+                    clip_path.addEllipse(shape_rect)
+                else:  # rectangle
+                    clip_path.addRect(shape_rect)
+                painter.setClipPath(clip_path)
+                
+                # İç gölge rect - ters offset
+                shadow_rect = QRectF(
+                    shape_rect.x() - shadow_offset_x,
+                    shape_rect.y() - shadow_offset_y,
+                    shape_rect.width() + shadow_size * 2,
+                    shape_rect.height() + shadow_size * 2
+                )
+            else:
+                # Dış gölge rect
+                shadow_rect = QRectF(
+                    shape_rect.x() + shadow_offset_x,
+                    shape_rect.y() + shadow_offset_y,
+                    shape_rect.width() + shadow_size * 2,
+                    shape_rect.height() + shadow_size * 2
+                )
+            
+            painter.setOpacity(shadow_opacity)
+            painter.setBrush(QBrush(shadow_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+            
+            if shape_type == 'circle':
+                painter.drawEllipse(shadow_rect)
+            else:  # rectangle
+                painter.drawRect(shadow_rect)
         
         painter.restore()
     
     @staticmethod
-    def _draw_blurred_shadow(painter, shape_type, shape_rect, stroke_data):
+    def _draw_blurred_shadow(painter, shape_type, shape_rect_or_points, stroke_data):
         """Pixmap tabanlı blurred gölge"""
         shadow_color = stroke_data.get('shadow_color', Qt.GlobalColor.black)
         shadow_blur = stroke_data.get('shadow_blur', 10)
@@ -92,12 +147,42 @@ class ShadowRenderer:
         # Blur radius ayarla
         blur_radius = ShadowRenderer._get_adjusted_blur_radius(shadow_blur, shadow_quality)
         
-        # Gölge pixmap boyutu
-        margin = max(25, blur_radius * 2, shadow_size * 2)
-        shadow_pixmap_size = QSize(
-            int(shape_rect.width() + margin * 2 + abs(shadow_offset_x)),
-            int(shape_rect.height() + margin * 2 + abs(shadow_offset_y))
-        )
+        # Points mi QRect mi kontrol et
+        if isinstance(shape_rect_or_points, list):
+            # Döndürülmüş şekil için bounding box hesapla
+            points = shape_rect_or_points
+            min_x = min(p.x() for p in points)
+            max_x = max(p.x() for p in points)
+            min_y = min(p.y() for p in points)
+            max_y = max(p.y() for p in points)
+            bounding_rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
+            
+            # Gölge pixmap boyutu
+            margin = max(25, blur_radius * 2, shadow_size * 2)
+            shadow_pixmap_size = QSize(
+                int(bounding_rect.width() + margin * 2 + abs(shadow_offset_x)),
+                int(bounding_rect.height() + margin * 2 + abs(shadow_offset_y))
+            )
+            
+            # Points'leri pixmap koordinatlarına çevir
+            pixmap_points = []
+            for p in points:
+                pixmap_points.append(QPointF(
+                    p.x() - min_x + margin,
+                    p.y() - min_y + margin
+                ))
+        else:
+            # Normal QRectF
+            shape_rect = shape_rect_or_points
+            bounding_rect = shape_rect
+            
+            # Gölge pixmap boyutu
+            margin = max(25, blur_radius * 2, shadow_size * 2)
+            shadow_pixmap_size = QSize(
+                int(shape_rect.width() + margin * 2 + abs(shadow_offset_x)),
+                int(shape_rect.height() + margin * 2 + abs(shadow_offset_y))
+            )
+            pixmap_points = None
         
         # Gölge pixmap oluştur
         shadow_pixmap = QPixmap(shadow_pixmap_size)
@@ -107,42 +192,83 @@ class ShadowRenderer:
         shadow_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
         # Gölge şeklini çiz
-        shape_rect_in_pixmap = QRectF(
-            margin,
-            margin,
-            shape_rect.width() + shadow_size * 2,
-            shape_rect.height() + shadow_size * 2
-        )
-        
         shadow_painter.setBrush(QBrush(shadow_color))
         shadow_painter.setPen(Qt.PenStyle.NoPen)
         
-        if shape_type == 'circle':
-            shadow_painter.drawEllipse(shape_rect_in_pixmap)
-        else:  # rectangle
-            shadow_painter.drawRect(shape_rect_in_pixmap)
+        if pixmap_points is not None:
+            # Döndürülmüş şekil - points kullan
+            shadow_path = QPainterPath()
+            if shape_type == 'circle':
+                # Circle için center ve radius hesapla
+                center_x = sum(p.x() for p in pixmap_points) / len(pixmap_points)
+                center_y = sum(p.y() for p in pixmap_points) / len(pixmap_points)
+                radius = ((pixmap_points[1].x() - pixmap_points[0].x())**2 + (pixmap_points[1].y() - pixmap_points[0].y())**2)**0.5 / 2
+                shadow_path.addEllipse(center_x - radius - shadow_size, center_y - radius - shadow_size, 
+                                     (radius + shadow_size)*2, (radius + shadow_size)*2)
+            else:  # rectangle
+                shadow_path.moveTo(pixmap_points[0])
+                for i in range(1, len(pixmap_points)):
+                    shadow_path.lineTo(pixmap_points[i])
+                shadow_path.closeSubpath()
+            
+            shadow_painter.drawPath(shadow_path)
+        else:
+            # Normal QRectF
+            shape_rect_in_pixmap = QRectF(
+                margin,
+                margin,
+                bounding_rect.width() + shadow_size * 2,
+                bounding_rect.height() + shadow_size * 2
+            )
+            
+            if shape_type == 'circle':
+                shadow_painter.drawEllipse(shape_rect_in_pixmap)
+            else:  # rectangle
+                shadow_painter.drawRect(shape_rect_in_pixmap)
         
         shadow_painter.end()
         
         if inner_shadow:
             # İç gölge için özel işlem
             inner_shadow_pixmap = ShadowRenderer._create_inner_shadow_pixmap(
-                shadow_pixmap, shape_rect, shape_type, margin, blur_radius, 
-                shadow_color, shadow_offset_x, shadow_offset_y, shadow_size)
+                shadow_pixmap, bounding_rect, shape_type, margin, blur_radius, 
+                shadow_color, shadow_offset_x, shadow_offset_y, shadow_size, 
+                pixmap_points if pixmap_points is not None else None)
             
             painter.save()
             painter.setOpacity(shadow_opacity)
             
             # İç gölge için clip
             clip_path = QPainterPath()
-            if shape_type == 'circle':
-                clip_path.addEllipse(shape_rect)
+            if pixmap_points is not None:
+                # Döndürülmüş şekil için points kullan
+                if shape_type == 'circle':
+                    center_x = sum(p.x() for p in points) / len(points)
+                    center_y = sum(p.y() for p in points) / len(points)
+                    radius = ((points[1].x() - points[0].x())**2 + (points[1].y() - points[0].y())**2)**0.5 / 2
+                    clip_path.addEllipse(center_x - radius, center_y - radius, radius*2, radius*2)
+                else:  # rectangle
+                    clip_path.moveTo(points[0])
+                    for i in range(1, len(points)):
+                        clip_path.lineTo(points[i])
+                    clip_path.closeSubpath()
             else:
-                clip_path.addRect(shape_rect)
+                # Normal QRectF
+                if shape_type == 'circle':
+                    clip_path.addEllipse(bounding_rect)
+                else:
+                    clip_path.addRect(bounding_rect)
             painter.setClipPath(clip_path)
             
-            shadow_pos_x = int(shape_rect.x())
-            shadow_pos_y = int(shape_rect.y())
+            # İç gölge pixmap pozisyonunu düzelt
+            if pixmap_points is not None:
+                # Döndürülmüş şekil için min koordinatları kullan
+                shadow_pos_x = int(min_x)
+                shadow_pos_y = int(min_y)
+            else:
+                shadow_pos_x = int(bounding_rect.x())
+                shadow_pos_y = int(bounding_rect.y())
+            
             painter.drawPixmap(shadow_pos_x, shadow_pos_y, inner_shadow_pixmap)
             painter.restore()
         else:
@@ -155,8 +281,8 @@ class ShadowRenderer:
             painter.save()
             painter.setOpacity(shadow_opacity)
             
-            shadow_pos_x = int(shape_rect.x() + shadow_offset_x - margin)
-            shadow_pos_y = int(shape_rect.y() + shadow_offset_y - margin)
+            shadow_pos_x = int(bounding_rect.x() + shadow_offset_x - margin)
+            shadow_pos_y = int(bounding_rect.y() + shadow_offset_y - margin)
             
             painter.drawPixmap(shadow_pos_x, shadow_pos_y, blurred_shadow)
             painter.restore()
@@ -201,47 +327,125 @@ class ShadowRenderer:
         return blurred_pixmap
     
     @staticmethod
-    def _create_inner_shadow_pixmap(base_shadow_pixmap, shape_rect, shape_type, margin, blur_radius, shadow_color, offset_x, offset_y, shadow_size):
+    def _create_inner_shadow_pixmap(base_shadow_pixmap, shape_rect, shape_type, margin, blur_radius, shadow_color, offset_x, offset_y, shadow_size, points):
         """İç gölge için özel pixmap"""
-        # Ana şekil boyutunda pixmap
-        inner_shadow = QPixmap(int(shape_rect.width()), int(shape_rect.height()))
+        
+        if points is not None:
+            # Döndürülmüş şekil için büyük pixmap kullan
+            inner_shadow = QPixmap(int(shape_rect.width()), int(shape_rect.height()))
+        else:
+            # Normal şekil için standard boyut
+            inner_shadow = QPixmap(int(shape_rect.width()), int(shape_rect.height()))
+        
         inner_shadow.fill(Qt.GlobalColor.transparent)
         
         inner_painter = QPainter(inner_shadow)
         inner_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
         
-        # Ana şekli çiz
-        inner_painter.setBrush(QBrush(shadow_color))
-        inner_painter.setPen(Qt.PenStyle.NoPen)
-        
-        full_rect = QRectF(0, 0, shape_rect.width(), shape_rect.height())
-        if shape_type == 'circle':
-            inner_painter.drawEllipse(full_rect)
-        else:
-            inner_painter.drawRect(full_rect)
-        
-        # İç kısmını temizle
-        inner_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
-        
-        shadow_inset = max(shadow_size, 3)
-        
-        inner_rect = QRectF(
-            shadow_inset - offset_x,
-            shadow_inset - offset_y,
-            shape_rect.width() - (shadow_inset * 2) + (offset_x * 2),
-            shape_rect.height() - (shadow_inset * 2) + (offset_y * 2)
-        )
-        
-        if inner_rect.width() > 0 and inner_rect.height() > 0:
+        if points is not None:
+            # Döndürülmüş şekil - points'leri shape_rect içindeki relatif pozisyonlara çevir
+            min_x = min(p.x() for p in points)
+            min_y = min(p.y() for p in points)
+            
+            # Points'leri pixmap koordinatlarına çevir
+            inner_points = []
+            for p in points:
+                inner_points.append(QPointF(p.x() - min_x, p.y() - min_y))
+            
+            # Ana şekli çiz
+            inner_painter.setBrush(QBrush(shadow_color))
+            inner_painter.setPen(Qt.PenStyle.NoPen)
+            
+            outer_path = QPainterPath()
             if shape_type == 'circle':
-                inner_painter.drawEllipse(inner_rect)
+                center_x = sum(p.x() for p in inner_points) / len(inner_points)
+                center_y = sum(p.y() for p in inner_points) / len(inner_points)
+                radius = ((inner_points[1].x() - inner_points[0].x())**2 + (inner_points[1].y() - inner_points[0].y())**2)**0.5 / 2
+                outer_path.addEllipse(center_x - radius, center_y - radius, radius*2, radius*2)
             else:
-                inner_painter.drawRect(inner_rect)
+                outer_path.moveTo(inner_points[0])
+                for i in range(1, len(inner_points)):
+                    outer_path.lineTo(inner_points[i])
+                outer_path.closeSubpath()
+            
+            inner_painter.drawPath(outer_path)
+            
+            # İç kısmını temizle
+            inner_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            
+            # İç şekil için offset ve inset hesapla
+            shadow_inset = max(shadow_size, 3)
+            
+            inner_path = QPainterPath()
+            if shape_type == 'circle':
+                inner_center_x = center_x + offset_x
+                inner_center_y = center_y + offset_y
+                inner_radius = max(1, radius - shadow_inset)
+                inner_path.addEllipse(inner_center_x - inner_radius, inner_center_y - inner_radius, 
+                                    inner_radius*2, inner_radius*2)
+            else:
+                # Rectangle için her köşeyi inset + offset ile ayarla
+                # Basit yaklaşım: her kenarı inset kadar içeri al
+                center_x = sum(p.x() for p in inner_points) / len(inner_points)
+                center_y = sum(p.y() for p in inner_points) / len(inner_points)
+                
+                inset_points = []
+                for p in inner_points:
+                    # Her noktayı merkeze doğru inset kadar yaklaştır
+                    direction_x = center_x - p.x()
+                    direction_y = center_y - p.y()
+                    length = (direction_x**2 + direction_y**2)**0.5
+                    if length > 0:
+                        direction_x /= length
+                        direction_y /= length
+                        new_x = p.x() + direction_x * shadow_inset + offset_x
+                        new_y = p.y() + direction_y * shadow_inset + offset_y
+                        inset_points.append(QPointF(new_x, new_y))
+                    else:
+                        inset_points.append(QPointF(p.x() + offset_x, p.y() + offset_y))
+                
+                if inset_points:
+                    inner_path.moveTo(inset_points[0])
+                    for i in range(1, len(inset_points)):
+                        inner_path.lineTo(inset_points[i])
+                    inner_path.closeSubpath()
+            
+            inner_painter.drawPath(inner_path)
+            
+        else:
+            # Normal rectangular/circular şekil
+            # Ana şekli çiz
+            inner_painter.setBrush(QBrush(shadow_color))
+            inner_painter.setPen(Qt.PenStyle.NoPen)
+            
+            full_rect = QRectF(0, 0, shape_rect.width(), shape_rect.height())
+            if shape_type == 'circle':
+                inner_painter.drawEllipse(full_rect)
+            else:
+                inner_painter.drawRect(full_rect)
+            
+            # İç kısmını temizle - offset'i dikkate al
+            inner_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
+            
+            shadow_inset = max(shadow_size, 3)
+            
+            inner_rect = QRectF(
+                shadow_inset + offset_x,
+                shadow_inset + offset_y,
+                shape_rect.width() - (shadow_inset * 2),
+                shape_rect.height() - (shadow_inset * 2)
+            )
+            
+            if inner_rect.width() > 0 and inner_rect.height() > 0:
+                if shape_type == 'circle':
+                    inner_painter.drawEllipse(inner_rect)
+                else:
+                    inner_painter.drawRect(inner_rect)
         
         inner_painter.end()
         
         # Blur uygula
         if blur_radius > 0:
-            inner_shadow = ShadowRenderer._apply_blur_to_pixmap(inner_shadow, blur_radius)
-        
-        return inner_shadow 
+            return ShadowRenderer._apply_blur_to_pixmap(inner_shadow, blur_radius)
+        else:
+            return inner_shadow 
