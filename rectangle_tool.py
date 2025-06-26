@@ -201,43 +201,145 @@ class RectangleTool:
         """Ana dikdörtgen şeklini çiz"""
         painter.save()
         
-        # Create a QPainterPath from the points
-        path = QPainterPath()
-        path.moveTo(points[0])
-        for i in range(1, len(points)):
-            path.lineTo(points[i])
-        path.closeSubpath()
+        corner_radius = stroke_data.get('corner_radius', 0)
+        
+        # Döndürülmüş şekil kontrolü
+        is_rotated = False
+        if len(points) == 4:
+            # 4 köşe noktası var - döndürülmüş olabilir
+            p0, p1, p2, p3 = points
+            # Basit döndürme kontrolü: kenarlar 90 derece değilse döndürülmüştür
+            edge1 = QPointF(p1.x() - p0.x(), p1.y() - p0.y())
+            edge2 = QPointF(p2.x() - p1.x(), p2.y() - p1.y())
+            # İki kenar arasındaki açı 90 derece değilse döndürülmüş
+            dot_product = edge1.x() * edge2.x() + edge1.y() * edge2.y()
+            is_rotated = abs(dot_product) > 1e-6  # Küçük tolerans
+        
+        if corner_radius > 0 and not is_rotated:
+            # Yuvarlak kenar + döndürülmemiş = drawRoundedRect kullan
+            rect = QRectF(points[0], points[2]).normalized()
+            
+            # 1. Dolgu çiz (varsa)
+            if stroke_data.get('fill_color'):
+                fill_brush = QBrush(stroke_data['fill_color'])
+                painter.setBrush(fill_brush)
+                painter.setOpacity(stroke_data.get('fill_opacity', 1.0))
+                painter.setPen(Qt.PenStyle.NoPen)
+                
+                painter.drawRoundedRect(rect, corner_radius, corner_radius)
+                painter.setOpacity(1.0)
+            
+            # 2. Çerçeve çiz
+            line_style = stroke_data.get('line_style', Qt.PenStyle.SolidLine)
+            color = stroke_data.get('color', stroke_data.get('line_color', Qt.GlobalColor.black))
+            width = stroke_data.get('line_width', stroke_data.get('width', 2))
+            
+            if isinstance(color, str):
+                color = QColor(color)
+            if isinstance(line_style, int):
+                line_style = Qt.PenStyle(line_style)
+                
+            pen = QPen(color, width, line_style,
+                       Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            
+            painter.drawRoundedRect(rect, corner_radius, corner_radius)
+            
+        else:
+            # Normal köşeli dikdörtgen veya döndürülmüş şekil - path kullan
+            path = QPainterPath()
+            
+            if corner_radius > 0 and is_rotated:
+                # Döndürülmüş yuvarlak kenar - manuel yuvarlak köşe path
+                path = self._create_rounded_rectangle_path(points, corner_radius)
+            else:
+                # Normal köşeli path
+                path.moveTo(points[0])
+                for i in range(1, len(points)):
+                    path.lineTo(points[i])
+                path.closeSubpath()
 
-        # 1. Dolgu çiz (varsa)
-        if stroke_data.get('fill_color'):
-            fill_brush = QBrush(stroke_data['fill_color'])
-            painter.setBrush(fill_brush)
-            painter.setOpacity(stroke_data.get('fill_opacity', 1.0))
-            painter.setPen(Qt.PenStyle.NoPen)
+            # 1. Dolgu çiz (varsa)
+            if stroke_data.get('fill_color'):
+                fill_brush = QBrush(stroke_data['fill_color'])
+                painter.setBrush(fill_brush)
+                painter.setOpacity(stroke_data.get('fill_opacity', 1.0))
+                painter.setPen(Qt.PenStyle.NoPen)
+                
+                painter.drawPath(path)
+                painter.setOpacity(1.0)
             
-            # Draw the filled polygon. Rounded corners are ignored for rotated shapes.
+            # 2. Çerçeve çiz
+            line_style = stroke_data.get('line_style', Qt.PenStyle.SolidLine)
+            color = stroke_data.get('color', stroke_data.get('line_color', Qt.GlobalColor.black))
+            width = stroke_data.get('line_width', stroke_data.get('width', 2))
+            
+            if isinstance(color, str):
+                color = QColor(color)
+            if isinstance(line_style, int):
+                line_style = Qt.PenStyle(line_style)
+                
+            pen = QPen(color, width, line_style,
+                       Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
+            painter.setPen(pen)
+            painter.setBrush(Qt.BrushStyle.NoBrush)
+            
             painter.drawPath(path)
-            painter.setOpacity(1.0)
-        
-        # 2. Çerçeve çiz
-        line_style = stroke_data.get('line_style', Qt.PenStyle.SolidLine)
-        color = stroke_data.get('color', stroke_data.get('line_color', Qt.GlobalColor.black))
-        width = stroke_data.get('line_width', stroke_data.get('width', 2))
-        
-        if isinstance(color, str):
-            color = QColor(color)
-        if isinstance(line_style, int):
-            line_style = Qt.PenStyle(line_style)
-            
-        pen = QPen(color, width, line_style,
-                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
-        painter.setPen(pen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        
-        # Draw the outline of the polygon. Rounded corners are ignored for rotated shapes.
-        painter.drawPath(path)
         
         painter.restore()
+    
+    def _create_rounded_rectangle_path(self, points, radius):
+        """Döndürülmüş dikdörtgen için yuvarlak kenar path oluştur"""
+        if len(points) != 4:
+            # Fallback: normal path
+            path = QPainterPath()
+            path.moveTo(points[0])
+            for i in range(1, len(points)):
+                path.lineTo(points[i])
+            path.closeSubpath()
+            return path
+        
+        path = QPainterPath()
+        
+        # Her köşede yuvarlak kenar ekle
+        for i in range(4):
+            p_prev = points[(i - 1) % 4]
+            p_curr = points[i]
+            p_next = points[(i + 1) % 4]
+            
+            # Kenar vektörleri
+            edge_in = QPointF(p_curr.x() - p_prev.x(), p_curr.y() - p_prev.y())
+            edge_out = QPointF(p_next.x() - p_curr.x(), p_next.y() - p_curr.y())
+            
+            # Kenar uzunlukları
+            len_in = (edge_in.x()**2 + edge_in.y()**2)**0.5
+            len_out = (edge_out.x()**2 + edge_out.y()**2)**0.5
+            
+            if len_in > 0 and len_out > 0:
+                # Normalize
+                edge_in = QPointF(edge_in.x() / len_in, edge_in.y() / len_in)
+                edge_out = QPointF(edge_out.x() / len_out, edge_out.y() / len_out)
+                
+                # Radius'u kenar uzunluğuna göre sınırla
+                actual_radius = min(radius, len_in / 2, len_out / 2)
+                
+                # Yuvarlak başlangıç ve bitiş noktaları
+                start_point = QPointF(p_curr.x() - edge_in.x() * actual_radius,
+                                    p_curr.y() - edge_in.y() * actual_radius)
+                end_point = QPointF(p_curr.x() + edge_out.x() * actual_radius,
+                                   p_curr.y() + edge_out.y() * actual_radius)
+                
+                if i == 0:
+                    path.moveTo(start_point)
+                else:
+                    path.lineTo(start_point)
+                
+                # Yuvarlak köşe (quadratic curve)
+                path.quadTo(p_curr, end_point)
+        
+        path.closeSubpath()
+        return path
         
     def draw_current_stroke(self, painter):
         """Aktif olarak çizilen dikdörtgeni çiz"""
@@ -259,7 +361,8 @@ class RectangleTool:
                 'shadow_offset_x': self.shadow_offset_x,
                 'shadow_offset_y': self.shadow_offset_y,
                 'inner_shadow': False,
-                'shadow_quality': self.shadow_quality
+                'shadow_quality': self.shadow_quality,
+                'corner_radius': self.corner_radius
             }
             ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
         
@@ -287,7 +390,8 @@ class RectangleTool:
                 'shadow_offset_x': self.shadow_offset_x,
                 'shadow_offset_y': self.shadow_offset_y,
                 'inner_shadow': True,
-                'shadow_quality': self.shadow_quality
+                'shadow_quality': self.shadow_quality,
+                'corner_radius': self.corner_radius
             }
             ShadowRenderer.draw_shape_shadow(painter, 'rectangle', rect, stroke_data)
         

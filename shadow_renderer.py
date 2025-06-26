@@ -195,6 +195,9 @@ class ShadowRenderer:
         shadow_painter.setBrush(QBrush(shadow_color))
         shadow_painter.setPen(Qt.PenStyle.NoPen)
         
+        # Corner radius kontrolü
+        corner_radius = stroke_data.get('corner_radius', 0)
+        
         if pixmap_points is not None:
             # Döndürülmüş şekil - points kullan
             shadow_path = QPainterPath()
@@ -206,10 +209,15 @@ class ShadowRenderer:
                 shadow_path.addEllipse(center_x - radius - shadow_size, center_y - radius - shadow_size, 
                                      (radius + shadow_size)*2, (radius + shadow_size)*2)
             else:  # rectangle
-                shadow_path.moveTo(pixmap_points[0])
-                for i in range(1, len(pixmap_points)):
-                    shadow_path.lineTo(pixmap_points[i])
-                shadow_path.closeSubpath()
+                if corner_radius > 0:
+                    # Döndürülmüş yuvarlak kenar rectangle için path oluştur
+                    shadow_path = ShadowRenderer._create_rounded_rectangle_shadow_path(pixmap_points, corner_radius, shadow_size)
+                else:
+                    # Normal köşeli rectangle
+                    shadow_path.moveTo(pixmap_points[0])
+                    for i in range(1, len(pixmap_points)):
+                        shadow_path.lineTo(pixmap_points[i])
+                    shadow_path.closeSubpath()
             
             shadow_painter.drawPath(shadow_path)
         else:
@@ -224,7 +232,12 @@ class ShadowRenderer:
             if shape_type == 'circle':
                 shadow_painter.drawEllipse(shape_rect_in_pixmap)
             else:  # rectangle
-                shadow_painter.drawRect(shape_rect_in_pixmap)
+                if corner_radius > 0:
+                    # Yuvarlak kenar rectangle
+                    shadow_painter.drawRoundedRect(shape_rect_in_pixmap, corner_radius, corner_radius)
+                else:
+                    # Normal köşeli rectangle
+                    shadow_painter.drawRect(shape_rect_in_pixmap)
         
         shadow_painter.end()
         
@@ -233,7 +246,7 @@ class ShadowRenderer:
             inner_shadow_pixmap = ShadowRenderer._create_inner_shadow_pixmap(
                 shadow_pixmap, bounding_rect, shape_type, margin, blur_radius, 
                 shadow_color, shadow_offset_x, shadow_offset_y, shadow_size, 
-                pixmap_points if pixmap_points is not None else None)
+                pixmap_points if pixmap_points is not None else None, corner_radius)
             
             painter.save()
             painter.setOpacity(shadow_opacity)
@@ -248,16 +261,26 @@ class ShadowRenderer:
                     radius = ((points[1].x() - points[0].x())**2 + (points[1].y() - points[0].y())**2)**0.5 / 2
                     clip_path.addEllipse(center_x - radius, center_y - radius, radius*2, radius*2)
                 else:  # rectangle
-                    clip_path.moveTo(points[0])
-                    for i in range(1, len(points)):
-                        clip_path.lineTo(points[i])
-                    clip_path.closeSubpath()
+                    if corner_radius > 0:
+                        # Döndürülmüş yuvarlak kenar rectangle için clip path
+                        clip_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(points, corner_radius)
+                    else:
+                        # Normal köşeli rectangle
+                        clip_path.moveTo(points[0])
+                        for i in range(1, len(points)):
+                            clip_path.lineTo(points[i])
+                        clip_path.closeSubpath()
             else:
                 # Normal QRectF
                 if shape_type == 'circle':
                     clip_path.addEllipse(bounding_rect)
                 else:
-                    clip_path.addRect(bounding_rect)
+                    if corner_radius > 0:
+                        # Yuvarlak kenar rectangle
+                        clip_path.addRoundedRect(bounding_rect, corner_radius, corner_radius)
+                    else:
+                        # Normal köşeli rectangle
+                        clip_path.addRect(bounding_rect)
             painter.setClipPath(clip_path)
             
             # İç gölge pixmap pozisyonunu düzelt
@@ -327,7 +350,7 @@ class ShadowRenderer:
         return blurred_pixmap
     
     @staticmethod
-    def _create_inner_shadow_pixmap(base_shadow_pixmap, shape_rect, shape_type, margin, blur_radius, shadow_color, offset_x, offset_y, shadow_size, points):
+    def _create_inner_shadow_pixmap(base_shadow_pixmap, shape_rect, shape_type, margin, blur_radius, shadow_color, offset_x, offset_y, shadow_size, points, corner_radius):
         """İç gölge için özel pixmap"""
         
         if points is not None:
@@ -363,10 +386,15 @@ class ShadowRenderer:
                 radius = ((inner_points[1].x() - inner_points[0].x())**2 + (inner_points[1].y() - inner_points[0].y())**2)**0.5 / 2
                 outer_path.addEllipse(center_x - radius, center_y - radius, radius*2, radius*2)
             else:
-                outer_path.moveTo(inner_points[0])
-                for i in range(1, len(inner_points)):
-                    outer_path.lineTo(inner_points[i])
-                outer_path.closeSubpath()
+                if corner_radius > 0:
+                    # Döndürülmüş yuvarlak kenar rectangle
+                    outer_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(inner_points, corner_radius)
+                else:
+                    # Normal köşeli rectangle
+                    outer_path.moveTo(inner_points[0])
+                    for i in range(1, len(inner_points)):
+                        outer_path.lineTo(inner_points[i])
+                    outer_path.closeSubpath()
             
             inner_painter.drawPath(outer_path)
             
@@ -404,7 +432,12 @@ class ShadowRenderer:
                     else:
                         inset_points.append(QPointF(p.x() + offset_x, p.y() + offset_y))
                 
-                if inset_points:
+                if inset_points and corner_radius > 0:
+                    # Yuvarlak kenar iç rectangle path
+                    inner_radius = max(0, corner_radius - shadow_inset)
+                    inner_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(inset_points, inner_radius)
+                elif inset_points:
+                    # Normal köşeli iç rectangle path
                     inner_path.moveTo(inset_points[0])
                     for i in range(1, len(inset_points)):
                         inner_path.lineTo(inset_points[i])
@@ -422,7 +455,12 @@ class ShadowRenderer:
             if shape_type == 'circle':
                 inner_painter.drawEllipse(full_rect)
             else:
-                inner_painter.drawRect(full_rect)
+                if corner_radius > 0:
+                    # Yuvarlak kenar rectangle
+                    inner_painter.drawRoundedRect(full_rect, corner_radius, corner_radius)
+                else:
+                    # Normal köşeli rectangle
+                    inner_painter.drawRect(full_rect)
             
             # İç kısmını temizle - offset'i dikkate al
             inner_painter.setCompositionMode(QPainter.CompositionMode.CompositionMode_DestinationOut)
@@ -440,7 +478,13 @@ class ShadowRenderer:
                 if shape_type == 'circle':
                     inner_painter.drawEllipse(inner_rect)
                 else:
-                    inner_painter.drawRect(inner_rect)
+                    if corner_radius > 0:
+                        # Yuvarlak kenar rectangle - inner radius hesapla
+                        inner_radius = max(0, corner_radius - shadow_inset)
+                        inner_painter.drawRoundedRect(inner_rect, inner_radius, inner_radius)
+                    else:
+                        # Normal köşeli rectangle
+                        inner_painter.drawRect(inner_rect)
         
         inner_painter.end()
         
@@ -448,4 +492,135 @@ class ShadowRenderer:
         if blur_radius > 0:
             return ShadowRenderer._apply_blur_to_pixmap(inner_shadow, blur_radius)
         else:
-            return inner_shadow 
+            return inner_shadow
+    
+    @staticmethod
+    def _create_rounded_rectangle_shadow_path(points, corner_radius, shadow_size):
+        """Döndürülmüş yuvarlak kenar rectangle için gölge path oluştur"""
+        if len(points) != 4:
+            # Fallback: normal path
+            path = QPainterPath()
+            if points:
+                path.moveTo(points[0])
+                for i in range(1, len(points)):
+                    path.lineTo(points[i])
+                path.closeSubpath()
+            return path
+        
+        # Shadow için points'leri genişlet
+        expanded_points = []
+        
+        # Merkez hesapla
+        center_x = sum(p.x() for p in points) / len(points)
+        center_y = sum(p.y() for p in points) / len(points)
+        
+        # Her noktayı merkezden uzaklaştır (shadow_size kadar)
+        for p in points:
+            direction_x = p.x() - center_x
+            direction_y = p.y() - center_y
+            length = (direction_x**2 + direction_y**2)**0.5
+            
+            if length > 0:
+                # Normalize ve genişlet
+                direction_x /= length
+                direction_y /= length
+                expanded_x = p.x() + direction_x * shadow_size
+                expanded_y = p.y() + direction_y * shadow_size
+                expanded_points.append(QPointF(expanded_x, expanded_y))
+            else:
+                expanded_points.append(QPointF(p.x(), p.y()))
+        
+        # Yuvarlak kenar path oluştur
+        path = QPainterPath()
+        
+        for i in range(4):
+            p_prev = expanded_points[(i - 1) % 4]
+            p_curr = expanded_points[i]
+            p_next = expanded_points[(i + 1) % 4]
+            
+            # Kenar vektörleri
+            edge_in = QPointF(p_curr.x() - p_prev.x(), p_curr.y() - p_prev.y())
+            edge_out = QPointF(p_next.x() - p_curr.x(), p_next.y() - p_curr.y())
+            
+            # Kenar uzunlukları
+            len_in = (edge_in.x()**2 + edge_in.y()**2)**0.5
+            len_out = (edge_out.x()**2 + edge_out.y()**2)**0.5
+            
+            if len_in > 0 and len_out > 0:
+                # Normalize
+                edge_in = QPointF(edge_in.x() / len_in, edge_in.y() / len_in)
+                edge_out = QPointF(edge_out.x() / len_out, edge_out.y() / len_out)
+                
+                # Radius'u kenar uzunluğuna göre sınırla
+                actual_radius = min(corner_radius, len_in / 2, len_out / 2)
+                
+                # Yuvarlak başlangıç ve bitiş noktaları
+                start_point = QPointF(p_curr.x() - edge_in.x() * actual_radius,
+                                    p_curr.y() - edge_in.y() * actual_radius)
+                end_point = QPointF(p_curr.x() + edge_out.x() * actual_radius,
+                                   p_curr.y() + edge_out.y() * actual_radius)
+                
+                if i == 0:
+                    path.moveTo(start_point)
+                else:
+                    path.lineTo(start_point)
+                
+                # Yuvarlak köşe (quadratic curve)
+                path.quadTo(p_curr, end_point)
+        
+        path.closeSubpath()
+        return path
+    
+    @staticmethod
+    def _create_rounded_rectangle_path_for_clip(points, corner_radius):
+        """Döndürülmüş yuvarlak kenar rectangle için clipping path oluştur"""
+        if len(points) != 4:
+            # Fallback: normal path
+            path = QPainterPath()
+            if points:
+                path.moveTo(points[0])
+                for i in range(1, len(points)):
+                    path.lineTo(points[i])
+                path.closeSubpath()
+            return path
+        
+        path = QPainterPath()
+        
+        # Her köşede yuvarlak kenar ekle (shadow_size expansion olmadan)
+        for i in range(4):
+            p_prev = points[(i - 1) % 4]
+            p_curr = points[i]
+            p_next = points[(i + 1) % 4]
+            
+            # Kenar vektörleri
+            edge_in = QPointF(p_curr.x() - p_prev.x(), p_curr.y() - p_prev.y())
+            edge_out = QPointF(p_next.x() - p_curr.x(), p_next.y() - p_curr.y())
+            
+            # Kenar uzunlukları
+            len_in = (edge_in.x()**2 + edge_in.y()**2)**0.5
+            len_out = (edge_out.x()**2 + edge_out.y()**2)**0.5
+            
+            if len_in > 0 and len_out > 0:
+                # Normalize
+                edge_in = QPointF(edge_in.x() / len_in, edge_in.y() / len_in)
+                edge_out = QPointF(edge_out.x() / len_out, edge_out.y() / len_out)
+                
+                # Radius'u kenar uzunluğuna göre sınırla
+                actual_radius = min(corner_radius, len_in / 2, len_out / 2)
+                
+                # Yuvarlak başlangıç ve bitiş noktaları
+                start_point = QPointF(p_curr.x() - edge_in.x() * actual_radius,
+                                    p_curr.y() - edge_in.y() * actual_radius)
+                end_point = QPointF(p_curr.x() + edge_out.x() * actual_radius,
+                                   p_curr.y() + edge_out.y() * actual_radius)
+                
+                if i == 0:
+                    path.moveTo(start_point)
+                else:
+                    path.lineTo(start_point)
+                
+                # Yuvarlak köşe (quadratic curve)
+                path.quadTo(p_curr, end_point)
+        
+        path.closeSubpath()
+        return path 
