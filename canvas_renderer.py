@@ -34,7 +34,7 @@ class CanvasRenderer:
         scene_rect = inverse_transform.mapRect(QRectF(visible_rect))
         
         # Akıllı render optimizasyonu
-        total_strokes = len(self.drawing_widget.strokes)
+        total_strokes = self.drawing_widget.layer_manager.count_visible_strokes()
         use_culling = total_strokes > 100  # Moderate threshold - viewport culling
         use_lod = total_strokes > 50  # Level of Detail optimization
         
@@ -45,41 +45,44 @@ class CanvasRenderer:
         low_detail = zoom_level <= 0.5  # Uzak zoom - minimal detail
         
         # Tüm tamamlanmış stroke'ları çiz
-        for stroke_data in self.drawing_widget.strokes:
-            # Viewport culling kontrolü
-            if use_culling:
-                try:
-                    if not self.stroke_intersects_scene(stroke_data, scene_rect):
-                        continue  # Görünmeyen stroke'ları atla
-                except:
-                    pass  # Hata durumunda stroke'u çiz
-                
-            # Image stroke kontrolü
-            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
-                # Resim stroke'ları için conditional antialiasing
-                if not stroke_data.is_loading:
+        for layer in self.drawing_widget.layer_manager.iter_layers():
+            if not layer['visible']:
+                continue
+            for stroke_data in layer['strokes']:
+                # Viewport culling kontrolü
+                if use_culling:
+                    try:
+                        if not self.stroke_intersects_scene(stroke_data, scene_rect):
+                            continue  # Görünmeyen stroke'ları atla
+                    except:
+                        pass  # Hata durumunda stroke'u çiz
+
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    # Resim stroke'ları için conditional antialiasing
+                    if not stroke_data.is_loading:
+                        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    stroke_data.render(painter)
+                    continue
+
+                # Güvenlik kontrolü - eski stroke'lar için
+                if 'type' not in stroke_data:
+                    continue
+
+                # LOD bazlı rendering ayarları
+                if use_lod and low_detail:
+                    # Uzak zoom - minimal antialiasing, basit çizim
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                    self.draw_stroke_simple(painter, stroke_data)
+                elif use_lod and medium_detail:
+                    # Orta zoom - orta kalite
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-                stroke_data.render(painter)
-                continue
-                
-            # Güvenlik kontrolü - eski stroke'lar için
-            if 'type' not in stroke_data:
-                continue
-            
-            # LOD bazlı rendering ayarları
-            if use_lod and low_detail:
-                # Uzak zoom - minimal antialiasing, basit çizim
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-                self.draw_stroke_simple(painter, stroke_data)
-            elif use_lod and medium_detail:
-                # Orta zoom - orta kalite
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                self.draw_stroke_medium(painter, stroke_data)
-            else:
-                # Yakın zoom veya LOD yok - full kalite
-                painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-                self.draw_stroke_full(painter, stroke_data)
+                    self.draw_stroke_medium(painter, stroke_data)
+                else:
+                    # Yakın zoom veya LOD yok - full kalite
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    self.draw_stroke_full(painter, stroke_data)
 
         # Seçim vurgusunu çiz
         self.drawing_widget.selection_tool.draw_selected_stroke_highlight(painter, self.drawing_widget.strokes)

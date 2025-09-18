@@ -47,7 +47,11 @@ class ThrottleManager:
             return False
             
         # Stroke sayısı threshold'u geçmişse throttling aktif
-        stroke_count = len(self.drawing_widget.strokes) if hasattr(self.drawing_widget, 'strokes') else 0
+        stroke_count = 0
+        if hasattr(self.drawing_widget, 'layer_manager'):
+            stroke_count = self.drawing_widget.layer_manager.count_visible_strokes()
+        elif hasattr(self.drawing_widget, 'strokes'):
+            stroke_count = len(self.drawing_widget.strokes)
         return stroke_count > settings['stroke_threshold']
     
     def can_update(self, throttle_type: ThrottleType) -> bool:
@@ -121,7 +125,10 @@ class ThrottleManager:
     
     def get_throttle_stats(self) -> dict:
         """Throttle istatistiklerini döndür"""
-        stroke_count = len(self.drawing_widget.strokes) if hasattr(self.drawing_widget, 'strokes') else 0
+        if hasattr(self.drawing_widget, 'layer_manager'):
+            stroke_count = self.drawing_widget.layer_manager.count_visible_strokes()
+        else:
+            stroke_count = len(self.drawing_widget.strokes) if hasattr(self.drawing_widget, 'strokes') else 0
         current_time = time.time()
         
         stats = {

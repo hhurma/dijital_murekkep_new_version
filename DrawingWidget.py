@@ -1,9 +1,10 @@
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath, QColor, QBrush, QTabletEvent
-from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF
+from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
 from scipy.interpolate import splprep, splev
 import numpy as np
 import time
+import copy
 from tablet_handler import TabletHandler
 from event_handler import EventHandler
 from canvas_renderer import CanvasRenderer
@@ -21,7 +22,209 @@ from rectangle_tool import RectangleTool
 from circle_tool import CircleTool
 from stroke_handler import StrokeHandler
 
+
+class LayerManager:
+    """DrawingWidget içerisindeki katman yönetimini üstlenen sınıf."""
+
+    def __init__(self, drawing_widget):
+        self.drawing_widget = drawing_widget
+        self.layers = {}
+        self.layer_order = []
+        self._id_counter = 0
+        self.active_layer_id = None
+        self.create_layer("Layer 1")
+
+    # ------------------------------------------------------------------
+    # Katman yardımcı metodları
+    # ------------------------------------------------------------------
+    def _generate_layer_id(self):
+        self._id_counter += 1
+        return f"layer_{self._id_counter}"
+
+    def create_layer(self, name=None):
+        layer_id = self._generate_layer_id()
+        if name is None:
+            name = f"Layer {len(self.layer_order) + 1}"
+
+        self.layers[layer_id] = {
+            'id': layer_id,
+            'name': name,
+            'visible': True,
+            'locked': False,
+            'strokes': []
+        }
+        self.layer_order.append(layer_id)
+
+        if self.active_layer_id is None:
+            self.active_layer_id = layer_id
+
+        self._emit_changes()
+        return layer_id
+
+    def delete_layer(self, layer_id):
+        if layer_id not in self.layers or len(self.layer_order) <= 1:
+            return False
+
+        was_active = layer_id == self.active_layer_id
+        self.layer_order.remove(layer_id)
+        self.layers.pop(layer_id, None)
+
+        if was_active:
+            self.active_layer_id = self.layer_order[-1]
+            self.drawing_widget.selection_tool.clear_selection()
+            self.drawing_widget.activeLayerChanged.emit(self.active_layer_id)
+
+        self._emit_changes()
+        return True
+
+    def set_active_layer(self, layer_id):
+        if layer_id in self.layers and layer_id in self.layer_order:
+            if self.active_layer_id != layer_id:
+                self.active_layer_id = layer_id
+                self.drawing_widget.selection_tool.clear_selection()
+                self.drawing_widget.activeLayerChanged.emit(layer_id)
+                self._emit_changes(update_only=False)
+            return True
+        return False
+
+    def get_active_layer(self):
+        if self.active_layer_id is None:
+            return None
+        return self.layers.get(self.active_layer_id)
+
+    def get_active_strokes(self):
+        layer = self.get_active_layer()
+        if not layer:
+            return []
+        return layer['strokes']
+
+    def set_active_strokes(self, strokes):
+        layer = self.get_active_layer()
+        if layer is not None:
+            layer['strokes'] = copy.deepcopy(list(strokes))
+            self._emit_changes()
+
+    def iter_layers(self):
+        for layer_id in self.layer_order:
+            layer = self.layers[layer_id]
+            yield layer
+
+    def iter_visible_layers(self):
+        for layer in self.iter_layers():
+            if layer['visible']:
+                yield layer
+
+    def is_active_layer_locked(self):
+        layer = self.get_active_layer()
+        return bool(layer and layer.get('locked'))
+
+    def set_layer_visibility(self, layer_id, visible):
+        if layer_id in self.layers:
+            self.layers[layer_id]['visible'] = bool(visible)
+            self._emit_changes()
+
+    def set_layer_locked(self, layer_id, locked):
+        if layer_id in self.layers:
+            self.layers[layer_id]['locked'] = bool(locked)
+            self._emit_changes()
+
+    def rename_layer(self, layer_id, name):
+        if layer_id in self.layers:
+            self.layers[layer_id]['name'] = name
+            self._emit_changes()
+
+    def move_layer(self, layer_id, new_index):
+        if layer_id not in self.layers:
+            return False
+        new_index = max(0, min(new_index, len(self.layer_order) - 1))
+        current_index = self.layer_order.index(layer_id)
+        if new_index == current_index:
+            return False
+        self.layer_order.pop(current_index)
+        self.layer_order.insert(new_index, layer_id)
+        self._emit_changes()
+        return True
+
+    def clear_all(self):
+        for layer in self.layers.values():
+            layer['strokes'].clear()
+        self._emit_changes()
+
+    def export_state(self):
+        return {
+            'active_layer': self.active_layer_id,
+            'layer_order': list(self.layer_order),
+            'layers': {
+                layer_id: {
+                    'id': layer_id,
+                    'name': layer_data['name'],
+                    'visible': layer_data['visible'],
+                    'locked': layer_data['locked'],
+                    'strokes': copy.deepcopy(layer_data['strokes'])
+                }
+                for layer_id, layer_data in self.layers.items()
+            }
+        }
+
+    def import_state(self, state):
+        self.layers = {}
+        self.layer_order = list(state.get('layer_order', []))
+        self.active_layer_id = state.get('active_layer')
+
+        state_layers = state.get('layers', {})
+        for layer_id in state_layers.keys():
+            if layer_id not in self.layer_order:
+                self.layer_order.append(layer_id)
+
+        for layer_id in self.layer_order:
+            layer_data = state_layers.get(layer_id, {})
+            self.layers[layer_id] = {
+                'id': layer_id,
+                'name': layer_data.get('name', layer_id),
+                'visible': layer_data.get('visible', True),
+                'locked': layer_data.get('locked', False),
+                'strokes': copy.deepcopy(layer_data.get('strokes', []))
+            }
+
+        if not self.layer_order:
+            self.layers = {}
+            self.layer_order = []
+            self.active_layer_id = None
+            self.create_layer("Layer 1")
+
+        if self.active_layer_id not in self.layers:
+            self.active_layer_id = self.layer_order[-1]
+
+        # ID sayacını güncelle
+        numeric_ids = []
+        for layer_id in self.layer_order:
+            parts = layer_id.split('_')
+            if parts[-1].isdigit():
+                numeric_ids.append(int(parts[-1]))
+        if numeric_ids:
+            self._id_counter = max(numeric_ids)
+        else:
+            self._id_counter = len(self.layer_order)
+
+        # Güncelleme sinyallerini gönder
+        self._emit_changes(update_only=False)
+        self.drawing_widget.activeLayerChanged.emit(self.active_layer_id)
+
+    def count_visible_strokes(self):
+        count = 0
+        for layer in self.iter_visible_layers():
+            count += len(layer['strokes'])
+        return count
+
+    def _emit_changes(self, update_only=True):
+        self.drawing_widget.layersChanged.emit()
+        if not update_only:
+            self.drawing_widget.activeLayerChanged.emit(self.active_layer_id)
+
 class DrawingWidget(QWidget):
+    layersChanged = pyqtSignal()
+    activeLayerChanged = pyqtSignal(str)
+
     def __init__(self):
         super().__init__()
         
@@ -37,7 +240,9 @@ class DrawingWidget(QWidget):
         self.canvas_orientation = 'landscape'
         self.update_canvas_size()
         
-        self.strokes = [] # Stores all stroke data (farklı araç türleri)
+        # Katman yöneticisi
+        self.layer_manager = LayerManager(self)
+
         self.setMouseTracking(True) # Enable tracking even when no button is pressed
         
         # Aktif araç
@@ -102,11 +307,105 @@ class DrawingWidget(QWidget):
         
         # Eski stroke'ları temizle ve yeni formatla başla
         self.clear_all_strokes()
-        
+
     def set_main_window(self, main_window):
         """Ana pencere referansını ayarla"""
         self.main_window = main_window
-        
+
+    # ------------------------------------------------------------------
+    # Katman yardımcı metodları
+    # ------------------------------------------------------------------
+    @property
+    def strokes(self):
+        return self.layer_manager.get_active_strokes()
+
+    @strokes.setter
+    def strokes(self, value):
+        self.layer_manager.set_active_strokes(value)
+        self.update()
+
+    def get_layer_overview(self):
+        return list(self.layer_manager.iter_layers())
+
+    def add_layer(self, name=None):
+        self.save_current_state("Add layer")
+        layer_id = self.layer_manager.create_layer(name)
+        self.layer_manager.set_active_layer(layer_id)
+        self.update()
+        return layer_id
+
+    def delete_layer(self, layer_id):
+        if layer_id in self.layer_manager.layers and len(self.layer_manager.layer_order) > 1:
+            self.save_current_state("Delete layer")
+        removed = self.layer_manager.delete_layer(layer_id)
+        if removed:
+            self.update()
+        return removed
+
+    def set_active_layer(self, layer_id):
+        if self.layer_manager.set_active_layer(layer_id):
+            self.update()
+            return True
+        return False
+
+    def is_active_layer_locked(self):
+        return self.layer_manager.is_active_layer_locked()
+
+    def get_active_layer_id(self):
+        return self.layer_manager.active_layer_id
+
+    def set_layer_visibility(self, layer_id, visible):
+        layer = self.layer_manager.layers.get(layer_id)
+        if layer and layer.get('visible') == bool(visible):
+            return
+        self.save_current_state("Change layer visibility")
+        self.layer_manager.set_layer_visibility(layer_id, visible)
+        self.update()
+
+    def set_layer_locked(self, layer_id, locked):
+        layer = self.layer_manager.layers.get(layer_id)
+        if layer and layer.get('locked') == bool(locked):
+            return
+        self.save_current_state("Change layer lock")
+        self.layer_manager.set_layer_locked(layer_id, locked)
+        self.update()
+
+    def rename_layer(self, layer_id, name):
+        layer = self.layer_manager.layers.get(layer_id)
+        if layer and layer.get('name') == name:
+            return
+        self.save_current_state("Rename layer")
+        self.layer_manager.rename_layer(layer_id, name)
+        self.update()
+
+    def move_layer(self, layer_id, new_index):
+        if layer_id not in self.layer_manager.layers:
+            return
+        current_index = self.layer_manager.layer_order.index(layer_id)
+        if current_index == new_index:
+            return
+        self.save_current_state("Reorder layer")
+        if self.layer_manager.move_layer(layer_id, new_index):
+            self.update()
+
+    def ensure_layer_editable(self):
+        """Aktif katmanın düzenlenebilir olduğunu kontrol et"""
+        layer = self.layer_manager.get_active_layer()
+        if not layer:
+            return False
+
+        if layer.get('locked'):
+            if self.main_window:
+                self.main_window.show_status_message("Aktif katman kilitli")
+            return False
+
+        if not layer.get('visible', True):
+            if self.main_window:
+                self.main_window.show_status_message("Gizli katmanda düzenleme yapılamaz")
+            return False
+
+        return True
+
     def update_canvas_size(self):
         """Canvas boyutunu mevcut yönlendirmeye göre güncelle"""
         if self.canvas_orientation == 'landscape':
@@ -290,29 +589,30 @@ class DrawingWidget(QWidget):
     def save_current_state(self, description="Action"):
         """Mevcut durumu undo manager'a kaydet"""
         if self.undo_manager:
-            self.undo_manager.save_state(self.strokes, description)
-            
+            self.undo_manager.save_state(self.layer_manager.export_state(), description)
+
     def undo(self):
         """Geri al"""
         if self.undo_manager:
             previous_state = self.undo_manager.undo()
             if previous_state is not None:
-                self.strokes = previous_state
+                self.layer_manager.import_state(previous_state)
                 self.update()
                 # Seçimi temizle
                 self.selection_tool.clear_selection()
+                self.update_shape_properties()
 
     def redo(self):
         """İleri al"""
         if self.undo_manager:
             next_state = self.undo_manager.redo()
             if next_state is not None:
-                self.strokes = next_state
+                self.layer_manager.import_state(next_state)
                 self.update()
-                        # Seçimi temizle
-        self.selection_tool.clear_selection()
-        # Shape properties dock'unu kapat
-        self.update_shape_properties()
+                # Seçimi temizle
+                self.selection_tool.clear_selection()
+                # Shape properties dock'unu kapat
+                self.update_shape_properties()
 
     def update_shape_properties(self):
         """Seçim değiştiğinde shape properties dock'unu güncelle"""
@@ -332,9 +632,10 @@ class DrawingWidget(QWidget):
 
     def clear_all_strokes(self):
         """Tüm çizimleri temizle"""
-        if self.strokes:  # Sadece çizim varsa kaydet
+        has_strokes = any(layer['strokes'] for layer in self.layer_manager.iter_layers())
+        if has_strokes:  # Sadece çizim varsa kaydet
             self.save_current_state("Clear all")
-        self.strokes = []
+        self.layer_manager.clear_all()
         self.bspline_tool.cancel_stroke()  # Aktif B-spline çizimi de temizle
         self.freehand_tool.cancel_stroke()  # Aktif serbest çizimi de temizle
         self.line_tool.cancel_stroke()  # Aktif çizgi çizimi de temizle

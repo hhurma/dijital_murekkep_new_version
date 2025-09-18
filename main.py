@@ -15,6 +15,7 @@ from line_width_widget import LineWidthWidget
 from settings_manager import SettingsManager
 from session_manager import SessionManager
 from shape_properties_widget import ShapePropertiesWidget
+from layer_manager_widget import LayerManagerWidget
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -75,7 +76,10 @@ class MainWindow(QMainWindow):
         
         # Shape properties dock widget oluştur
         self.create_shape_properties_dock()
-        
+
+        # Layer manager dock widget oluştur
+        self.create_layer_dock()
+
         # Tab widget'ını layout'a ekle
         self.tab_widget = self.tab_manager.get_tab_widget()
         layout.addWidget(self.tab_widget)
@@ -492,9 +496,20 @@ class MainWindow(QMainWindow):
                                               QDockWidget.DockWidgetFeature.DockWidgetClosable)
         
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.shape_properties_dock)
-        
+
         # Başlangıçta gizli, resim seçildiğinde görünür olacak
         self.shape_properties_dock.setVisible(False)
+
+    def create_layer_dock(self):
+        """Katman yöneticisi dock widget'ını oluştur"""
+        self.layer_dock = QDockWidget("Katmanlar", self)
+        self.layer_manager_widget = LayerManagerWidget()
+        self.layer_dock.setWidget(self.layer_manager_widget)
+        self.layer_dock.setFloating(False)
+        self.layer_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable |
+                                     QDockWidget.DockWidgetFeature.DockWidgetClosable)
+
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.layer_dock)
         
     def toggle_shape_properties_dock(self):
         """Şekil özellikleri dock widget'ını aç/kapat"""
@@ -673,7 +688,9 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if current_widget:
             current_widget.set_main_window(self)
-        
+        if hasattr(self, 'layer_manager_widget'):
+            self.layer_manager_widget.set_drawing_widget(current_widget)
+
     def set_tool(self, tool_name):
         """Aktif aracı değiştir"""
         # Diğer butonları deselect yap
@@ -2249,7 +2266,10 @@ class MainWindow(QMainWindow):
         if not current_widget or not current_widget.selection_tool.selected_strokes:
             self.show_status_message("Kesilecek öğe seçilmedi")
             return
-        
+
+        if hasattr(current_widget, 'ensure_layer_editable') and not current_widget.ensure_layer_editable():
+            return
+
         # Önce kopyala
         self.copy_selected_strokes()
         
@@ -2274,11 +2294,14 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if not current_widget:
             return
-            
+
         if not self.clipboard_strokes:
             self.show_status_message("Yapıştırılacak öğe yok")
             return
-        
+
+        if hasattr(current_widget, 'ensure_layer_editable') and not current_widget.ensure_layer_editable():
+            return
+
         # Undo için state kaydet
         current_widget.save_current_state("Paste strokes")
         
@@ -2315,7 +2338,10 @@ class MainWindow(QMainWindow):
         if not current_widget or not current_widget.selection_tool.selected_strokes:
             self.show_status_message("Silinecek öğe seçilmedi")
             return
-        
+
+        if hasattr(current_widget, 'ensure_layer_editable') and not current_widget.ensure_layer_editable():
+            return
+
         # Undo için state kaydet
         current_widget.save_current_state("Delete strokes")
         

@@ -54,12 +54,18 @@ class SessionManager:
                 tab_widget = main_window.tab_manager.get_tab_widget_at_index(i)
                 tab_name = main_window.tab_manager.get_tab_text(i)
                 
-                if tab_widget and hasattr(tab_widget, 'strokes'):
+                if tab_widget:
                     tab_data = {
                         'name': tab_name,
-                        'strokes': self.serialize_strokes(tab_widget.strokes),
                         'background_settings': self.serialize_background_settings(tab_widget.background_settings)
                     }
+
+                    if hasattr(tab_widget, 'layer_manager'):
+                        tab_data['layers'] = self.serialize_layers(tab_widget)
+                    elif hasattr(tab_widget, 'strokes'):
+                        # Eski sürümler için geri uyumluluk
+                        tab_data['strokes'] = self.serialize_strokes(tab_widget.strokes)
+
                     session_data['tabs'].append(tab_data)
                     
             # JSON dosyasına kaydet
@@ -125,8 +131,10 @@ class SessionManager:
             tab_index = main_window.tab_manager.get_current_index()
             main_window.tab_manager.set_tab_text(tab_index, tab_name)
 
-            # Stroke'ları yükle
-            if current_widget and 'strokes' in tab_data:
+            # Stroke'ları veya katmanları yükle
+            if current_widget and 'layers' in tab_data:
+                self.deserialize_layers(current_widget, tab_data['layers'])
+            elif current_widget and 'strokes' in tab_data:
                 current_widget.strokes = self.deserialize_strokes(tab_data['strokes'])
 
             # Arka plan ayarlarını yükle
@@ -159,7 +167,7 @@ class SessionManager:
         """Stroke'ları JSON'a dönüştürülebilir formata çevir"""
         from PyQt6.QtGui import QColor
         from PyQt6.QtCore import Qt, QPointF
-        
+
         serialized = []
         for i, stroke in enumerate(strokes):
             try:
@@ -221,8 +229,35 @@ class SessionManager:
                 print(f"Stroke içeriği: {stroke}")
                 # Hatalı stroke'u atla
                 continue
-            
+
         return serialized
+
+    def serialize_layers(self, drawing_widget):
+        """DrawingWidget katmanlarını serileştir"""
+        if not hasattr(drawing_widget, 'layer_manager'):
+            return {
+                'order': [],
+                'active_layer': None,
+                'layers': []
+            }
+
+        state = drawing_widget.layer_manager.export_state()
+        serialized_layers = []
+        for layer_id in state.get('layer_order', []):
+            layer_data = state['layers'].get(layer_id, {})
+            serialized_layers.append({
+                'id': layer_id,
+                'name': layer_data.get('name', layer_id),
+                'visible': layer_data.get('visible', True),
+                'locked': layer_data.get('locked', False),
+                'strokes': self.serialize_strokes(layer_data.get('strokes', []))
+            })
+
+        return {
+            'order': list(state.get('layer_order', [])),
+            'active_layer': state.get('active_layer'),
+            'layers': serialized_layers
+        }
         
     def deserialize_strokes(self, serialized_strokes):
         """JSON'dan stroke'ları geri yükle"""
@@ -261,6 +296,39 @@ class SessionManager:
                 continue
             
         return strokes
+
+    def deserialize_layers(self, drawing_widget, serialized_layers):
+        """Serileştirilmiş katmanları DrawingWidget'a yükle"""
+        if not hasattr(drawing_widget, 'layer_manager'):
+            return
+
+        layer_list = serialized_layers.get('layers', [])
+        layer_order = list(serialized_layers.get('order', []))
+        active_layer = serialized_layers.get('active_layer')
+
+        if not layer_order:
+            layer_order = [layer.get('id') for layer in layer_list if layer.get('id')]
+
+        state = {
+            'active_layer': active_layer,
+            'layer_order': [],
+            'layers': {}
+        }
+
+        for index, layer in enumerate(layer_list):
+            layer_id = layer.get('id') or f"layer_{index + 1}"
+            state['layers'][layer_id] = {
+                'id': layer_id,
+                'name': layer.get('name', layer_id),
+                'visible': layer.get('visible', True),
+                'locked': layer.get('locked', False),
+                'strokes': self.deserialize_strokes(layer.get('strokes', []))
+            }
+            if layer_id not in layer_order:
+                layer_order.append(layer_id)
+
+        state['layer_order'] = layer_order
+        drawing_widget.layer_manager.import_state(state)
         
     def get_recent_sessions(self, limit=10):
         """Son oturumları listele"""
