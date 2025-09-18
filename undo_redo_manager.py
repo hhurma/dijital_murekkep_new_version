@@ -145,16 +145,16 @@ class ClearAllCommand(Command):
     def __init__(self, drawing_widget):
         super().__init__("Clear all")
         self.drawing_widget = drawing_widget
-        self.saved_strokes = copy.deepcopy(drawing_widget.strokes)
-        
+        self.saved_state = copy.deepcopy(drawing_widget.layer_manager.export_state())
+
     def execute(self):
         """Tümünü temizle"""
-        self.drawing_widget.strokes.clear()
+        self.drawing_widget.layer_manager.clear_all()
         self.drawing_widget.update()
-        
+
     def undo(self):
         """Stroke'ları geri getir"""
-        self.drawing_widget.strokes = copy.deepcopy(self.saved_strokes)
+        self.drawing_widget.layer_manager.import_state(copy.deepcopy(self.saved_state))
         self.drawing_widget.update()
 
 class DeleteStrokeCommand(Command):
@@ -175,4 +175,4 @@ class DeleteStrokeCommand(Command):
         """Stroke'u geri ekle"""
         if self.deleted_stroke is not None:
             self.drawing_widget.strokes.insert(self.stroke_index, self.deleted_stroke)
-            self.drawing_widget.update() 
+            self.drawing_widget.update()

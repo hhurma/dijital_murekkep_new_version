@@ -29,7 +29,11 @@ class EventHandler:
             
             # Ctrl tuşu durumunu güncelle
             self.drawing_widget.selection_tool.set_ctrl_pressed(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
-            
+
+            if self.drawing_widget.active_tool in {"bspline", "freehand", "line", "rectangle", "circle", "select", "move", "rotate", "scale"}:
+                if not self.drawing_widget.ensure_layer_editable():
+                    return
+
             if self.drawing_widget.active_tool == "bspline":
                 self.handle_bspline_press(event)
             elif self.drawing_widget.active_tool == "freehand":
@@ -154,6 +158,9 @@ class EventHandler:
         
         # Event türüne göre işle
         if event.type() == QTabletEvent.Type.TabletPress:
+            if not self.drawing_widget.ensure_layer_editable():
+                event.accept()
+                return
             self._handle_tablet_press(transformed_pos, pressure)
         elif event.type() == QTabletEvent.Type.TabletMove:
             self._handle_tablet_move(transformed_pos, pressure)
