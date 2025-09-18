@@ -1,10 +1,12 @@
 import sys
 import os
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton,
-                            QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
-                            QMenuBar, QDockWidget, QMessageBox)
+from PyQt6.QtWidgets import (
+    QApplication, QMainWindow, QToolBar, QPushButton,
+    QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
+    QMenuBar, QDockWidget, QMessageBox, QFileDialog, QInputDialog
+)
 from PyQt6.QtCore import Qt, QPointF, QTimer
-from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence
+from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence, QImage, QPainter
 import qtawesome as qta
 from splash_screen import show_splash_screen
 from DrawingWidget import DrawingWidget
@@ -287,7 +289,18 @@ class MainWindow(QMainWindow):
         file_menu.addAction(import_image_action)
         
         file_menu.addSeparator()
-        
+
+        # Resim dışa aktarma
+        export_image_action = QAction(
+            qta.icon('fa5s.file-image', color='#009688'),
+            "Resim Olarak Dışa Aktar",
+            self
+        )
+        export_image_action.setShortcut("Ctrl+Shift+E")
+        export_image_action.setToolTip("Aktif sekmeyi resim olarak dışa aktar")
+        export_image_action.triggered.connect(self.export_current_tab_as_image)
+        file_menu.addAction(export_image_action)
+
         # PDF dışa aktarma
         export_pdf_action = QAction(qta.icon('fa5s.file-pdf', color='#DC143C'), "PDF Olarak Dışa Aktar", self)
         export_pdf_action.setShortcut("Ctrl+E")
@@ -1158,9 +1171,84 @@ class MainWindow(QMainWindow):
         
         self.show_status_message(f"Canvas yönü: {'Yatay' if orientation == 'landscape' else 'Dikey'}")
     
+    def export_current_tab_as_image(self):
+        """Aktif sekmeyi resim olarak dışa aktar"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            QMessageBox.warning(self, "Uyarı", "Dışa aktarılacak çizim bulunamadı.")
+            return
+
+        default_name = "cizim"
+        current_index = self.tab_widget.currentIndex()
+        if current_index >= 0:
+            tab_title = self.tab_widget.tabText(current_index).strip()
+            if tab_title:
+                default_name = tab_title.replace(" ", "_").lower()
+        default_path = f"{default_name}.png"
+
+        filename, selected_filter = QFileDialog.getSaveFileName(
+            self,
+            "Resim Olarak Dışa Aktar",
+            default_path,
+            "PNG Dosyaları (*.png);;JPEG Dosyaları (*.jpg *.jpeg)"
+        )
+
+        if not filename:
+            return
+
+        filter_text = (selected_filter or "").lower()
+        lower_filename = filename.lower()
+        if 'jpeg' in filter_text or 'jpg' in filter_text or lower_filename.endswith(('.jpg', '.jpeg')):
+            image_format = 'JPEG'
+            if not lower_filename.endswith(('.jpg', '.jpeg')):
+                filename += '.jpg'
+        else:
+            image_format = 'PNG'
+            if not lower_filename.endswith('.png'):
+                filename += '.png'
+
+        scale_factor, ok = QInputDialog.getDouble(
+            self,
+            "Ölçek Faktörü",
+            "Çıkış ölçek faktörü (1.0 = orijinal boyut):",
+            1.0,
+            0.1,
+            10.0,
+            1
+        )
+        if not ok:
+            return
+
+        if scale_factor <= 0:
+            QMessageBox.warning(self, "Uyarı", "Ölçek faktörü 0'dan büyük olmalıdır.")
+            return
+
+        image_width = max(1, int(round(current_widget.width() * scale_factor)))
+        image_height = max(1, int(round(current_widget.height() * scale_factor)))
+
+        image = QImage(image_width, image_height, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.white)
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        try:
+            if scale_factor != 1.0:
+                painter.scale(scale_factor, scale_factor)
+            current_widget.render(painter)
+        finally:
+            painter.end()
+
+        if not image.save(filename, image_format):
+            QMessageBox.critical(self, "Hata", "Resim kaydedilemedi.")
+            self.show_status_message("Resim dışa aktarılamadı")
+            return
+
+        QMessageBox.information(self, "Başarılı", f"Resim başarıyla kaydedildi:\n{filename}")
+        self.show_status_message("Resim başarıyla dışa aktarıldı")
+
     def import_image(self):
         """Canvas'a resim ekle"""
-        from PyQt6.QtWidgets import QFileDialog
         from image_stroke import ImageStroke
         
         # Resim dosyası seç
