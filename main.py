@@ -1,9 +1,9 @@
 import sys
 import os
-from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton, 
+from PyQt6.QtWidgets import (QApplication, QMainWindow, QToolBar, QPushButton,
                             QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
-                            QMenuBar, QDockWidget)
-from PyQt6.QtCore import Qt, QPointF
+                            QMenuBar, QDockWidget, QMessageBox)
+from PyQt6.QtCore import Qt, QPointF, QTimer
 from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence
 import qtawesome as qta
 from splash_screen import show_splash_screen
@@ -26,6 +26,7 @@ class MainWindow(QMainWindow):
         # Session manager'ı başlat
         self.session_manager = SessionManager()
         self.current_session_file = None  # Açık olan dosya yolu
+        self._setup_autosave_timer()
         
         # PDF exporter'ı başlat
         self.pdf_exporter = PDFExporter(self)
@@ -94,6 +95,9 @@ class MainWindow(QMainWindow):
         
         # Menü çubuğunu oluştur
         self.setup_menubar()
+
+        # Otomatik kayıt varsa kullanıcıya sor
+        QTimer.singleShot(0, self._prompt_auto_save_restore)
         
     def create_toolbar(self):
         """Araç çubuğunu oluştur"""
@@ -1054,29 +1058,33 @@ class MainWindow(QMainWindow):
             # Mevcut dosya üzerine kaydet
             if self.session_manager.save_session(self, self.current_session_file):
                 self.update_window_title()
+                self.session_manager.clear_auto_save()
         else:
             # İlk kez kaydetme - dosya adı sor
             self.save_session_as()
-            
+
     def save_session_as(self):
         """Oturumu farklı kaydet"""
         filename = self.session_manager.save_session(self)
         if filename:
             self.current_session_file = filename
             self.update_window_title()
-        
+            self.session_manager.clear_auto_save()
+
     def load_session(self):
         """Oturum aç"""
         filename = self.session_manager.load_session(self)
         if filename:
             self.current_session_file = filename
             self.update_window_title()
-        
+            self.session_manager.clear_auto_save()
+
     def load_recent_session(self, filepath):
         """Son oturumlardan birini aç"""
         if self.session_manager.load_session(self, filepath):
             self.current_session_file = filepath
             self.update_window_title()
+            self.session_manager.clear_auto_save()
             
     def update_window_title(self):
         """Pencere başlığını güncelle"""
@@ -1209,6 +1217,34 @@ class MainWindow(QMainWindow):
         self.settings.save_settings()
         
         super().closeEvent(event)
+
+    def _setup_autosave_timer(self):
+        """Belirli aralıklarla otomatik kayıt yapacak zamanlayıcıyı ayarla"""
+        self._auto_save_interval_minutes = 5
+        self.auto_save_timer = QTimer(self)
+        self.auto_save_timer.setInterval(self._auto_save_interval_minutes * 60 * 1000)
+        self.auto_save_timer.timeout.connect(lambda: self.session_manager.auto_save_session(self))
+        self.auto_save_timer.start()
+
+    def _prompt_auto_save_restore(self):
+        """Mevcut otomatik kaydı yüklemek için kullanıcıdan onay iste"""
+        if not self.session_manager.has_auto_save():
+            return
+
+        reply = QMessageBox.question(
+            self,
+            "Otomatik Kayıt Bulundu",
+            "Son otomatik kaydı açmak ister misiniz?",
+            QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+            QMessageBox.StandardButton.Yes
+        )
+
+        if reply == QMessageBox.StandardButton.Yes:
+            if self.session_manager.load_auto_save(self):
+                # Otomatik kayıttan sonra aktif dosya kullanıcı tarafından belirlenmeli
+                self.current_session_file = None
+                self.update_window_title()
+                self.session_manager.clear_auto_save()
     
     # Grup işlemi handler'ları
     def on_group_shapes(self):
