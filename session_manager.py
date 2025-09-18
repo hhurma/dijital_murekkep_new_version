@@ -77,7 +77,7 @@ class SessionManager:
             if hasattr(main_window, 'show_status_message'):
                 main_window.show_status_message(f"Oturum kaydedilemedi: {str(e)}")
             return None
-            
+
     def load_session(self, main_window, filename=None):
         """Kaydedilmiş oturumu aç"""
         try:
@@ -89,67 +89,71 @@ class SessionManager:
                     self.sessions_dir,
                     "Dijital Mürekkep Oturum Dosyaları (*.sdm);;Tüm Dosyalar (*)"
                 )
-                
+
             if not filename or not os.path.exists(filename):
                 return None
-                
-            # JSON dosyasından oku
-            with open(filename, 'r', encoding='utf-8') as f:
-                session_data = json.load(f)
-                
-            # Mevcut tab'ları temizle
-            main_window.tab_manager.clear_all_tabs()
-                
-            # Ayarları yükle
-            if 'settings' in session_data:
-                deserialized_settings = self.deserialize_settings(session_data['settings'])
-                main_window.settings.load_from_dict(deserialized_settings)
-                
-            # Tab'ları yeniden oluştur
-            for tab_data in session_data.get('tabs', []):
-                # Yeni tab oluştur
-                tab_name = tab_data.get('name', f'Çizim {main_window.tab_manager.get_tab_count() + 1}')
-                current_widget = main_window.tab_manager.create_new_tab(tab_name)
-                
-                # Tab adını ayarla (create_new_tab zaten ayarlıyor ama emin olmak için)
-                tab_index = main_window.tab_manager.get_current_index()
-                main_window.tab_manager.set_tab_text(tab_index, tab_name)
-                
-                # Stroke'ları yükle
-                if current_widget and 'strokes' in tab_data:
-                    current_widget.strokes = self.deserialize_strokes(tab_data['strokes'])
-                    
-                # Arka plan ayarlarını yükle
-                if 'background_settings' in tab_data:
-                    bg_settings = self.deserialize_background_settings(tab_data['background_settings'])
-                    current_widget.set_background_settings(bg_settings)
-                    
-                current_widget.update()
-                
-            # Aktif tab'ı ayarla
-            active_tab = session_data.get('active_tab', 0)
-            if 0 <= active_tab < main_window.tab_manager.get_tab_count():
-                main_window.tab_manager.set_current_index(active_tab)
-                
-            # Pencere boyutunu ayarla
-            if 'window_size' in session_data:
-                size = session_data['window_size']
-                main_window.resize(size.get('width', 800), size.get('height', 600))
-                
-            # UI'yi güncelle
-            main_window.load_settings_to_tab(main_window.get_current_drawing_widget())
-                
-            # Status bar'da mesaj göster
-            if hasattr(main_window, 'show_status_message'):
-                file_name = os.path.basename(filename)
-                main_window.show_status_message(f"Oturum yüklendi: {file_name}")
-            return filename
-            
+
+            return self._load_session_from_path(main_window, filename)
+
         except Exception as e:
             # Status bar'da hata mesajı göster
             if hasattr(main_window, 'show_status_message'):
                 main_window.show_status_message(f"Oturum yüklenemedi: {str(e)}")
             return None
+
+    def _load_session_from_path(self, main_window, filename):
+        """Verilen dosya yolundan oturumu yükle"""
+        # JSON dosyasından oku
+        with open(filename, 'r', encoding='utf-8') as f:
+            session_data = json.load(f)
+
+        # Mevcut tab'ları temizle
+        main_window.tab_manager.clear_all_tabs()
+
+        # Ayarları yükle
+        if 'settings' in session_data:
+            deserialized_settings = self.deserialize_settings(session_data['settings'])
+            main_window.settings.load_from_dict(deserialized_settings)
+
+        # Tab'ları yeniden oluştur
+        for tab_data in session_data.get('tabs', []):
+            # Yeni tab oluştur
+            tab_name = tab_data.get('name', f'Çizim {main_window.tab_manager.get_tab_count() + 1}')
+            current_widget = main_window.tab_manager.create_new_tab(tab_name)
+
+            # Tab adını ayarla (create_new_tab zaten ayarlıyor ama emin olmak için)
+            tab_index = main_window.tab_manager.get_current_index()
+            main_window.tab_manager.set_tab_text(tab_index, tab_name)
+
+            # Stroke'ları yükle
+            if current_widget and 'strokes' in tab_data:
+                current_widget.strokes = self.deserialize_strokes(tab_data['strokes'])
+
+            # Arka plan ayarlarını yükle
+            if 'background_settings' in tab_data:
+                bg_settings = self.deserialize_background_settings(tab_data['background_settings'])
+                current_widget.set_background_settings(bg_settings)
+
+            current_widget.update()
+
+        # Aktif tab'ı ayarla
+        active_tab = session_data.get('active_tab', 0)
+        if 0 <= active_tab < main_window.tab_manager.get_tab_count():
+            main_window.tab_manager.set_current_index(active_tab)
+
+        # Pencere boyutunu ayarla
+        if 'window_size' in session_data:
+            size = session_data['window_size']
+            main_window.resize(size.get('width', 800), size.get('height', 600))
+
+        # UI'yi güncelle
+        main_window.load_settings_to_tab(main_window.get_current_drawing_widget())
+
+        # Status bar'da mesaj göster
+        if hasattr(main_window, 'show_status_message'):
+            file_name = os.path.basename(filename)
+            main_window.show_status_message(f"Oturum yüklendi: {file_name}")
+        return filename
             
     def serialize_strokes(self, strokes):
         """Stroke'ları JSON'a dönüştürülebilir formata çevir"""
@@ -288,6 +292,40 @@ class SessionManager:
             if hasattr(main_window, 'show_status_message'):
                 main_window.show_status_message(f"Otomatik kayıt başarısız: {str(e)}")
             return False
+
+    def get_auto_save_path(self):
+        """Otomatik kayıt dosyasının yolunu döndür"""
+        return os.path.join(self.sessions_dir, "auto_save.sdm")
+
+    def has_auto_save(self):
+        """Otomatik kayıt dosyası mevcut mu?"""
+        auto_save_path = self.get_auto_save_path()
+        return os.path.exists(auto_save_path) and os.path.getsize(auto_save_path) > 0
+
+    def load_auto_save(self, main_window):
+        """Otomatik kaydedilen oturumu yükle"""
+        auto_save_path = self.get_auto_save_path()
+        if not os.path.exists(auto_save_path):
+            return None
+
+        try:
+            return self._load_session_from_path(main_window, auto_save_path)
+        except Exception as e:
+            if hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message(f"Otomatik kayıt yüklenemedi: {str(e)}")
+            return None
+
+    def clear_auto_save(self):
+        """Otomatik kayıt dosyasını sil"""
+        auto_save_path = self.get_auto_save_path()
+        try:
+            if os.path.exists(auto_save_path):
+                os.remove(auto_save_path)
+                return True
+            return False
+        except Exception as e:
+            print(f"Otomatik kayıt dosyası silinemedi: {e}")
+            return False
             
     def serialize_background_settings(self, bg_settings):
         """Background settings'i JSON'a dönüştürülebilir formata çevir"""
@@ -357,4 +395,4 @@ class SessionManager:
             return {}
             
         # Settings zaten string formatında saklanıyor, direkt döndür
-        return serialized_settings 
+        return serialized_settings
