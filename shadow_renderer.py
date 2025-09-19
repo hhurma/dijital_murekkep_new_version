@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QSize, QRectF, Qt, QPointF
-from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPainterPath
+from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPainterPath, QPainterPathStroker
 from PyQt6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
 
 class ShadowRenderer:
@@ -10,15 +10,19 @@ class ShadowRenderer:
         """Ana gölge çizim methodu - rect veya points array alabilir"""
         if not stroke_data.get('has_shadow', False):
             return
-            
+
         shadow_blur = stroke_data.get('shadow_blur', 10)
         inner_shadow = stroke_data.get('inner_shadow', False)
-        
+
+        if shape_type == 'path':
+            ShadowRenderer._draw_path_shadow(painter, shape_rect_or_points, stroke_data, shadow_blur)
+            return
+
         if shadow_blur <= 0:
             ShadowRenderer._draw_simple_shadow(painter, shape_type, shape_rect_or_points, stroke_data)
         else:
             ShadowRenderer._draw_blurred_shadow(painter, shape_type, shape_rect_or_points, stroke_data)
-    
+
     @staticmethod
     def _draw_simple_shadow(painter, shape_type, shape_rect_or_points, stroke_data):
         """Blur olmadan basit gölge"""
@@ -309,6 +313,167 @@ class ShadowRenderer:
             
             painter.drawPixmap(shadow_pos_x, shadow_pos_y, blurred_shadow)
             painter.restore()
+
+    @staticmethod
+    def _draw_path_shadow(painter, path_or_points, stroke_data, shadow_blur):
+        """QPainterPath tabanlı gölge çizimi"""
+        path = ShadowRenderer._ensure_path(path_or_points)
+        if path is None or path.isEmpty():
+            return
+
+        shadow_color = stroke_data.get('shadow_color', Qt.GlobalColor.black)
+        shadow_size = stroke_data.get('shadow_size', 0)
+        shadow_opacity = stroke_data.get('shadow_opacity', 0.7)
+        shadow_offset_x = stroke_data.get('shadow_offset_x', 5)
+        shadow_offset_y = stroke_data.get('shadow_offset_y', 5)
+        inner_shadow = stroke_data.get('inner_shadow', False)
+        shadow_quality = stroke_data.get('shadow_quality', 'medium')
+
+        if isinstance(shadow_color, str):
+            shadow_color = QColor(shadow_color)
+        elif hasattr(shadow_color, 'name'):
+            shadow_color = QColor(shadow_color)
+
+        base_width = ShadowRenderer._get_path_width(stroke_data)
+        expanded_width = max(0.1, base_width + shadow_size * 2)
+
+        base_path = ShadowRenderer._create_stroke_area_path(path, base_width, stroke_data)
+        shadow_path = ShadowRenderer._create_stroke_area_path(path, expanded_width, stroke_data)
+
+        if shadow_blur <= 0:
+            painter.save()
+            painter.setOpacity(shadow_opacity)
+            painter.setBrush(QBrush(shadow_color))
+            painter.setPen(Qt.PenStyle.NoPen)
+
+            draw_path = QPainterPath(shadow_path)
+            if inner_shadow:
+                painter.setClipPath(base_path)
+                draw_path.translate(-shadow_offset_x, -shadow_offset_y)
+            else:
+                draw_path.translate(shadow_offset_x, shadow_offset_y)
+
+            painter.drawPath(draw_path)
+            painter.restore()
+            return
+
+        blur_radius = ShadowRenderer._get_adjusted_blur_radius(shadow_blur, shadow_quality)
+
+        bounding_rect = shadow_path.boundingRect()
+        margin = max(25, blur_radius * 2, shadow_size * 2, int(base_width) + 5)
+        shadow_pixmap_size = QSize(
+            int(bounding_rect.width() + margin * 2 + abs(shadow_offset_x)),
+            int(bounding_rect.height() + margin * 2 + abs(shadow_offset_y))
+        )
+
+        shadow_pixmap = QPixmap(shadow_pixmap_size)
+        shadow_pixmap.fill(Qt.GlobalColor.transparent)
+
+        shadow_painter = QPainter(shadow_pixmap)
+        shadow_painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        shadow_painter.setBrush(QBrush(shadow_color))
+        shadow_painter.setPen(Qt.PenStyle.NoPen)
+
+        path_in_pixmap = QPainterPath(shadow_path)
+        path_in_pixmap.translate(-bounding_rect.x() + margin, -bounding_rect.y() + margin)
+        shadow_painter.drawPath(path_in_pixmap)
+        shadow_painter.end()
+
+        if blur_radius > 0:
+            blurred_shadow = ShadowRenderer._apply_blur_to_pixmap(shadow_pixmap, blur_radius)
+        else:
+            blurred_shadow = shadow_pixmap
+
+        painter.save()
+        painter.setOpacity(shadow_opacity)
+
+        draw_x = bounding_rect.x() + ( -shadow_offset_x if inner_shadow else shadow_offset_x) - margin
+        draw_y = bounding_rect.y() + ( -shadow_offset_y if inner_shadow else shadow_offset_y) - margin
+
+        if inner_shadow:
+            painter.setClipPath(base_path)
+
+        painter.drawPixmap(int(draw_x), int(draw_y), blurred_shadow)
+        painter.restore()
+
+    @staticmethod
+    def _ensure_path(path_or_points):
+        """QPainterPath veya nokta listesini path'e dönüştür"""
+        if isinstance(path_or_points, QPainterPath):
+            return QPainterPath(path_or_points)
+
+        if isinstance(path_or_points, (list, tuple)) and path_or_points:
+            points = [ShadowRenderer._ensure_point(p) for p in path_or_points]
+            points = [p for p in points if p is not None]
+            if len(points) < 2:
+                return None
+            path = QPainterPath(points[0])
+            for point in points[1:]:
+                path.lineTo(point)
+            return path
+
+        return None
+
+    @staticmethod
+    def _ensure_point(point):
+        """Verilen noktayı QPointF'e çevir"""
+        if point is None:
+            return None
+        if isinstance(point, QPointF):
+            return QPointF(point)
+        if isinstance(point, dict):
+            x = point.get('x')
+            y = point.get('y')
+            if x is not None and y is not None:
+                return QPointF(float(x), float(y))
+            return None
+        if isinstance(point, (tuple, list)) and len(point) >= 2:
+            return QPointF(float(point[0]), float(point[1]))
+        if hasattr(point, 'x') and hasattr(point, 'y'):
+            return QPointF(float(point.x()), float(point.y()))
+        return None
+
+    @staticmethod
+    def _get_path_width(stroke_data):
+        """Stroke verisinden çizgi kalınlığını al"""
+        width = stroke_data.get('shadow_path_width')
+        if width is None:
+            width = stroke_data.get('width', stroke_data.get('line_width', 1))
+        try:
+            return max(0.1, float(width))
+        except (TypeError, ValueError):
+            return 1.0
+
+    @staticmethod
+    def _create_stroke_area_path(path, width, stroke_data):
+        """Stroke genişliğine göre dolu path oluştur"""
+        stroker = QPainterPathStroker()
+        stroker.setWidth(max(0.1, float(width)))
+
+        cap_style = stroke_data.get('cap_style', Qt.PenCapStyle.RoundCap)
+        join_style = stroke_data.get('join_style', Qt.PenJoinStyle.RoundJoin)
+        miter_limit = stroke_data.get('miter_limit', 4)
+
+        try:
+            if isinstance(cap_style, int):
+                cap_style = Qt.PenCapStyle(cap_style)
+        except Exception:
+            cap_style = Qt.PenCapStyle.RoundCap
+
+        try:
+            if isinstance(join_style, int):
+                join_style = Qt.PenJoinStyle(join_style)
+        except Exception:
+            join_style = Qt.PenJoinStyle.RoundJoin
+
+        stroker.setCapStyle(cap_style)
+        stroker.setJoinStyle(join_style)
+        try:
+            stroker.setMiterLimit(max(0.1, float(miter_limit)))
+        except Exception:
+            stroker.setMiterLimit(4.0)
+
+        return stroker.createStroke(path)
     
     @staticmethod
     def _get_adjusted_blur_radius(shadow_blur, shadow_quality):

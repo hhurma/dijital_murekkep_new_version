@@ -55,6 +55,16 @@ class ShapePropertiesWidget(QWidget):
     circleShadowOpacityChanged = pyqtSignal(float)  # Çember gölge şeffaflığı değişti
     circleShadowInnerChanged = pyqtSignal(bool)  # Çember iç/dış gölge değişti
     circleShadowQualityChanged = pyqtSignal(str)  # Çember gölge kalitesi değişti
+
+    # Çizgi gölge özellikleri sinyalleri
+    strokeShadowEnabledChanged = pyqtSignal(bool)
+    strokeShadowColorChanged = pyqtSignal(QColor)
+    strokeShadowOffsetChanged = pyqtSignal(int, int)
+    strokeShadowBlurChanged = pyqtSignal(int)
+    strokeShadowSizeChanged = pyqtSignal(int)
+    strokeShadowOpacityChanged = pyqtSignal(float)
+    strokeShadowInnerChanged = pyqtSignal(bool)
+    strokeShadowQualityChanged = pyqtSignal(str)
     
     # Grup işlemi sinyalleri
     groupShapes = pyqtSignal()  # Şekilleri grupla
@@ -137,7 +147,18 @@ class ShapePropertiesWidget(QWidget):
         self.current_circle_shadow_opacity = 0.7
         self.current_circle_inner_shadow = False
         self.current_circle_shadow_quality = "medium"
-        
+
+        # Çizgi gölge özellikleri değerleri
+        self.current_stroke_shadow_enabled = False
+        self.current_stroke_shadow_color = QColor(0, 0, 0, 128)
+        self.current_stroke_shadow_offset_x = 5
+        self.current_stroke_shadow_offset_y = 5
+        self.current_stroke_shadow_blur = 10
+        self.current_stroke_shadow_size = 0
+        self.current_stroke_shadow_opacity = 0.7
+        self.current_stroke_inner_shadow = False
+        self.current_stroke_shadow_quality = "medium"
+
         # Seçilen şekil bilgileri
         self.selected_strokes = []
         self.stroke_data = []
@@ -146,6 +167,7 @@ class ShapePropertiesWidget(QWidget):
         self.has_image_shapes = False     # Resim var mı
         self.has_rectangle_shapes = False # Dikdörtgen var mı (gölge/kenar için)
         self.has_circle_shapes = False    # Çember var mı (gölge için)
+        self.has_stroke_shadow_shapes = False  # Çizgi gölgesi olan stroke var mı
         
         self.setup_ui()
         
@@ -234,6 +256,111 @@ class ShapePropertiesWidget(QWidget):
         self.bspline_group.setLayout(bspline_layout)
         layout.addWidget(self.bspline_group)
         self.bspline_group.setVisible(False)  # Başlangıçta gizli
+
+        # Çizgi gölge özellikleri grubu
+        self.stroke_shadow_group = QGroupBox("Çizgi Gölgesi")
+        stroke_shadow_layout = QVBoxLayout()
+
+        self.stroke_shadow_checkbox = QCheckBox("Gölge Kullan")
+        self.stroke_shadow_checkbox.setChecked(self.current_stroke_shadow_enabled)
+        self.stroke_shadow_checkbox.toggled.connect(self.on_stroke_shadow_enabled_changed)
+        stroke_shadow_layout.addWidget(self.stroke_shadow_checkbox)
+
+        stroke_shadow_type_layout = QHBoxLayout()
+        self.stroke_shadow_outer_radio = QRadioButton("Dış Gölge")
+        self.stroke_shadow_inner_radio = QRadioButton("İç Gölge")
+        self.stroke_shadow_outer_radio.setChecked(not self.current_stroke_inner_shadow)
+        self.stroke_shadow_inner_radio.setChecked(self.current_stroke_inner_shadow)
+
+        self.stroke_shadow_type_group = QButtonGroup()
+        self.stroke_shadow_type_group.addButton(self.stroke_shadow_outer_radio, 0)
+        self.stroke_shadow_type_group.addButton(self.stroke_shadow_inner_radio, 1)
+        self.stroke_shadow_type_group.buttonClicked.connect(self.on_stroke_shadow_type_changed)
+
+        stroke_shadow_type_layout.addWidget(self.stroke_shadow_outer_radio)
+        stroke_shadow_type_layout.addWidget(self.stroke_shadow_inner_radio)
+        stroke_shadow_layout.addLayout(stroke_shadow_type_layout)
+
+        stroke_shadow_color_layout = QHBoxLayout()
+        stroke_shadow_color_layout.addWidget(QLabel("Gölge Rengi:"))
+        self.stroke_shadow_color_button = QPushButton()
+        self.stroke_shadow_color_button.setFixedSize(40, 25)
+        self.stroke_shadow_color_button.clicked.connect(self.choose_stroke_shadow_color)
+        self.update_stroke_shadow_color_button()
+        stroke_shadow_color_layout.addWidget(self.stroke_shadow_color_button)
+        stroke_shadow_color_layout.addStretch()
+        stroke_shadow_layout.addLayout(stroke_shadow_color_layout)
+
+        stroke_shadow_offset_layout = QHBoxLayout()
+        stroke_shadow_offset_layout.addWidget(QLabel("Gölge Offseti:"))
+        self.stroke_shadow_x_spinbox = QSpinBox()
+        self.stroke_shadow_x_spinbox.setRange(-50, 50)
+        self.stroke_shadow_x_spinbox.setValue(self.current_stroke_shadow_offset_x)
+        self.stroke_shadow_x_spinbox.setSuffix(" px")
+        self.stroke_shadow_x_spinbox.valueChanged.connect(self.on_stroke_shadow_offset_changed)
+        stroke_shadow_offset_layout.addWidget(self.stroke_shadow_x_spinbox)
+
+        self.stroke_shadow_y_spinbox = QSpinBox()
+        self.stroke_shadow_y_spinbox.setRange(-50, 50)
+        self.stroke_shadow_y_spinbox.setValue(self.current_stroke_shadow_offset_y)
+        self.stroke_shadow_y_spinbox.setSuffix(" px")
+        self.stroke_shadow_y_spinbox.valueChanged.connect(self.on_stroke_shadow_offset_changed)
+        stroke_shadow_offset_layout.addWidget(self.stroke_shadow_y_spinbox)
+        stroke_shadow_offset_layout.addStretch()
+        stroke_shadow_layout.addLayout(stroke_shadow_offset_layout)
+
+        stroke_shadow_blur_layout = QHBoxLayout()
+        stroke_shadow_blur_layout.addWidget(QLabel("Gölge Bulanıklığı:"))
+        self.stroke_shadow_blur_spinbox = QSpinBox()
+        self.stroke_shadow_blur_spinbox.setRange(0, 50)
+        self.stroke_shadow_blur_spinbox.setValue(self.current_stroke_shadow_blur)
+        self.stroke_shadow_blur_spinbox.setSuffix(" px")
+        self.stroke_shadow_blur_spinbox.valueChanged.connect(self.on_stroke_shadow_blur_changed)
+        stroke_shadow_blur_layout.addWidget(self.stroke_shadow_blur_spinbox)
+        stroke_shadow_blur_layout.addStretch()
+        stroke_shadow_layout.addLayout(stroke_shadow_blur_layout)
+
+        stroke_shadow_size_layout = QHBoxLayout()
+        stroke_shadow_size_layout.addWidget(QLabel("Gölge Boyutu:"))
+        self.stroke_shadow_size_spinbox = QSpinBox()
+        self.stroke_shadow_size_spinbox.setRange(0, 50)
+        self.stroke_shadow_size_spinbox.setValue(self.current_stroke_shadow_size)
+        self.stroke_shadow_size_spinbox.setSuffix(" px")
+        self.stroke_shadow_size_spinbox.valueChanged.connect(self.on_stroke_shadow_size_changed)
+        stroke_shadow_size_layout.addWidget(self.stroke_shadow_size_spinbox)
+        stroke_shadow_size_layout.addStretch()
+        stroke_shadow_layout.addLayout(stroke_shadow_size_layout)
+
+        stroke_shadow_quality_layout = QHBoxLayout()
+        stroke_shadow_quality_layout.addWidget(QLabel("Gölge Kalitesi:"))
+        self.stroke_shadow_quality_combo = QComboBox()
+        self.stroke_shadow_quality_combo.addItem("Düşük", "low")
+        self.stroke_shadow_quality_combo.addItem("Orta", "medium")
+        self.stroke_shadow_quality_combo.addItem("Yüksek", "high")
+        for i in range(self.stroke_shadow_quality_combo.count()):
+            if self.stroke_shadow_quality_combo.itemData(i) == self.current_stroke_shadow_quality:
+                self.stroke_shadow_quality_combo.setCurrentIndex(i)
+                break
+        self.stroke_shadow_quality_combo.currentIndexChanged.connect(self.on_stroke_shadow_quality_changed)
+        stroke_shadow_quality_layout.addWidget(self.stroke_shadow_quality_combo)
+        stroke_shadow_quality_layout.addStretch()
+        stroke_shadow_layout.addLayout(stroke_shadow_quality_layout)
+
+        stroke_shadow_opacity_layout = QHBoxLayout()
+        stroke_shadow_opacity_layout.addWidget(QLabel("Gölge Şeffaflığı:"))
+        self.stroke_shadow_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.stroke_shadow_opacity_slider.setRange(0, 100)
+        self.stroke_shadow_opacity_slider.setValue(int(self.current_stroke_shadow_opacity * 100))
+        self.stroke_shadow_opacity_slider.valueChanged.connect(self.on_stroke_shadow_opacity_changed)
+        stroke_shadow_opacity_layout.addWidget(self.stroke_shadow_opacity_slider)
+        self.stroke_shadow_opacity_label = QLabel(f"{int(self.current_stroke_shadow_opacity * 100)}%")
+        self.stroke_shadow_opacity_label.setMinimumWidth(35)
+        stroke_shadow_opacity_layout.addWidget(self.stroke_shadow_opacity_label)
+        stroke_shadow_layout.addLayout(stroke_shadow_opacity_layout)
+
+        self.stroke_shadow_group.setLayout(stroke_shadow_layout)
+        layout.addWidget(self.stroke_shadow_group)
+        self.stroke_shadow_group.setVisible(False)
         
         # Dolgu özellikleri grubu (sadece dikdörtgen/daire için)
         self.fill_group = QGroupBox("Dolgu Özellikleri")
@@ -966,6 +1093,12 @@ class ShapePropertiesWidget(QWidget):
         color_str = f"background-color: {self.current_circle_shadow_color.name()}; border: 1px solid #000;"
         self.circle_shadow_color_button.setStyleSheet(color_str)
         self.circle_shadow_color_button.setText("")
+
+    def update_stroke_shadow_color_button(self):
+        """Çizgi gölge rengi butonunu güncelle"""
+        color_str = f"background-color: {self.current_stroke_shadow_color.name()}; border: 1px solid #000;"
+        self.stroke_shadow_color_button.setStyleSheet(color_str)
+        self.stroke_shadow_color_button.setText("")
         
     def choose_color(self):
         """Çizgi rengi seç"""
@@ -1020,6 +1153,14 @@ class ShapePropertiesWidget(QWidget):
             self.update_circle_shadow_color_button()
             # Anlık uygula
             self.apply_circle_shadow_color_change()
+
+    def choose_stroke_shadow_color(self):
+        """Çizgi gölge rengi seç"""
+        color = QColorDialog.getColor(self.current_stroke_shadow_color, self, "Çizgi Gölge Rengi Seç")
+        if color.isValid():
+            self.current_stroke_shadow_color = color
+            self.update_stroke_shadow_color_button()
+            self.apply_stroke_shadow_color_change()
             
     def on_width_changed(self, value):
         """Kalınlık değişti"""
@@ -1385,7 +1526,86 @@ class ShapePropertiesWidget(QWidget):
         self.current_circle_shadow_quality = text
         # Anlık uygula
         self.apply_circle_quality_change()
-    
+
+    # Çizgi gölge özellikleri event handler'ları
+    def on_stroke_shadow_enabled_changed(self, enabled):
+        """Çizgi gölge etkin/pasif değişti"""
+        self.current_stroke_shadow_enabled = enabled
+        self.apply_stroke_shadow_enabled_change()
+
+    def on_stroke_shadow_offset_changed(self):
+        """Çizgi gölge offseti değişti"""
+        self.current_stroke_shadow_offset_x = self.stroke_shadow_x_spinbox.value()
+        self.current_stroke_shadow_offset_y = self.stroke_shadow_y_spinbox.value()
+        self.apply_stroke_shadow_offset_change()
+
+    def on_stroke_shadow_blur_changed(self, value):
+        """Çizgi gölge bulanıklığı değişti"""
+        self.current_stroke_shadow_blur = value
+        self.apply_stroke_shadow_blur_change()
+
+    def on_stroke_shadow_size_changed(self, value):
+        """Çizgi gölge boyutu değişti"""
+        self.current_stroke_shadow_size = value
+        self.apply_stroke_shadow_size_change()
+
+    def on_stroke_shadow_type_changed(self, button):
+        """Çizgi gölge tipi değişti"""
+        self.current_stroke_inner_shadow = (button == self.stroke_shadow_inner_radio)
+        self.apply_stroke_shadow_inner_change()
+
+    def on_stroke_shadow_quality_changed(self, index):
+        """Çizgi gölge kalitesi değişti"""
+        self.current_stroke_shadow_quality = self.stroke_shadow_quality_combo.itemData(index)
+        self.apply_stroke_shadow_quality_change()
+
+    def on_stroke_shadow_opacity_changed(self, value):
+        """Çizgi gölge şeffaflığı değişti"""
+        self.current_stroke_shadow_opacity = value / 100.0
+        if hasattr(self, 'stroke_shadow_opacity_label'):
+            self.stroke_shadow_opacity_label.setText(f"{value}%")
+        self.apply_stroke_shadow_opacity_change()
+
+    def apply_stroke_shadow_enabled_change(self):
+        """Çizgi gölge etkin/pasif değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowEnabledChanged.emit(self.current_stroke_shadow_enabled)
+
+    def apply_stroke_shadow_color_change(self):
+        """Çizgi gölge rengi değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowColorChanged.emit(self.current_stroke_shadow_color)
+
+    def apply_stroke_shadow_offset_change(self):
+        """Çizgi gölge offseti değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowOffsetChanged.emit(self.current_stroke_shadow_offset_x, self.current_stroke_shadow_offset_y)
+
+    def apply_stroke_shadow_blur_change(self):
+        """Çizgi gölge bulanıklığı değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowBlurChanged.emit(self.current_stroke_shadow_blur)
+
+    def apply_stroke_shadow_size_change(self):
+        """Çizgi gölge boyutu değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowSizeChanged.emit(self.current_stroke_shadow_size)
+
+    def apply_stroke_shadow_inner_change(self):
+        """Çizgi iç/dış gölge değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowInnerChanged.emit(self.current_stroke_inner_shadow)
+
+    def apply_stroke_shadow_quality_change(self):
+        """Çizgi gölge kalitesi değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowQualityChanged.emit(self.current_stroke_shadow_quality)
+
+    def apply_stroke_shadow_opacity_change(self):
+        """Çizgi gölge şeffaflığı değişikliğini uygula"""
+        if self.selected_strokes and self.has_stroke_shadow_shapes:
+            self.strokeShadowOpacityChanged.emit(self.current_stroke_shadow_opacity)
+
     def apply_rect_corner_radius_change(self):
         """Dikdörtgen kenar yuvarlama değişikliğini uygula"""
         if self.selected_strokes and self.has_rectangle_shapes:
@@ -1564,6 +1784,7 @@ class ShapePropertiesWidget(QWidget):
         self.has_image_shapes = False
         self.has_rectangle_shapes = False
         self.has_circle_shapes = False
+        self.has_stroke_shadow_shapes = False
         
         if not self.stroke_data or not self.selected_strokes:
             return
@@ -1588,10 +1809,14 @@ class ShapePropertiesWidget(QWidget):
                 # Çember şekillerini kontrol et (gölge için)
                 if stroke.get('type') == 'circle' or stroke.get('tool_type') == 'circle':
                     self.has_circle_shapes = True
-                    
+
                 # B-spline şekillerini kontrol et
                 if stroke.get('type') == 'bspline' or stroke.get('tool_type') == 'bspline':
                     self.has_bspline_shapes = True
+
+                # Çizgi gölge özellikleri
+                if stroke.get('type') in ['line', 'freehand', 'bspline'] or stroke.get('tool_type') in ['line', 'freehand', 'bspline']:
+                    self.has_stroke_shadow_shapes = True
         
         # Dolgu özelliklerini göster/gizle
         self.fill_group.setVisible(self.has_fillable_shapes)
@@ -1604,9 +1829,13 @@ class ShapePropertiesWidget(QWidget):
         
         # Dikdörtgen özelliklerini göster/gizle
         self.rectangle_group.setVisible(self.has_rectangle_shapes)
-        
+
         # Çember özelliklerini göster/gizle
         self.circle_group.setVisible(self.has_circle_shapes)
+
+        # Çizgi gölge özelliklerini göster/gizle
+        if hasattr(self, 'stroke_shadow_group'):
+            self.stroke_shadow_group.setVisible(self.has_stroke_shadow_shapes)
         
         # Ortak özellikleri analiz et
         if self.selected_strokes:
@@ -1625,10 +1854,21 @@ class ShapePropertiesWidget(QWidget):
         
         # Normal stroke'ları ayır (resim stroke'ları hariç)
         normal_strokes = [s for s in strokes if not (hasattr(s, 'stroke_type') and s.stroke_type == 'image')]
-        
+
         if not normal_strokes:
             return  # Sadece resim stroke'ları varsa normal özellik analizi yapma
-        
+
+        # Varsayılan çizgi gölge değerlerini sıfırla
+        self.current_stroke_shadow_enabled = False
+        self.current_stroke_shadow_color = QColor(0, 0, 0, 128)
+        self.current_stroke_shadow_offset_x = 5
+        self.current_stroke_shadow_offset_y = 5
+        self.current_stroke_shadow_blur = 10
+        self.current_stroke_shadow_size = 0
+        self.current_stroke_shadow_opacity = 0.7
+        self.current_stroke_inner_shadow = False
+        self.current_stroke_shadow_quality = "medium"
+
         # Renk analizi - ortak renk varsa kullan, yoksa ilk stroke'un rengini kullan
         colors = []
         for stroke in normal_strokes:
@@ -1682,7 +1922,79 @@ class ShapePropertiesWidget(QWidget):
             for style in styles:
                 style_counts[style] = style_counts.get(style, 0) + 1
             self.current_line_style = max(style_counts, key=style_counts.get)
-        
+
+        stroke_shadow_strokes = [s for s in normal_strokes if s.get('type') in ['line', 'freehand', 'bspline'] or s.get('tool_type') in ['line', 'freehand', 'bspline']]
+        if stroke_shadow_strokes:
+            shadow_states = [s.get('has_shadow', False) for s in stroke_shadow_strokes]
+            if all(state == shadow_states[0] for state in shadow_states):
+                self.current_stroke_shadow_enabled = shadow_states[0]
+            else:
+                self.current_stroke_shadow_enabled = any(shadow_states)
+
+            shadow_colors = []
+            for s in stroke_shadow_strokes:
+                shadow_color = s.get('shadow_color', QColor(0, 0, 0, 128))
+                if isinstance(shadow_color, str):
+                    shadow_color = QColor(shadow_color)
+                elif not isinstance(shadow_color, QColor) and hasattr(shadow_color, 'name'):
+                    shadow_color = QColor(shadow_color)
+                elif not isinstance(shadow_color, QColor):
+                    shadow_color = QColor(Qt.GlobalColor.black)
+                shadow_colors.append(shadow_color)
+            if shadow_colors:
+                if all(c.name() == shadow_colors[0].name() for c in shadow_colors):
+                    self.current_stroke_shadow_color = shadow_colors[0]
+                else:
+                    self.current_stroke_shadow_color = shadow_colors[0]
+
+            x_offsets = [s.get('shadow_offset_x', 5) for s in stroke_shadow_strokes]
+            y_offsets = [s.get('shadow_offset_y', 5) for s in stroke_shadow_strokes]
+            if x_offsets:
+                if all(x == x_offsets[0] for x in x_offsets):
+                    self.current_stroke_shadow_offset_x = x_offsets[0]
+                else:
+                    self.current_stroke_shadow_offset_x = int(sum(x_offsets) / len(x_offsets))
+            if y_offsets:
+                if all(y == y_offsets[0] for y in y_offsets):
+                    self.current_stroke_shadow_offset_y = y_offsets[0]
+                else:
+                    self.current_stroke_shadow_offset_y = int(sum(y_offsets) / len(y_offsets))
+
+            blur_values = [s.get('shadow_blur', 10) for s in stroke_shadow_strokes]
+            if blur_values:
+                if all(b == blur_values[0] for b in blur_values):
+                    self.current_stroke_shadow_blur = blur_values[0]
+                else:
+                    self.current_stroke_shadow_blur = int(sum(blur_values) / len(blur_values))
+
+            size_values = [s.get('shadow_size', 0) for s in stroke_shadow_strokes]
+            if size_values:
+                if all(sz == size_values[0] for sz in size_values):
+                    self.current_stroke_shadow_size = size_values[0]
+                else:
+                    self.current_stroke_shadow_size = int(sum(size_values) / len(size_values))
+
+            opacity_values = [s.get('shadow_opacity', 0.7) for s in stroke_shadow_strokes]
+            if opacity_values:
+                if all(abs(op - opacity_values[0]) < 1e-3 for op in opacity_values):
+                    self.current_stroke_shadow_opacity = opacity_values[0]
+                else:
+                    self.current_stroke_shadow_opacity = sum(opacity_values) / len(opacity_values)
+
+            inner_values = [s.get('inner_shadow', False) for s in stroke_shadow_strokes]
+            if inner_values:
+                if all(val == inner_values[0] for val in inner_values):
+                    self.current_stroke_inner_shadow = inner_values[0]
+                else:
+                    self.current_stroke_inner_shadow = False
+
+            quality_values = [s.get('shadow_quality', 'medium') for s in stroke_shadow_strokes]
+            if quality_values:
+                if all(q == quality_values[0] for q in quality_values):
+                    self.current_stroke_shadow_quality = quality_values[0]
+                else:
+                    self.current_stroke_shadow_quality = 'medium'
+
         # Dolgu özellikleri analizi (sadece fillable shapes varsa)
         if self.has_fillable_shapes:
             fillable_strokes = [s for s in normal_strokes if s['type'] in ['rectangle', 'circle']]
@@ -1889,6 +2201,22 @@ class ShapePropertiesWidget(QWidget):
             self.transparency_slider.blockSignals(True)
         if hasattr(self, 'blur_spinbox'):
             self.blur_spinbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_checkbox'):
+            self.stroke_shadow_checkbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_type_group'):
+            self.stroke_shadow_type_group.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_x_spinbox'):
+            self.stroke_shadow_x_spinbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_y_spinbox'):
+            self.stroke_shadow_y_spinbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_blur_spinbox'):
+            self.stroke_shadow_blur_spinbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_size_spinbox'):
+            self.stroke_shadow_size_spinbox.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_quality_combo'):
+            self.stroke_shadow_quality_combo.blockSignals(True)
+        if hasattr(self, 'stroke_shadow_opacity_slider'):
+            self.stroke_shadow_opacity_slider.blockSignals(True)
         
         try:
             # Renk butonlarını güncelle
@@ -1898,6 +2226,8 @@ class ShapePropertiesWidget(QWidget):
                 self.update_border_color_button()
             if hasattr(self, 'shadow_color_button'):
                 self.update_shadow_color_button()
+            if hasattr(self, 'stroke_shadow_color_button'):
+                self.update_stroke_shadow_color_button()
             
             # Kalınlık
             self.width_spinbox.setValue(self.current_width)
@@ -1973,6 +2303,40 @@ class ShapePropertiesWidget(QWidget):
                     if self.quality_combo.itemData(i) == self.current_shadow_quality:
                         self.quality_combo.setCurrentIndex(i)
                         break
+
+            if hasattr(self, 'stroke_shadow_checkbox'):
+                self.stroke_shadow_checkbox.setChecked(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_color_button.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_x_spinbox.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_y_spinbox.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_blur_spinbox.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_size_spinbox.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_outer_radio.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_inner_radio.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_quality_combo.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_opacity_slider.setEnabled(self.current_stroke_shadow_enabled)
+                self.stroke_shadow_opacity_label.setEnabled(self.current_stroke_shadow_enabled)
+
+            if hasattr(self, 'stroke_shadow_x_spinbox'):
+                self.stroke_shadow_x_spinbox.setValue(self.current_stroke_shadow_offset_x)
+            if hasattr(self, 'stroke_shadow_y_spinbox'):
+                self.stroke_shadow_y_spinbox.setValue(self.current_stroke_shadow_offset_y)
+            if hasattr(self, 'stroke_shadow_blur_spinbox'):
+                self.stroke_shadow_blur_spinbox.setValue(self.current_stroke_shadow_blur)
+            if hasattr(self, 'stroke_shadow_size_spinbox'):
+                self.stroke_shadow_size_spinbox.setValue(self.current_stroke_shadow_size)
+            if hasattr(self, 'stroke_shadow_outer_radio'):
+                self.stroke_shadow_outer_radio.setChecked(not self.current_stroke_inner_shadow)
+            if hasattr(self, 'stroke_shadow_inner_radio'):
+                self.stroke_shadow_inner_radio.setChecked(self.current_stroke_inner_shadow)
+            if hasattr(self, 'stroke_shadow_quality_combo'):
+                for i in range(self.stroke_shadow_quality_combo.count()):
+                    if self.stroke_shadow_quality_combo.itemData(i) == self.current_stroke_shadow_quality:
+                        self.stroke_shadow_quality_combo.setCurrentIndex(i)
+                        break
+            if hasattr(self, 'stroke_shadow_opacity_slider'):
+                self.stroke_shadow_opacity_slider.setValue(int(self.current_stroke_shadow_opacity * 100))
+                self.stroke_shadow_opacity_label.setText(f"{int(self.current_stroke_shadow_opacity * 100)}%")
                 
             # Yeni kontroller - Şeffaflık ve Blur
             if hasattr(self, 'transparency_slider'):
@@ -2021,6 +2385,22 @@ class ShapePropertiesWidget(QWidget):
                 self.transparency_slider.blockSignals(False)
             if hasattr(self, 'blur_spinbox'):
                 self.blur_spinbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_checkbox'):
+                self.stroke_shadow_checkbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_type_group'):
+                self.stroke_shadow_type_group.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_x_spinbox'):
+                self.stroke_shadow_x_spinbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_y_spinbox'):
+                self.stroke_shadow_y_spinbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_blur_spinbox'):
+                self.stroke_shadow_blur_spinbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_size_spinbox'):
+                self.stroke_shadow_size_spinbox.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_quality_combo'):
+                self.stroke_shadow_quality_combo.blockSignals(False)
+            if hasattr(self, 'stroke_shadow_opacity_slider'):
+                self.stroke_shadow_opacity_slider.blockSignals(False)
             if hasattr(self, 'corner_radius_spinbox'):
                 self.corner_radius_spinbox.blockSignals(False)
             if hasattr(self, 'shadow_opacity_slider'):
@@ -2120,6 +2500,8 @@ class ShapePropertiesWidget(QWidget):
         self.has_bspline_shapes = False
         self.has_image_shapes = False
         self.has_rectangle_shapes = False
+        self.has_circle_shapes = False
+        self.has_stroke_shadow_shapes = False
         self.setVisible(False)
 
     def on_toggle_control_points(self):
