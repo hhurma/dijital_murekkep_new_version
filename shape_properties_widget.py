@@ -839,7 +839,6 @@ class ShapePropertiesWidget(QWidget):
         circle_shadow_type_layout = QHBoxLayout()
         circle_shadow_type_layout.addWidget(QLabel("Gölge Tipi:"))
         
-        from PyQt6.QtWidgets import QButtonGroup
         self.circle_shadow_type_group = QButtonGroup()
         
         self.circle_outer_shadow_radio = QRadioButton("Dış Gölge")
