@@ -661,18 +661,53 @@ class DrawingWidget(QWidget):
         self._save_current_pdf_page_state()
         return {index: state for index, state in self.pdf_page_states.items()}
 
-    def import_pdf_page_states(self, page_states):
+    def get_pdf_page_layer_states(self):
+        if not self.has_pdf_background():
+            return None
+
+        self._save_current_pdf_page_state()
+
+        page_states = {}
+        for index, state in self.pdf_page_states.items():
+            if state is None:
+                continue
+            page_states[index] = copy.deepcopy(state)
+
+        return {
+            'page_count': self.pdf_background_layer.page_count,
+            'current_page': self.pdf_background_layer.current_page,
+            'page_states': page_states
+        }
+
+    def import_pdf_page_states(self, payload):
         if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
             return
 
-        for key, state in page_states.items():
+        if not payload:
+            self._initialize_pdf_page_states(self.pdf_background_layer.page_count)
+            self._load_pdf_page_state(self.pdf_background_layer.current_page)
+            return
+
+        target_page = None
+        page_states = payload
+
+        if isinstance(payload, dict) and 'page_states' in payload:
+            page_states = payload.get('page_states', {})
+            target_page = payload.get('current_page')
+
+        self._initialize_pdf_page_states(self.pdf_background_layer.page_count)
+
+        for key, state in (page_states or {}).items():
             try:
                 index = int(key)
             except (TypeError, ValueError):
                 continue
 
             if 0 <= index < self.pdf_background_layer.page_count:
-                self.pdf_page_states[index] = state
+                self.pdf_page_states[index] = copy.deepcopy(state) if state is not None else None
+
+        if isinstance(target_page, int):
+            self.pdf_background_layer.set_current_page(max(0, min(target_page, self.pdf_background_layer.page_count - 1)))
 
         current_page = self.pdf_background_layer.current_page
         self._load_pdf_page_state(current_page)
