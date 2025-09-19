@@ -3,7 +3,7 @@ import os
 from PyQt6.QtWidgets import (
     QApplication, QMainWindow, QToolBar, QPushButton,
     QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
-    QMenuBar, QDockWidget, QMessageBox, QFileDialog, QInputDialog
+    QMenuBar, QDockWidget, QMessageBox, QFileDialog, QInputDialog, QSpinBox
 )
 from PyQt6.QtCore import Qt, QPointF, QTimer
 from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence, QImage, QPainter
@@ -387,11 +387,13 @@ class MainWindow(QMainWindow):
         self.tool_status_label.setMaximumWidth(100)
         self.status_bar.addPermanentWidget(self.tool_status_label)
 
-        self.pdf_status_label = QPushButton("PDF: Yok")
-        self.pdf_status_label.setFlat(True)
-        self.pdf_status_label.setEnabled(False)
-        self.pdf_status_label.setMaximumWidth(160)
-        self.status_bar.addPermanentWidget(self.pdf_status_label)
+        self.pdf_page_selector = QSpinBox()
+        self.pdf_page_selector.setEnabled(False)
+        self.pdf_page_selector.setRange(0, 0)
+        self.pdf_page_selector.setSpecialValueText("PDF: Yok")
+        self.pdf_page_selector.setMaximumWidth(180)
+        self.pdf_page_selector.valueChanged.connect(self.on_pdf_page_selector_changed)
+        self.status_bar.addPermanentWidget(self.pdf_page_selector)
         
     def show_status_message(self, message, timeout=3000):
         """Status bar'da mesaj göster"""
@@ -427,6 +429,7 @@ class MainWindow(QMainWindow):
         can_prev = False
         can_next = False
         status_text = "PDF: Yok"
+        layer = None
 
         if has_pdf:
             layer = current_widget.get_pdf_background_layer()
@@ -440,9 +443,51 @@ class MainWindow(QMainWindow):
         self.pdf_next_action.setEnabled(can_next)
         self.pdf_dpi_action.setEnabled(has_pdf)
 
-        if hasattr(self, 'pdf_status_label'):
-            self.pdf_status_label.setText(status_text)
-            self.pdf_status_label.setEnabled(False)
+        page_selector = getattr(self, 'pdf_page_selector', None)
+        if not page_selector:
+            return
+
+        if has_pdf and layer:
+            page_selector.blockSignals(True)
+            page_selector.setEnabled(True)
+            page_selector.setPrefix("PDF ")
+            page_selector.setSpecialValueText("")
+            page_selector.setRange(1, layer.page_count)
+            page_selector.setSuffix(f"/{layer.page_count} ({layer.dpi} DPI)")
+            page_selector.setValue(layer.current_page + 1)
+            page_selector.blockSignals(False)
+            page_selector.setToolTip(status_text)
+        else:
+            page_selector.blockSignals(True)
+            page_selector.setEnabled(False)
+            page_selector.setPrefix("")
+            page_selector.setSuffix("")
+            page_selector.setRange(0, 0)
+            page_selector.setSpecialValueText(status_text)
+            page_selector.setValue(0)
+            page_selector.blockSignals(False)
+            page_selector.setToolTip(status_text)
+
+    def on_pdf_page_selector_changed(self, page_number):
+        """PDF sayfa seçicisi değiştiğinde ilgili PDF sayfasına geç"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.has_pdf_background():
+            return
+
+        layer = current_widget.get_pdf_background_layer()
+        if not layer:
+            return
+
+        target_index = page_number - 1
+        if target_index == layer.current_page:
+            return
+
+        if current_widget.go_to_pdf_page(target_index):
+            self.show_status_message(
+                f"PDF sayfası: {layer.current_page + 1}/{layer.page_count}"
+            )
+
+        self.update_pdf_controls_state()
         
     def create_background_dock(self):
         """Ayarlar dock widget'ı oluştur"""
