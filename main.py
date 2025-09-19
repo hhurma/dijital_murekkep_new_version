@@ -341,6 +341,13 @@ class MainWindow(QMainWindow):
         export_pdf_action.triggered.connect(self.export_to_pdf)
         file_menu.addAction(export_pdf_action)
         
+        # Geçerli sekmeyi PDF'ye kaydet (PDF arka planının TÜM sayfaları)
+        export_pdf_pages_action = QAction(qta.icon('fa5s.file-pdf', color='#F44336'), "PDF'ye Kaydet (Bu Sekme)", self)
+        export_pdf_pages_action.setShortcut("Ctrl+Alt+E")
+        export_pdf_pages_action.setToolTip("Geçerli sekmenin PDF arka planındaki tüm sayfaları tek PDF'e kaydet")
+        export_pdf_pages_action.triggered.connect(self.export_current_tab_with_pdf_pages)
+        file_menu.addAction(export_pdf_pages_action)
+        
         file_menu.addSeparator()
         
         # Son oturumlar
@@ -1473,6 +1480,11 @@ class MainWindow(QMainWindow):
             self.show_status_message("PDF başarıyla dışa aktarıldı")
         else:
             self.show_status_message("PDF dışa aktarma başarısız")
+    
+    def export_current_tab_with_pdf_pages(self):
+        """Geçerli sekmenin PDF arka planındaki tüm sayfaları tek PDF'e kaydet"""
+        self.show_status_message("PDF'ye kaydediliyor...")
+        self.pdf_exporter.export_current_tab_with_pdf_pages()
         
     def closeEvent(self, event):
         """Uygulama kapanırken ayarları kaydet"""

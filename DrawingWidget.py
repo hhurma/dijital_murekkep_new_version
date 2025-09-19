@@ -241,6 +241,10 @@ class DrawingWidget(QWidget):
         
         # Varsayılan olarak yatay (landscape)
         self.canvas_orientation = 'landscape'
+        
+        # PDF arka plan katmanı ve sayfa durumları (update_canvas_size öncesi gerekli)
+        self.pdf_background_layer: Optional[PdfBackgroundLayer] = None
+        self.pdf_page_states = {}
         self.update_canvas_size()
         
         # Katman yöneticisi
@@ -270,10 +274,6 @@ class DrawingWidget(QWidget):
             'grid_width': 1
         }
 
-        # PDF arka plan katmanı
-        self.pdf_background_layer: Optional[PdfBackgroundLayer] = None
-        self.pdf_page_states = {}
-        
         # Araç örnekleri
         self.selection_tool = SelectionTool()
         self.move_tool = MoveTool()
@@ -651,6 +651,17 @@ class DrawingWidget(QWidget):
             return self.pdf_background_layer.set_dpi(dpi)
 
         changed = self._apply_pdf_page_change(_set_dpi)
+        if changed:
+            self.update_canvas_size()
+        return changed
+
+    def go_to_pdf_page(self, index: int) -> bool:
+        """PDF arka planında belirli sayfaya git ve ilgili katman durumunu yükle."""
+        if not self.pdf_background_layer:
+            return False
+        def _set_page():
+            return self.pdf_background_layer.set_current_page(index)
+        changed = self._apply_pdf_page_change(_set_page)
         if changed:
             self.update_canvas_size()
         return changed

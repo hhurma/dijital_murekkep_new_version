@@ -397,6 +397,46 @@ class CanvasRenderer:
             elif stroke_data['type'] == 'circle':
                 self.drawing_widget.circle_tool.draw_stroke(painter, stroke_data)
 
+    def render_with_pdf_background(self, painter):
+        """PDF arka planıyla birlikte export render (zoom/pan olmadan)."""
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        
+        # Önce PDF arka planını çizmeyi dene
+        drew_pdf = False
+        if hasattr(self.drawing_widget, 'has_pdf_background') and self.drawing_widget.has_pdf_background():
+            layer = self.drawing_widget.get_pdf_background_layer()
+            if layer:
+                try:
+                    image = layer.get_current_page_image()
+                except Exception:
+                    image = QImage()
+                if not image.isNull():
+                    painter.drawImage(0, 0, image)
+                    drew_pdf = True
+        
+        # Eğer PDF arka planı yoksa beyaz doldur
+        if not drew_pdf:
+            bg_color = QColor(Qt.GlobalColor.white)
+            painter.fillRect(self.drawing_widget.rect(), QBrush(bg_color))
+        
+        # Üstüne tüm stroke'ları çiz
+        for stroke_data in self.drawing_widget.strokes:
+            if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                stroke_data.render(painter)
+                continue
+            if 'type' not in stroke_data:
+                continue
+            if stroke_data['type'] == 'bspline':
+                self.drawing_widget.bspline_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'freehand':
+                self.drawing_widget.freehand_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'line':
+                self.drawing_widget.line_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'rectangle':
+                self.drawing_widget.rectangle_tool.draw_stroke(painter, stroke_data)
+            elif stroke_data['type'] == 'circle':
+                self.drawing_widget.circle_tool.draw_stroke(painter, stroke_data)
+
     def draw_stroke_full(self, painter, stroke_data):
         """Full kalite stroke çizimi"""
         if stroke_data['type'] == 'bspline':

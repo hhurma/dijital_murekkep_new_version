@@ -72,6 +72,92 @@ class PDFExporter:
         except Exception as e:
             QMessageBox.critical(self.main_window, "Hata", f"PDF oluşturulamadı:\n{str(e)}")
     
+    def export_current_tab_with_pdf_pages(self):
+        """Geçerli sekmenin PDF arka planındaki TÜM sayfalarını tek PDF'e dışa aktar."""
+        drawing_widget = self.main_window.get_current_drawing_widget()
+        if not drawing_widget:
+            QMessageBox.warning(self.main_window, "Uyarı", "Açık çizim sekmesi bulunmuyor.")
+            return
+        if not hasattr(drawing_widget, 'has_pdf_background') or not drawing_widget.has_pdf_background():
+            QMessageBox.warning(self.main_window, "Uyarı", "Bu sekmede PDF arka planı yok.")
+            return
+
+        layer = drawing_widget.get_pdf_background_layer()
+        if not layer:
+            QMessageBox.warning(self.main_window, "Uyarı", "PDF arka planı bulunamadı.")
+            return
+
+        # Dosya adı
+        filename, _ = QFileDialog.getSaveFileName(
+            self.main_window, "PDF'ye Kaydet (Tüm PDF Sayfaları)",
+            f"pdf_aktar_{datetime.now().strftime('%Y%m%d_%H%M%S')}.pdf",
+            "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)"
+        )
+        if not filename:
+            return
+
+        try:
+            printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+            printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+            printer.setOutputFileName(filename)
+            printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+
+            # Yönlendirme: canvas yönü
+            if hasattr(drawing_widget, 'get_canvas_orientation') and drawing_widget.get_canvas_orientation() == 'landscape':
+                printer.setPageOrientation(QPageLayout.Orientation.Landscape)
+            else:
+                printer.setPageOrientation(QPageLayout.Orientation.Portrait)
+
+            printer.setPageMargins(QMarginsF(5, 5, 5, 5), QPageLayout.Unit.Millimeter)
+
+            painter = QPainter()
+            painter.begin(printer)
+
+            # Orijinal sayfayı hatırla
+            original_page = layer.current_page
+
+            for page_index in range(layer.page_count):
+                if page_index > 0:
+                    printer.newPage()
+
+                # Sayfayı değiştir ve PDF arka planıyla birlikte çiz
+                if hasattr(drawing_widget, 'go_to_pdf_page'):
+                    drawing_widget.go_to_pdf_page(page_index)
+                else:
+                    layer.set_current_page(page_index)
+
+                widget_rect = drawing_widget.rect()
+                page_rect = painter.viewport()
+                scale_x = page_rect.width() / widget_rect.width()
+                scale_y = page_rect.height() / widget_rect.height()
+                base_scale = min(scale_x, scale_y) * 0.98
+
+                scaled_width = widget_rect.width() * base_scale
+                scaled_height = widget_rect.height() * base_scale
+                x_offset = (page_rect.width() - scaled_width) / 2
+                y_offset = (page_rect.height() - scaled_height) / 2
+
+                painter.save()
+                painter.translate(x_offset, y_offset)
+                painter.scale(base_scale, base_scale)
+
+                # PDF arka planını da içeren render
+                if hasattr(drawing_widget, 'canvas_renderer') and hasattr(drawing_widget.canvas_renderer, 'render_with_pdf_background'):
+                    drawing_widget.canvas_renderer.render_with_pdf_background(painter)
+                else:
+                    drawing_widget.render(painter)
+
+                painter.restore()
+
+            # Orijinal sayfaya geri dön
+            layer.set_current_page(original_page)
+
+            painter.end()
+
+            QMessageBox.information(self.main_window, "Başarılı", f"PDF kaydedildi:\n{filename}")
+        except Exception as e:
+            QMessageBox.critical(self.main_window, "Hata", f"PDF kaydedilemedi:\n{str(e)}")
+    
     def _render_page(self, painter, drawing_widget, page_index):
         """Tek sayfa çiz"""
         # Drawing widget'ının boyutları (A4)
