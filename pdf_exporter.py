@@ -2,7 +2,7 @@ import errno
 import os
 
 from PyQt6.QtPrintSupport import QPrinter
-from PyQt6.QtGui import QPainter, QColor, QPageSize, QPageLayout
+from PyQt6.QtGui import QPainter, QColor, QPageSize, QPageLayout, QImage
 from PyQt6.QtCore import QMarginsF
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from datetime import datetime
@@ -233,6 +233,25 @@ class PDFExporter:
         painter = QPainter()
         original_page = layer.current_page
 
+        # Preload the PDF background images before the source file is opened
+        # for writing. This ensures we never try to read from a file that is
+        # currently being truncated by the printer backend.
+        preloaded_images = []
+        try:
+            for page_index in range(layer.page_count):
+                image = layer.get_page_image(page_index)
+                if image.isNull():
+                    preloaded_images.append(QImage())
+                else:
+                    # Detach the image data so future modifications to the
+                    # cache do not affect the copy used during export.
+                    preloaded_images.append(image.copy())
+        except Exception:
+            # If preloading fails we still continue, the renderer will fall
+            # back to loading from the layer which keeps the previous
+            # behaviour.
+            preloaded_images = []
+
         try:
             if not painter.begin(printer):
                 raise RuntimeError("PDF yazıcısı başlatılamadı.")
@@ -266,9 +285,17 @@ class PDFExporter:
                 if hasattr(drawing_widget, 'canvas_renderer'):
                     renderer = drawing_widget.canvas_renderer
                     if hasattr(renderer, 'render_pdf_background_only'):
-                        renderer.render_pdf_background_only(painter)
+                        renderer.render_pdf_background_only(
+                            painter,
+                            preloaded_images=preloaded_images,
+                            page_index=page_index,
+                        )
                     elif hasattr(renderer, 'render_with_pdf_background'):
-                        renderer.render_with_pdf_background(painter)
+                        renderer.render_with_pdf_background(
+                            painter,
+                            preloaded_images=preloaded_images,
+                            page_index=page_index,
+                        )
                     else:
                         drawing_widget.render(painter)
                 else:

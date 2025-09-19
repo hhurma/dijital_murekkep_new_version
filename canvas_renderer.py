@@ -1,3 +1,5 @@
+from typing import Optional, Sequence
+
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QImage
 from PyQt6.QtCore import Qt, QRectF, QPointF
@@ -397,19 +399,37 @@ class CanvasRenderer:
             elif stroke_data['type'] == 'circle':
                 self.drawing_widget.circle_tool.draw_stroke(painter, stroke_data)
 
-    def render_pdf_background_only(self, painter):
+    def render_pdf_background_only(
+        self,
+        painter,
+        preloaded_images: Optional[Sequence[QImage]] = None,
+        page_index: Optional[int] = None,
+    ):
         """Sadece PDF arka planını çiz (stroke'lar olmadan)."""
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
         # Önce PDF arka planını çizmeyi dene
         drew_pdf = False
-        if hasattr(self.drawing_widget, 'has_pdf_background') and self.drawing_widget.has_pdf_background():
+        if (
+            hasattr(self.drawing_widget, 'has_pdf_background')
+            and self.drawing_widget.has_pdf_background()
+        ):
             layer = self.drawing_widget.get_pdf_background_layer()
             if layer:
-                try:
-                    image = layer.get_current_page_image()
-                except Exception:
-                    image = QImage()
+                image = QImage()
+                if (
+                    preloaded_images is not None
+                    and page_index is not None
+                    and 0 <= page_index < len(preloaded_images)
+                ):
+                    candidate = preloaded_images[page_index]
+                    if isinstance(candidate, QImage):
+                        image = candidate
+                if image.isNull():
+                    try:
+                        image = layer.get_current_page_image()
+                    except Exception:
+                        image = QImage()
                 if not image.isNull():
                     painter.drawImage(0, 0, image)
                     drew_pdf = True
@@ -419,9 +439,18 @@ class CanvasRenderer:
             bg_color = QColor(Qt.GlobalColor.white)
             painter.fillRect(self.drawing_widget.rect(), QBrush(bg_color))
 
-    def render_with_pdf_background(self, painter):
+    def render_with_pdf_background(
+        self,
+        painter,
+        preloaded_images: Optional[Sequence[QImage]] = None,
+        page_index: Optional[int] = None,
+    ):
         """PDF arka planıyla birlikte export render (zoom/pan olmadan)."""
-        self.render_pdf_background_only(painter)
+        self.render_pdf_background_only(
+            painter,
+            preloaded_images=preloaded_images,
+            page_index=page_index,
+        )
 
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
 
