@@ -312,6 +312,12 @@ class MainWindow(QMainWindow):
         open_pdf_action.triggered.connect(self.open_pdf)
         file_menu.addAction(open_pdf_action)
 
+        self.save_pdf_action = QAction(qta.icon('fa5s.save', color='#C62828'), "PDF'yi Kaydet", self)
+        self.save_pdf_action.setToolTip("PDF arka planını kaynağına kaydet")
+        self.save_pdf_action.setEnabled(False)
+        self.save_pdf_action.triggered.connect(self.save_pdf_to_source)
+        file_menu.addAction(self.save_pdf_action)
+
         file_menu.addSeparator()
 
         # Resim import
@@ -442,6 +448,14 @@ class MainWindow(QMainWindow):
         self.pdf_prev_action.setEnabled(can_prev)
         self.pdf_next_action.setEnabled(can_next)
         self.pdf_dpi_action.setEnabled(has_pdf)
+        if hasattr(self, 'save_pdf_action'):
+            has_target = bool(has_pdf and layer and getattr(layer, 'source_path', None))
+            self.save_pdf_action.setEnabled(has_target)
+            if has_target:
+                base_name = os.path.basename(layer.source_path)
+                self.save_pdf_action.setToolTip(f"PDF arka planını kaynağına kaydet ({base_name})")
+            else:
+                self.save_pdf_action.setToolTip("PDF arka planını kaynağına kaydet")
 
         page_selector = getattr(self, 'pdf_page_selector', None)
         if not page_selector:
@@ -1530,7 +1544,24 @@ class MainWindow(QMainWindow):
         """Geçerli sekmenin PDF arka planındaki tüm sayfaları tek PDF'e kaydet"""
         self.show_status_message("PDF'ye kaydediliyor...")
         self.pdf_exporter.export_current_tab_with_pdf_pages()
-        
+
+    def save_pdf_to_source(self):
+        """Aktif sekmedeki PDF'yi orijinal kaynağına kaydet."""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not hasattr(current_widget, 'has_pdf_background') or not current_widget.has_pdf_background():
+            QMessageBox.warning(self, "Uyarı", "Bu sekmede PDF arka planı bulunmuyor.")
+            self.show_status_message("Kaydedilecek PDF bulunamadı")
+            self.update_pdf_controls_state()
+            return
+
+        self.show_status_message("PDF kaydediliyor...")
+        saved = self.pdf_exporter.save_current_pdf_to_source()
+        if saved:
+            self.show_status_message("PDF kaynağına kaydedildi")
+        else:
+            self.show_status_message("PDF kaydedilmedi")
+        self.update_pdf_controls_state()
+
     def closeEvent(self, event):
         """Uygulama kapanırken ayarları kaydet"""
         # Otomatik oturum kaydetme
