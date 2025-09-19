@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import QWidget
-from PyQt6.QtGui import QPainter, QColor, QBrush, QPen
+from PyQt6.QtGui import QPainter, QColor, QBrush, QPen, QImage
 from PyQt6.QtCore import Qt, QRectF, QPointF
 
 class CanvasRenderer:
@@ -198,7 +198,18 @@ class CanvasRenderer:
         # Arka plan rengini ayarla
         bg_color = QColor(self.drawing_widget.background_settings['background_color'])
         painter.fillRect(self.drawing_widget.rect(), QBrush(bg_color))
-        
+
+        if hasattr(self.drawing_widget, 'has_pdf_background') and self.drawing_widget.has_pdf_background():
+            layer = self.drawing_widget.get_pdf_background_layer()
+            if layer:
+                try:
+                    image = layer.get_current_page_image()
+                except Exception:
+                    image = QImage()
+                if not image.isNull():
+                    painter.drawImage(0, 0, image)
+                    return
+
         # Grid/Pattern çizimi
         if self.drawing_widget.background_settings['type'] == 'grid':
             self.draw_grid_background(painter)

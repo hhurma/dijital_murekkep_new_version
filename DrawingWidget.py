@@ -1,3 +1,5 @@
+from typing import Optional
+
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath, QColor, QBrush, QTabletEvent
 from PyQt6.QtCore import Qt, QPoint, QPointF, QRect, QRectF, pyqtSignal
@@ -8,6 +10,7 @@ import copy
 from tablet_handler import TabletHandler
 from event_handler import EventHandler
 from canvas_renderer import CanvasRenderer
+from pdf_importer import PdfBackgroundLayer
 from throttle_manager import ThrottleManager
 
 # Araç modüllerini import et
@@ -266,6 +269,9 @@ class DrawingWidget(QWidget):
             'grid_size': 20,
             'grid_width': 1
         }
+
+        # PDF arka plan katmanı
+        self.pdf_background_layer: Optional[PdfBackgroundLayer] = None
         
         # Araç örnekleri
         self.selection_tool = SelectionTool()
@@ -408,6 +414,13 @@ class DrawingWidget(QWidget):
 
     def update_canvas_size(self):
         """Canvas boyutunu mevcut yönlendirmeye göre güncelle"""
+        if self.pdf_background_layer and self.pdf_background_layer.has_document():
+            page_size = self.pdf_background_layer.get_current_page_size()
+            if page_size:
+                self.setFixedSize(page_size.width(), page_size.height())
+                self.update()
+                return
+
         if self.canvas_orientation == 'landscape':
             self.setFixedSize(self.a4_width_landscape, self.a4_height_landscape)
         else:
@@ -518,7 +531,7 @@ class DrawingWidget(QWidget):
     def set_background_settings(self, settings):
         """Arka plan ayarlarını güncelle"""
         self.background_settings = settings
-        
+
         # Snap-destekli araçlara arka plan ayarlarını bildir
         if hasattr(self.line_tool, 'set_background_settings'):
             self.line_tool.set_background_settings(settings)
@@ -534,8 +547,86 @@ class DrawingWidget(QWidget):
             self.scale_tool.set_background_settings(settings)
         if hasattr(self.move_tool, 'set_background_settings'):
             self.move_tool.set_background_settings(settings)
-            
+
         self.update()  # Yeniden çiz
+
+    # ------------------------------------------------------------------
+    # PDF arka planı kontrol metodları
+    # ------------------------------------------------------------------
+    def has_pdf_background(self) -> bool:
+        return bool(self.pdf_background_layer and self.pdf_background_layer.has_document())
+
+    def set_pdf_background_layer(self, layer: Optional[PdfBackgroundLayer]):
+        self.pdf_background_layer = layer
+        self.update_canvas_size()
+        self.update()
+
+    def get_pdf_background_layer(self) -> Optional[PdfBackgroundLayer]:
+        return self.pdf_background_layer
+
+    def clear_pdf_background(self):
+        self.pdf_background_layer = None
+        self.update_canvas_size()
+        self.update()
+
+    def next_pdf_page(self) -> bool:
+        if not self.pdf_background_layer:
+            return False
+        changed = self.pdf_background_layer.next_page()
+        if changed:
+            self.update_canvas_size()
+            self.update()
+        return changed
+
+    def previous_pdf_page(self) -> bool:
+        if not self.pdf_background_layer:
+            return False
+        changed = self.pdf_background_layer.previous_page()
+        if changed:
+            self.update_canvas_size()
+            self.update()
+        return changed
+
+    def set_pdf_dpi(self, dpi: int) -> bool:
+        if not self.pdf_background_layer:
+            return False
+        changed = self.pdf_background_layer.set_dpi(dpi)
+        if changed:
+            self.update_canvas_size()
+            self.update()
+        return changed
+
+    def export_pdf_background_state(self):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return None
+        return {
+            'source_path': self.pdf_background_layer.source_path,
+            'page_count': self.pdf_background_layer.page_count,
+            'current_page': self.pdf_background_layer.current_page,
+            'dpi': self.pdf_background_layer.dpi
+        }
+
+    def import_pdf_background_state(self, state, pdf_importer=None):
+        if not state or 'source_path' not in state:
+            self.clear_pdf_background()
+            return
+
+        importer = pdf_importer
+        if importer is None and self.main_window and hasattr(self.main_window, 'pdf_importer'):
+            importer = self.main_window.pdf_importer
+
+        if importer is None:
+            return
+
+        try:
+            layer = importer.load_pdf(state['source_path'], dpi=state.get('dpi', 150))
+        except Exception:
+            return
+
+        if layer:
+            page_index = state.get('current_page', 0)
+            layer.set_current_page(page_index)
+            self.set_pdf_background_layer(layer)
             
     def set_undo_manager(self, undo_manager):
         """Undo/Redo manager'ı ayarla"""
