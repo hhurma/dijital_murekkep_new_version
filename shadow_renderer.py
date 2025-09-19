@@ -1,3 +1,5 @@
+import math
+
 from PyQt6.QtCore import QSize, QRectF, Qt, QPointF
 from PyQt6.QtGui import QPixmap, QPainter, QBrush, QColor, QPainterPath, QPainterPathStroker
 from PyQt6.QtWidgets import QGraphicsScene, QGraphicsPixmapItem, QGraphicsBlurEffect
@@ -574,39 +576,73 @@ class ShadowRenderer:
                 inner_center_x = center_x + offset_x
                 inner_center_y = center_y + offset_y
                 inner_radius = max(1, radius - shadow_inset)
-                inner_path.addEllipse(inner_center_x - inner_radius, inner_center_y - inner_radius, 
-                                    inner_radius*2, inner_radius*2)
+                inner_path.addEllipse(inner_center_x - inner_radius, inner_center_y - inner_radius,
+                                      inner_radius * 2, inner_radius * 2)
             else:
-                # Rectangle için her köşeyi inset + offset ile ayarla
-                # Basit yaklaşım: her kenarı inset kadar içeri al
-                center_x = sum(p.x() for p in inner_points) / len(inner_points)
-                center_y = sum(p.y() for p in inner_points) / len(inner_points)
-                
-                inset_points = []
-                for p in inner_points:
-                    # Her noktayı merkeze doğru inset kadar yaklaştır
-                    direction_x = center_x - p.x()
-                    direction_y = center_y - p.y()
-                    length = (direction_x**2 + direction_y**2)**0.5
-                    if length > 0:
-                        direction_x /= length
-                        direction_y /= length
-                        new_x = p.x() + direction_x * shadow_inset + offset_x
-                        new_y = p.y() + direction_y * shadow_inset + offset_y
-                        inset_points.append(QPointF(new_x, new_y))
+                inset_points = None
+                axis_aligned = len(inner_points) >= 4 and ShadowRenderer._is_axis_aligned_rectangle(inner_points)
+
+                if axis_aligned:
+                    inner_rect = QRectF(
+                        shadow_inset,
+                        shadow_inset,
+                        shape_rect.width() - (shadow_inset * 2),
+                        shape_rect.height() - (shadow_inset * 2)
+                    )
+
+                    if inner_rect.width() > 0 and inner_rect.height() > 0:
+                        inner_rect.translate(offset_x, offset_y)
+                        if corner_radius > 0:
+                            inner_radius = max(0, corner_radius - shadow_inset)
+                            inner_path.addRoundedRect(inner_rect, inner_radius, inner_radius)
+                        else:
+                            inner_path.addRect(inner_rect)
+                else:
+                    if len(inner_points) >= 4:
+                        inset_points = ShadowRenderer._inset_rotated_rectangle_points(inner_points, shadow_inset)
+
+                    if inset_points:
+                        if offset_x != 0 or offset_y != 0:
+                            inset_points = [QPointF(p.x() + offset_x, p.y() + offset_y) for p in inset_points]
+
+                        if corner_radius > 0:
+                            inner_radius = max(0, corner_radius - shadow_inset)
+                            inner_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(inset_points, inner_radius)
+                        else:
+                            inner_path = QPainterPath()
+                            inner_path.moveTo(inset_points[0])
+                            for i in range(1, len(inset_points)):
+                                inner_path.lineTo(inset_points[i])
+                            inner_path.closeSubpath()
                     else:
-                        inset_points.append(QPointF(p.x() + offset_x, p.y() + offset_y))
-                
-                if inset_points and corner_radius > 0:
-                    # Yuvarlak kenar iç rectangle path
-                    inner_radius = max(0, corner_radius - shadow_inset)
-                    inner_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(inset_points, inner_radius)
-                elif inset_points:
-                    # Normal köşeli iç rectangle path
-                    inner_path.moveTo(inset_points[0])
-                    for i in range(1, len(inset_points)):
-                        inner_path.lineTo(inset_points[i])
-                    inner_path.closeSubpath()
+                        # Fallback: eski merkez tabanlı yaklaşım, offset uygulanmış şekilde
+                        center_x = sum(p.x() for p in inner_points) / len(inner_points)
+                        center_y = sum(p.y() for p in inner_points) / len(inner_points)
+
+                        fallback_points = []
+                        for p in inner_points:
+                            direction_x = center_x - p.x()
+                            direction_y = center_y - p.y()
+                            length = (direction_x ** 2 + direction_y ** 2) ** 0.5
+                            if length > 0:
+                                direction_x /= length
+                                direction_y /= length
+                                new_x = p.x() + direction_x * shadow_inset + offset_x
+                                new_y = p.y() + direction_y * shadow_inset + offset_y
+                                fallback_points.append(QPointF(new_x, new_y))
+                            else:
+                                fallback_points.append(QPointF(p.x() + offset_x, p.y() + offset_y))
+
+                        if fallback_points:
+                            if corner_radius > 0:
+                                inner_radius = max(0, corner_radius - shadow_inset)
+                                inner_path = ShadowRenderer._create_rounded_rectangle_path_for_clip(fallback_points, inner_radius)
+                            else:
+                                inner_path = QPainterPath()
+                                inner_path.moveTo(fallback_points[0])
+                                for i in range(1, len(fallback_points)):
+                                    inner_path.lineTo(fallback_points[i])
+                                inner_path.closeSubpath()
             
             inner_painter.drawPath(inner_path)
             
@@ -658,6 +694,93 @@ class ShadowRenderer:
             return ShadowRenderer._apply_blur_to_pixmap(inner_shadow, blur_radius)
         else:
             return inner_shadow
+
+    @staticmethod
+    def _is_axis_aligned_rectangle(points, tolerance=1e-3):
+        """Points dizisinin eksen hizalı bir dikdörtgen olup olmadığını kontrol et"""
+        if len(points) != 4:
+            return False
+
+        for i in range(4):
+            p_curr = points[i]
+            p_next = points[(i + 1) % 4]
+            dx = p_next.x() - p_curr.x()
+            dy = p_next.y() - p_curr.y()
+            if math.isclose(dx, 0.0, abs_tol=tolerance) and math.isclose(dy, 0.0, abs_tol=tolerance):
+                return False
+            if not (math.isclose(dx, 0.0, abs_tol=tolerance) or math.isclose(dy, 0.0, abs_tol=tolerance)):
+                return False
+
+        return True
+
+    @staticmethod
+    def _inset_rotated_rectangle_points(points, inset_distance):
+        """Döndürülmüş dikdörtgenin kenarlarını belirli mesafede içeri al"""
+        if len(points) != 4 or inset_distance <= 0:
+            return None
+
+        area = 0.0
+        for i in range(4):
+            p_curr = points[i]
+            p_next = points[(i + 1) % 4]
+            area += p_curr.x() * p_next.y() - p_next.x() * p_curr.y()
+
+        if math.isclose(area, 0.0, abs_tol=1e-6):
+            return None
+
+        orientation = 1 if area > 0 else -1
+        inset_lines = []
+
+        for i in range(4):
+            p_curr = points[i]
+            p_next = points[(i + 1) % 4]
+            edge_vector = QPointF(p_next.x() - p_curr.x(), p_next.y() - p_curr.y())
+            length = math.hypot(edge_vector.x(), edge_vector.y())
+
+            if math.isclose(length, 0.0, abs_tol=1e-6):
+                return None
+
+            normal_x = -edge_vector.y() / length
+            normal_y = edge_vector.x() / length
+
+            if orientation < 0:
+                normal_x = -normal_x
+                normal_y = -normal_y
+
+            offset_point = QPointF(
+                p_curr.x() + normal_x * inset_distance,
+                p_curr.y() + normal_y * inset_distance
+            )
+
+            inset_lines.append((offset_point, edge_vector))
+
+        inset_points = []
+        for i in range(4):
+            prev_point, prev_dir = inset_lines[i - 1]
+            curr_point, curr_dir = inset_lines[i]
+            intersection = ShadowRenderer._intersect_lines(prev_point, prev_dir, curr_point, curr_dir)
+            if intersection is None:
+                return None
+            inset_points.append(intersection)
+
+        return inset_points
+
+    @staticmethod
+    def _intersect_lines(point1, direction1, point2, direction2):
+        """İki doğruyu kesiştir"""
+        cross = direction1.x() * direction2.y() - direction1.y() * direction2.x()
+        if math.isclose(cross, 0.0, abs_tol=1e-6):
+            return None
+
+        diff_x = point2.x() - point1.x()
+        diff_y = point2.y() - point1.y()
+
+        t = (diff_x * direction2.y() - diff_y * direction2.x()) / cross
+
+        return QPointF(
+            point1.x() + direction1.x() * t,
+            point1.y() + direction1.y() * t
+        )
     
     @staticmethod
     def _create_rounded_rectangle_shadow_path(points, corner_radius, shadow_size):
