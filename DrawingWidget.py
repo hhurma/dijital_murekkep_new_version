@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Optional, Callable
 
 from PyQt6.QtWidgets import QWidget
 from PyQt6.QtGui import QPainter, QPen, QMouseEvent, QPainterPath, QColor, QBrush, QTabletEvent
@@ -272,6 +272,7 @@ class DrawingWidget(QWidget):
 
         # PDF arka plan katmanı
         self.pdf_background_layer: Optional[PdfBackgroundLayer] = None
+        self.pdf_page_states = {}
         
         # Araç örnekleri
         self.selection_tool = SelectionTool()
@@ -553,11 +554,66 @@ class DrawingWidget(QWidget):
     # ------------------------------------------------------------------
     # PDF arka planı kontrol metodları
     # ------------------------------------------------------------------
+    def _initialize_pdf_page_states(self, page_count: int):
+        self.pdf_page_states = {index: None for index in range(page_count)}
+
+    def _create_blank_page_state(self):
+        blank_state = self.layer_manager.export_state()
+        for layer_data in blank_state.get('layers', {}).values():
+            layer_data['strokes'] = []
+        return blank_state
+
+    def _save_current_pdf_page_state(self):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return
+        page_index = self.pdf_background_layer.current_page
+        self.pdf_page_states[page_index] = self.layer_manager.export_state()
+
+    def _load_pdf_page_state(self, page_index: int):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return
+        state = self.pdf_page_states.get(page_index)
+        if state is None:
+            state = self._create_blank_page_state()
+            self.pdf_page_states[page_index] = state
+        self.layer_manager.import_state(state)
+        self.selection_tool.clear_selection()
+        self.update_shape_properties()
+        self.update()
+
+    def _apply_pdf_page_change(self, change_callable: Callable[[], bool]):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return change_callable()
+
+        previous_page = self.pdf_background_layer.current_page
+        self._save_current_pdf_page_state()
+        changed = change_callable()
+        new_page = self.pdf_background_layer.current_page
+
+        if changed or new_page != previous_page:
+            self._load_pdf_page_state(new_page)
+
+        return changed
+
     def has_pdf_background(self) -> bool:
         return bool(self.pdf_background_layer and self.pdf_background_layer.has_document())
 
     def set_pdf_background_layer(self, layer: Optional[PdfBackgroundLayer]):
+        if self.pdf_background_layer and self.pdf_background_layer.has_document():
+            self._save_current_pdf_page_state()
+
+        current_state = self.layer_manager.export_state()
+
         self.pdf_background_layer = layer
+
+        if layer and layer.has_document():
+            self._initialize_pdf_page_states(layer.page_count)
+            self.pdf_page_states[layer.current_page] = current_state
+        else:
+            self.pdf_page_states = {}
+
+        self.selection_tool.clear_selection()
+        self.update_shape_properties()
         self.update_canvas_size()
         self.update()
 
@@ -565,36 +621,61 @@ class DrawingWidget(QWidget):
         return self.pdf_background_layer
 
     def clear_pdf_background(self):
+        if self.pdf_background_layer and self.pdf_background_layer.has_document():
+            self._save_current_pdf_page_state()
         self.pdf_background_layer = None
+        self.pdf_page_states = {}
         self.update_canvas_size()
         self.update()
 
     def next_pdf_page(self) -> bool:
         if not self.pdf_background_layer:
             return False
-        changed = self.pdf_background_layer.next_page()
+        changed = self._apply_pdf_page_change(self.pdf_background_layer.next_page)
         if changed:
             self.update_canvas_size()
-            self.update()
         return changed
 
     def previous_pdf_page(self) -> bool:
         if not self.pdf_background_layer:
             return False
-        changed = self.pdf_background_layer.previous_page()
+        changed = self._apply_pdf_page_change(self.pdf_background_layer.previous_page)
         if changed:
             self.update_canvas_size()
-            self.update()
         return changed
 
     def set_pdf_dpi(self, dpi: int) -> bool:
         if not self.pdf_background_layer:
             return False
-        changed = self.pdf_background_layer.set_dpi(dpi)
+        def _set_dpi():
+            return self.pdf_background_layer.set_dpi(dpi)
+
+        changed = self._apply_pdf_page_change(_set_dpi)
         if changed:
             self.update_canvas_size()
-            self.update()
         return changed
+
+    def export_pdf_page_states(self):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return None
+        self._save_current_pdf_page_state()
+        return {index: state for index, state in self.pdf_page_states.items()}
+
+    def import_pdf_page_states(self, page_states):
+        if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
+            return
+
+        for key, state in page_states.items():
+            try:
+                index = int(key)
+            except (TypeError, ValueError):
+                continue
+
+            if 0 <= index < self.pdf_background_layer.page_count:
+                self.pdf_page_states[index] = state
+
+        current_page = self.pdf_background_layer.current_page
+        self._load_pdf_page_state(current_page)
 
     def export_pdf_background_state(self):
         if not self.pdf_background_layer or not self.pdf_background_layer.has_document():

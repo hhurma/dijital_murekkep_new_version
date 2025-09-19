@@ -58,7 +58,7 @@ class SessionManager:
             for i in range(main_window.tab_manager.get_tab_count()):
                 tab_widget = main_window.tab_manager.get_tab_widget_at_index(i)
                 tab_name = main_window.tab_manager.get_tab_text(i)
-                
+
                 if tab_widget:
                     tab_data = {
                         'name': tab_name,
@@ -72,6 +72,13 @@ class SessionManager:
 
                     if hasattr(tab_widget, 'layer_manager'):
                         tab_data['layers'] = self.serialize_layers(tab_widget)
+                        if hasattr(tab_widget, 'has_pdf_background') and hasattr(tab_widget, 'export_pdf_page_states'):
+                            if tab_widget.has_pdf_background():
+                                page_states = tab_widget.export_pdf_page_states()
+                                if page_states:
+                                    serialized_pages = self.serialize_pdf_page_states(page_states)
+                                    if serialized_pages:
+                                        tab_data['pdf_page_layers'] = serialized_pages
                     elif hasattr(tab_widget, 'strokes'):
                         # Eski sürümler için geri uyumluluk
                         tab_data['strokes'] = self.serialize_strokes(tab_widget.strokes)
@@ -195,6 +202,11 @@ class SessionManager:
                 importer = self.pdf_importer or getattr(main_window, 'pdf_importer', None)
                 current_widget.import_pdf_background_state(tab_data['pdf_background'], importer)
 
+                if 'pdf_page_layers' in tab_data and hasattr(current_widget, 'import_pdf_page_states'):
+                    page_states = self.deserialize_pdf_page_states(tab_data['pdf_page_layers'])
+                    if page_states:
+                        current_widget.import_pdf_page_states(page_states)
+
             current_widget.update()
 
         # Aktif tab'ı ayarla
@@ -295,9 +307,25 @@ class SessionManager:
             }
 
         state = drawing_widget.layer_manager.export_state()
+        return self.serialize_layer_state(state)
+
+    def serialize_layer_state(self, state):
+        if not state:
+            return {
+                'order': [],
+                'active_layer': None,
+                'layers': []
+            }
+
+        layers_dict = state.get('layers', {})
+        ordered_ids = list(state.get('layer_order', []))
+        for layer_id in layers_dict.keys():
+            if layer_id not in ordered_ids:
+                ordered_ids.append(layer_id)
+
         serialized_layers = []
-        for layer_id in state.get('layer_order', []):
-            layer_data = state['layers'].get(layer_id, {})
+        for layer_id in ordered_ids:
+            layer_data = layers_dict.get(layer_id, {})
             serialized_layers.append({
                 'id': layer_id,
                 'name': layer_data.get('name', layer_id),
@@ -307,10 +335,18 @@ class SessionManager:
             })
 
         return {
-            'order': list(state.get('layer_order', [])),
+            'order': ordered_ids,
             'active_layer': state.get('active_layer'),
             'layers': serialized_layers
         }
+
+    def serialize_pdf_page_states(self, page_states):
+        serialized = {}
+        for page_index, state in page_states.items():
+            if state is None:
+                continue
+            serialized[str(page_index)] = self.serialize_layer_state(state)
+        return serialized
         
     def deserialize_strokes(self, serialized_strokes):
         """JSON'dan stroke'ları geri yükle"""
@@ -355,15 +391,22 @@ class SessionManager:
         if not hasattr(drawing_widget, 'layer_manager'):
             return
 
-        layer_list = serialized_layers.get('layers', [])
-        layer_order = list(serialized_layers.get('order', []))
-        active_layer = serialized_layers.get('active_layer')
+        state = self.deserialize_layer_state(serialized_layers)
+        drawing_widget.layer_manager.import_state(state)
 
-        if not layer_order:
-            layer_order = [layer.get('id') for layer in layer_list if layer.get('id')]
+    def deserialize_layer_state(self, serialized_layers):
+        if not serialized_layers:
+            return {
+                'active_layer': None,
+                'layer_order': [],
+                'layers': {}
+            }
+
+        layer_list = serialized_layers.get('layers', [])
+        ordered_ids = list(serialized_layers.get('order', []))
 
         state = {
-            'active_layer': active_layer,
+            'active_layer': serialized_layers.get('active_layer'),
             'layer_order': [],
             'layers': {}
         }
@@ -377,11 +420,24 @@ class SessionManager:
                 'locked': layer.get('locked', False),
                 'strokes': self.deserialize_strokes(layer.get('strokes', []))
             }
-            if layer_id not in layer_order:
-                layer_order.append(layer_id)
+            if layer_id not in ordered_ids:
+                ordered_ids.append(layer_id)
 
-        state['layer_order'] = layer_order
-        drawing_widget.layer_manager.import_state(state)
+        state['layer_order'] = ordered_ids
+        return state
+
+    def deserialize_pdf_page_states(self, serialized_page_states):
+        page_states = {}
+        for key, value in serialized_page_states.items():
+            try:
+                index = int(key)
+            except (TypeError, ValueError):
+                continue
+
+            state = self.deserialize_layer_state(value)
+            page_states[index] = state
+
+        return page_states
         
     def get_recent_sessions(self, limit=10):
         """Son oturumları listele"""
