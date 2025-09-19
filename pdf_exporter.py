@@ -263,8 +263,14 @@ class PDFExporter:
                 painter.translate(x_offset, y_offset)
                 painter.scale(base_scale, base_scale)
 
-                if hasattr(drawing_widget, 'canvas_renderer') and hasattr(drawing_widget.canvas_renderer, 'render_with_pdf_background'):
-                    drawing_widget.canvas_renderer.render_with_pdf_background(painter)
+                if hasattr(drawing_widget, 'canvas_renderer'):
+                    renderer = drawing_widget.canvas_renderer
+                    if hasattr(renderer, 'render_pdf_background_only'):
+                        renderer.render_pdf_background_only(painter)
+                    elif hasattr(renderer, 'render_with_pdf_background'):
+                        renderer.render_with_pdf_background(painter)
+                    else:
+                        drawing_widget.render(painter)
                 else:
                     drawing_widget.render(painter)
 
