@@ -1,3 +1,6 @@
+import errno
+import os
+
 from PyQt6.QtPrintSupport import QPrinter
 from PyQt6.QtGui import QPainter, QColor, QPageSize, QPageLayout
 from PyQt6.QtCore import QMarginsF
@@ -157,7 +160,136 @@ class PDFExporter:
             QMessageBox.information(self.main_window, "Başarılı", f"PDF kaydedildi:\n{filename}")
         except Exception as e:
             QMessageBox.critical(self.main_window, "Hata", f"PDF kaydedilemedi:\n{str(e)}")
-    
+
+    def save_current_pdf_to_source(self) -> bool:
+        """Aktif sekmedeki PDF arka planını kaynağın üzerine yazmaya çalış."""
+        drawing_widget = self.main_window.get_current_drawing_widget()
+        if not drawing_widget:
+            QMessageBox.warning(self.main_window, "Uyarı", "Açık çizim sekmesi bulunmuyor.")
+            return False
+
+        if not hasattr(drawing_widget, 'has_pdf_background') or not drawing_widget.has_pdf_background():
+            QMessageBox.warning(self.main_window, "Uyarı", "Bu sekmede PDF arka planı yok.")
+            return False
+
+        layer = drawing_widget.get_pdf_background_layer()
+        if not layer or not getattr(layer, 'source_path', None):
+            QMessageBox.warning(self.main_window, "Uyarı", "PDF kaynağı bulunamadı.")
+            return False
+
+        target_path = layer.source_path
+        target_exists = os.path.exists(target_path)
+        if target_exists:
+            reply = QMessageBox.question(
+                self.main_window,
+                "PDF'nin Üzerine Yaz",
+                f"{os.path.basename(target_path)} dosyasının mevcut içeriği üzerine yazılacak. Devam etmek istiyor musunuz?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.No
+            )
+            if reply != QMessageBox.StandardButton.Yes:
+                return False
+
+        parent_dir = os.path.dirname(target_path) or os.getcwd()
+        if target_exists:
+            writable = os.access(target_path, os.W_OK)
+        else:
+            writable = os.access(parent_dir, os.W_OK)
+
+        if not writable:
+            prompt = QMessageBox.question(
+                self.main_window,
+                "Yazma İzni Yok",
+                "PDF dosyasına yazma izni bulunamadı. İçeriği farklı bir dosyaya kaydetmek ister misiniz?",
+                QMessageBox.StandardButton.Yes | QMessageBox.StandardButton.No,
+                QMessageBox.StandardButton.Yes
+            )
+            if prompt == QMessageBox.StandardButton.Yes:
+                self.export_current_tab_with_pdf_pages()
+            return False
+
+        printer = QPrinter(QPrinter.PrinterMode.HighResolution)
+        printer.setOutputFormat(QPrinter.OutputFormat.PdfFormat)
+        printer.setOutputFileName(target_path)
+        printer.setPageSize(QPageSize(QPageSize.PageSizeId.A4))
+
+        orientation = None
+        if hasattr(drawing_widget, 'get_canvas_orientation'):
+            orientation = drawing_widget.get_canvas_orientation()
+
+        if orientation == 'landscape':
+            printer.setPageOrientation(QPageLayout.Orientation.Landscape)
+        elif orientation == 'portrait':
+            printer.setPageOrientation(QPageLayout.Orientation.Portrait)
+        else:
+            fallback_orientation = self.main_window.settings.get_pdf_orientation()
+            if fallback_orientation == 'landscape':
+                printer.setPageOrientation(QPageLayout.Orientation.Landscape)
+            else:
+                printer.setPageOrientation(QPageLayout.Orientation.Portrait)
+
+        printer.setPageMargins(QMarginsF(5, 5, 5, 5), QPageLayout.Unit.Millimeter)
+
+        painter = QPainter()
+        original_page = layer.current_page
+
+        try:
+            if not painter.begin(printer):
+                raise RuntimeError("PDF yazıcısı başlatılamadı.")
+            for page_index in range(layer.page_count):
+                if page_index > 0:
+                    printer.newPage()
+
+                if hasattr(drawing_widget, 'go_to_pdf_page'):
+                    drawing_widget.go_to_pdf_page(page_index)
+                else:
+                    layer.set_current_page(page_index)
+
+                widget_rect = drawing_widget.rect()
+                page_rect = painter.viewport()
+                if widget_rect.width() == 0 or widget_rect.height() == 0:
+                    continue
+
+                scale_x = page_rect.width() / widget_rect.width()
+                scale_y = page_rect.height() / widget_rect.height()
+                base_scale = min(scale_x, scale_y) * 0.98
+
+                scaled_width = widget_rect.width() * base_scale
+                scaled_height = widget_rect.height() * base_scale
+                x_offset = (page_rect.width() - scaled_width) / 2
+                y_offset = (page_rect.height() - scaled_height) / 2
+
+                painter.save()
+                painter.translate(x_offset, y_offset)
+                painter.scale(base_scale, base_scale)
+
+                if hasattr(drawing_widget, 'canvas_renderer') and hasattr(drawing_widget.canvas_renderer, 'render_with_pdf_background'):
+                    drawing_widget.canvas_renderer.render_with_pdf_background(painter)
+                else:
+                    drawing_widget.render(painter)
+
+                painter.restore()
+
+        except OSError as exc:
+            if exc.errno in (errno.EACCES, errno.EPERM):
+                QMessageBox.warning(self.main_window, "Yazma Hatası", "PDF dosyası üzerine yazılamadı. Lütfen farklı kaydedin.")
+                self.export_current_tab_with_pdf_pages()
+            else:
+                QMessageBox.critical(self.main_window, "Hata", f"PDF kaydedilemedi:\n{str(exc)}")
+            return False
+        except Exception as exc:
+            QMessageBox.critical(self.main_window, "Hata", f"PDF kaydedilemedi:\n{str(exc)}")
+            return False
+        finally:
+            if hasattr(drawing_widget, 'go_to_pdf_page'):
+                drawing_widget.go_to_pdf_page(original_page)
+            else:
+                layer.set_current_page(original_page)
+            painter.end()
+
+        QMessageBox.information(self.main_window, "Başarılı", f"PDF kaydedildi:\n{target_path}")
+        return True
+
     def _render_page(self, painter, drawing_widget, page_index):
         """Tek sayfa çiz"""
         # Drawing widget'ının boyutları (A4)
