@@ -397,10 +397,10 @@ class CanvasRenderer:
             elif stroke_data['type'] == 'circle':
                 self.drawing_widget.circle_tool.draw_stroke(painter, stroke_data)
 
-    def render_with_pdf_background(self, painter):
-        """PDF arka planıyla birlikte export render (zoom/pan olmadan)."""
+    def render_pdf_background_only(self, painter):
+        """Sadece PDF arka planını çiz (stroke'lar olmadan)."""
         painter.setRenderHint(QPainter.RenderHint.Antialiasing)
-        
+
         # Önce PDF arka planını çizmeyi dene
         drew_pdf = False
         if hasattr(self.drawing_widget, 'has_pdf_background') and self.drawing_widget.has_pdf_background():
@@ -413,12 +413,18 @@ class CanvasRenderer:
                 if not image.isNull():
                     painter.drawImage(0, 0, image)
                     drew_pdf = True
-        
+
         # Eğer PDF arka planı yoksa beyaz doldur
         if not drew_pdf:
             bg_color = QColor(Qt.GlobalColor.white)
             painter.fillRect(self.drawing_widget.rect(), QBrush(bg_color))
-        
+
+    def render_with_pdf_background(self, painter):
+        """PDF arka planıyla birlikte export render (zoom/pan olmadan)."""
+        self.render_pdf_background_only(painter)
+
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+
         # Üstüne tüm stroke'ları çiz
         for stroke_data in self.drawing_widget.strokes:
             if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
