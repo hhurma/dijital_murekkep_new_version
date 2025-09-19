@@ -5,7 +5,7 @@ from PyQt6.QtWidgets import (
     QButtonGroup, QVBoxLayout, QWidget, QTabWidget, QHBoxLayout,
     QMenuBar, QDockWidget, QMessageBox, QFileDialog, QInputDialog
 )
-from PyQt6.QtCore import Qt, QPointF, QTimer
+from PyQt6.QtCore import Qt, QPointF, QTimer, QBuffer, QIODevice
 from PyQt6.QtGui import QAction, QIcon, QActionGroup, QKeySequence, QImage, QPainter
 import qtawesome as qta
 from splash_screen import show_splash_screen
@@ -37,6 +37,9 @@ class MainWindow(QMainWindow):
         self.session_manager.set_pdf_importer(self.pdf_importer)
         self.current_session_file = None  # Açık olan dosya yolu
         self._setup_autosave_timer()
+
+        # Son kaydedilen PDF yolu
+        self.last_saved_pdf_path = None
         
         # PDF exporter'ı başlat
         self.pdf_exporter = PDFExporter(self)
@@ -143,6 +146,10 @@ class MainWindow(QMainWindow):
         self.pdf_dpi_action.triggered.connect(self.prompt_pdf_resolution_change)
         self.pdf_dpi_action.setEnabled(False)
         toolbar.addAction(self.pdf_dpi_action)
+
+        if hasattr(self, 'save_pdf_background_action'):
+            toolbar.addAction(self.save_pdf_background_action)
+            self.save_pdf_background_action.setEnabled(False)
 
         toolbar.addSeparator()
 
@@ -312,6 +319,13 @@ class MainWindow(QMainWindow):
         open_pdf_action.triggered.connect(self.open_pdf)
         file_menu.addAction(open_pdf_action)
 
+        self.save_pdf_background_action = QAction(qta.icon('fa5s.save', color='#DC143C'), "PDF'yi Kaydet", self)
+        self.save_pdf_background_action.setShortcut("Ctrl+Alt+S")
+        self.save_pdf_background_action.setToolTip("PDF arka planını çizimlerle birleştirerek kaydet")
+        self.save_pdf_background_action.setEnabled(False)
+        self.save_pdf_background_action.triggered.connect(self.save_pdf_with_annotations)
+        file_menu.addAction(self.save_pdf_background_action)
+
         file_menu.addSeparator()
 
         # Resim import
@@ -432,6 +446,8 @@ class MainWindow(QMainWindow):
         self.pdf_prev_action.setEnabled(can_prev)
         self.pdf_next_action.setEnabled(can_next)
         self.pdf_dpi_action.setEnabled(has_pdf)
+        if hasattr(self, 'save_pdf_background_action'):
+            self.save_pdf_background_action.setEnabled(has_pdf)
 
         if hasattr(self, 'pdf_status_label'):
             self.pdf_status_label.setText(status_text)
@@ -1361,7 +1377,151 @@ class MainWindow(QMainWindow):
         self.show_status_message(
             f"PDF yüklendi: {base_name} ({pdf_layer.current_page + 1}/{pdf_layer.page_count})"
         )
+        if hasattr(self, 'pdf_status_label'):
+            tooltip_lines = [f"Kaynak: {filename}"]
+            if self.last_saved_pdf_path:
+                tooltip_lines.append(f"Son Kaydedilen: {self.last_saved_pdf_path}")
+            self.pdf_status_label.setToolTip("\n".join(tooltip_lines))
         self.update_pdf_controls_state()
+
+    def _layer_state_has_visible_strokes(self, layer_state):
+        if not layer_state:
+            return False
+        layers = layer_state.get('layers', {}) if isinstance(layer_state, dict) else {}
+        for layer_id in layer_state.get('layer_order', []):
+            layer_info = layers.get(layer_id, {})
+            if not layer_info.get('visible', True):
+                continue
+            for stroke in layer_info.get('strokes', []):
+                if hasattr(stroke, 'stroke_type'):
+                    return True
+                if isinstance(stroke, dict):
+                    stroke_type = stroke.get('type') or stroke.get('tool_type')
+                    if stroke_type:
+                        return True
+        return False
+
+    def _render_layer_state_to_image(self, drawing_widget, layer_state, width, height):
+        image = QImage(width, height, QImage.Format.Format_ARGB32)
+        image.fill(Qt.GlobalColor.transparent)
+
+        painter = QPainter(image)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+
+        layers = layer_state.get('layers', {}) if isinstance(layer_state, dict) else {}
+        for layer_id in layer_state.get('layer_order', []):
+            layer_info = layers.get(layer_id, {})
+            if not layer_info.get('visible', True):
+                continue
+            for stroke in layer_info.get('strokes', []):
+                if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                    painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+                    stroke.render(painter)
+                    continue
+                if not isinstance(stroke, dict):
+                    continue
+                stroke_type = stroke.get('type') or stroke.get('tool_type')
+                if stroke_type == 'bspline':
+                    drawing_widget.bspline_tool.draw_stroke(painter, stroke)
+                elif stroke_type == 'freehand':
+                    drawing_widget.freehand_tool.draw_stroke(painter, stroke)
+                elif stroke_type == 'line':
+                    drawing_widget.line_tool.draw_stroke(painter, stroke)
+                elif stroke_type == 'rectangle':
+                    drawing_widget.rectangle_tool.draw_stroke(painter, stroke)
+                elif stroke_type == 'circle':
+                    drawing_widget.circle_tool.draw_stroke(painter, stroke)
+
+        painter.end()
+        return image
+
+    def _qimage_to_png_bytes(self, image):
+        buffer = QBuffer()
+        buffer.open(QIODevice.OpenModeFlag.WriteOnly)
+        image.save(buffer, "PNG")
+        data = bytes(buffer.data())
+        buffer.close()
+        return data
+
+    def save_pdf_with_annotations(self):
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.has_pdf_background():
+            QMessageBox.warning(self, "Uyarı", "Kaydedilecek PDF arka planı bulunmuyor.")
+            return
+
+        layer = current_widget.get_pdf_background_layer()
+        if not layer or not layer.has_document():
+            QMessageBox.warning(self, "Uyarı", "PDF arka planı erişilebilir değil.")
+            return
+
+        source_path = layer.source_path
+        if not os.path.exists(source_path):
+            QMessageBox.critical(self, "Hata", "Kaynak PDF dosyasına ulaşılamıyor.")
+            return
+
+        base_name = os.path.splitext(os.path.basename(source_path))[0]
+        default_output = os.path.join(os.path.dirname(source_path), f"{base_name}_annotated.pdf")
+
+        target_path, _ = QFileDialog.getSaveFileName(
+            self,
+            "PDF'yi Kaydet",
+            default_output,
+            "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)"
+        )
+
+        if not target_path:
+            return
+
+        if not target_path.lower().endswith('.pdf'):
+            target_path += '.pdf'
+
+        try:
+            import fitz  # type: ignore
+        except ImportError:
+            QMessageBox.critical(self, "Eksik Bağımlılık", "PyMuPDF (fitz) kütüphanesi bulunamadı.")
+            return
+
+        try:
+            page_states = current_widget.get_pdf_page_layer_states()
+        except Exception as exc:
+            QMessageBox.critical(self, "Hata", f"Katman durumları alınamadı:\n{exc}")
+            return
+
+        try:
+            with fitz.open(source_path) as document:
+                if document.page_count != layer.page_count:
+                    self.show_status_message("PDF sayfa sayısı eşleşmiyor, yine de devam ediliyor")
+
+                for page_index in range(document.page_count):
+                    state = page_states.get(page_index)
+                    if not self._layer_state_has_visible_strokes(state):
+                        continue
+
+                    page = document.load_page(page_index)
+                    width = max(1, int(round(page.rect.width * layer.dpi / 72.0)))
+                    height = max(1, int(round(page.rect.height * layer.dpi / 72.0)))
+
+                    overlay = self._render_layer_state_to_image(current_widget, state, width, height)
+                    data = self._qimage_to_png_bytes(overlay)
+                    if not data:
+                        continue
+
+                    page.insert_image(page.rect, stream=data, overlay=True)
+
+                document.save(target_path, garbage=3, deflate=True)
+        except Exception as exc:
+            QMessageBox.critical(self, "PDF Kaydetme Hatası", f"PDF kaydedilemedi:\n{exc}")
+            self.show_status_message("PDF kaydedilemedi")
+            return
+
+        self.last_saved_pdf_path = target_path
+        self.last_opened_pdf_dir = os.path.dirname(target_path) or self.last_opened_pdf_dir
+        QMessageBox.information(self, "Başarılı", f"PDF başarıyla kaydedildi:\n{target_path}")
+        self.show_status_message(f"PDF kaydedildi: {os.path.basename(target_path)}")
+
+        if hasattr(self, 'pdf_status_label'):
+            tooltip_lines = [f"Kaynak: {source_path}", f"Son Kaydedilen: {target_path}"]
+            self.pdf_status_label.setToolTip("\n".join(tooltip_lines))
 
     def go_to_previous_pdf_page(self):
         """PDF arka planında bir önceki sayfaya geç"""

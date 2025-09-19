@@ -260,7 +260,7 @@ class DrawingWidget(QWidget):
         self.fill_color = Qt.GlobalColor.white  # Dolgu rengi
         self.line_style = Qt.PenStyle.SolidLine  # Çizgi stili
         self.undo_manager = None
-        
+
         # Arka plan ayarları
         self.background_settings = {
             'type': 'solid',
@@ -272,6 +272,8 @@ class DrawingWidget(QWidget):
 
         # PDF arka plan katmanı
         self.pdf_background_layer: Optional[PdfBackgroundLayer] = None
+        self.pdf_page_states = {}
+        self._empty_pdf_page_state_template = None
         
         # Araç örnekleri
         self.selection_tool = SelectionTool()
@@ -558,6 +560,16 @@ class DrawingWidget(QWidget):
 
     def set_pdf_background_layer(self, layer: Optional[PdfBackgroundLayer]):
         self.pdf_background_layer = layer
+        if layer:
+            current_state = self.layer_manager.export_state()
+            self.pdf_page_states = {layer.current_page: current_state}
+            empty_template = copy.deepcopy(current_state)
+            for layer_state in empty_template.get('layers', {}).values():
+                layer_state['strokes'] = []
+            self._empty_pdf_page_state_template = empty_template
+        else:
+            self.pdf_page_states = {}
+            self._empty_pdf_page_state_template = None
         self.update_canvas_size()
         self.update()
 
@@ -566,14 +578,18 @@ class DrawingWidget(QWidget):
 
     def clear_pdf_background(self):
         self.pdf_background_layer = None
+        self.pdf_page_states = {}
+        self._empty_pdf_page_state_template = None
         self.update_canvas_size()
         self.update()
 
     def next_pdf_page(self) -> bool:
         if not self.pdf_background_layer:
             return False
+        self._store_current_pdf_page_state()
         changed = self.pdf_background_layer.next_page()
         if changed:
+            self._load_pdf_page_state(self.pdf_background_layer.current_page)
             self.update_canvas_size()
             self.update()
         return changed
@@ -581,8 +597,10 @@ class DrawingWidget(QWidget):
     def previous_pdf_page(self) -> bool:
         if not self.pdf_background_layer:
             return False
+        self._store_current_pdf_page_state()
         changed = self.pdf_background_layer.previous_page()
         if changed:
+            self._load_pdf_page_state(self.pdf_background_layer.current_page)
             self.update_canvas_size()
             self.update()
         return changed
@@ -595,6 +613,46 @@ class DrawingWidget(QWidget):
             self.update_canvas_size()
             self.update()
         return changed
+
+    def _store_current_pdf_page_state(self) -> None:
+        if not self.pdf_background_layer:
+            return
+        page_index = self.pdf_background_layer.current_page
+        self.pdf_page_states[page_index] = self.layer_manager.export_state()
+
+    def _create_empty_pdf_page_state(self):
+        if self._empty_pdf_page_state_template is not None:
+            return copy.deepcopy(self._empty_pdf_page_state_template)
+        template = self.layer_manager.export_state()
+        for layer_state in template.get('layers', {}).values():
+            layer_state['strokes'] = []
+        self._empty_pdf_page_state_template = copy.deepcopy(template)
+        return copy.deepcopy(template)
+
+    def _load_pdf_page_state(self, page_index: int) -> None:
+        if not self.pdf_background_layer:
+            return
+        state = self.pdf_page_states.get(page_index)
+        if state is None:
+            state = self._create_empty_pdf_page_state()
+            self.pdf_page_states[page_index] = state
+        self.layer_manager.import_state(state)
+        self.selection_tool.clear_selection()
+        self.update()
+
+    def get_pdf_page_layer_states(self):
+        if not self.pdf_background_layer:
+            return {}
+        self._store_current_pdf_page_state()
+        total_pages = self.pdf_background_layer.page_count
+        states = {}
+        for page_index in range(total_pages):
+            state = self.pdf_page_states.get(page_index)
+            if state is None:
+                state = self._create_empty_pdf_page_state()
+                self.pdf_page_states[page_index] = state
+            states[page_index] = copy.deepcopy(state)
+        return states
 
     def export_pdf_background_state(self):
         if not self.pdf_background_layer or not self.pdf_background_layer.has_document():
