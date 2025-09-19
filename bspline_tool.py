@@ -3,6 +3,7 @@ from PyQt6.QtGui import QPen, QPainter, QPainterPath
 from PyQt6.QtCore import Qt, QPointF
 from scipy.interpolate import splprep, splev
 import numpy as np
+from shadow_renderer import ShadowRenderer
 
 class BSplineTool:
     def __init__(self):
@@ -13,6 +14,17 @@ class BSplineTool:
         self.current_width = 2
         self.line_style = Qt.PenStyle.SolidLine
         self.show_control_points = False  # Kontrol noktalarının görünürlüğünü kontrol eden bayrak
+
+        # Gölge ayarları
+        self.has_shadow = False
+        self.shadow_color = Qt.GlobalColor.black
+        self.shadow_offset_x = 5
+        self.shadow_offset_y = 5
+        self.shadow_blur = 10
+        self.shadow_size = 0
+        self.shadow_opacity = 0.7
+        self.inner_shadow = False
+        self.shadow_quality = "medium"
         
     def start_stroke(self, pos, pressure=1.0):
         """Yeni bir çizim başlat"""
@@ -64,7 +76,18 @@ class BSplineTool:
                     'color': self.current_color,
                     'width': self.current_width,
                     'style': self.line_style,  # 'style' field'ını kullan
-                    'show_control_points': self.show_control_points  # Kontrol noktalarının görünürlüğü
+                    'show_control_points': self.show_control_points,  # Kontrol noktalarının görünürlüğü
+                    'has_shadow': self.has_shadow,
+                    'shadow_color': self.shadow_color,
+                    'shadow_offset_x': self.shadow_offset_x,
+                    'shadow_offset_y': self.shadow_offset_y,
+                    'shadow_blur': self.shadow_blur,
+                    'shadow_size': self.shadow_size,
+                    'shadow_opacity': self.shadow_opacity,
+                    'inner_shadow': self.inner_shadow,
+                    'shadow_quality': self.shadow_quality,
+                    'cap_style': Qt.PenCapStyle.RoundCap,
+                    'join_style': Qt.PenJoinStyle.RoundJoin
                 }
                 
                 self.current_stroke = []
@@ -138,12 +161,35 @@ class BSplineTool:
     def draw_current_stroke(self, painter):
         """Aktif çizimi çiz (basınç ile)"""
         if len(self.current_stroke) > 1:
+            preview_data = {
+                'type': 'bspline',
+                'width': self.current_width,
+                'has_shadow': self.has_shadow,
+                'shadow_color': self.shadow_color,
+                'shadow_offset_x': self.shadow_offset_x,
+                'shadow_offset_y': self.shadow_offset_y,
+                'shadow_blur': self.shadow_blur,
+                'shadow_size': self.shadow_size,
+                'shadow_opacity': self.shadow_opacity,
+                'inner_shadow': self.inner_shadow,
+                'shadow_quality': self.shadow_quality,
+                'cap_style': Qt.PenCapStyle.RoundCap,
+                'join_style': Qt.PenJoinStyle.RoundJoin
+            }
+
+            path = QPainterPath(self.current_stroke[0][0])
+            for i in range(1, len(self.current_stroke)):
+                point, _ = self.current_stroke[i]
+                path.lineTo(point)
+
+            ShadowRenderer.draw_shape_shadow(painter, 'path', path, preview_data)
+
             painter.save()
             for i in range(len(self.current_stroke) - 1):
                 point1, pressure1 = self.current_stroke[i]
                 point2, pressure2 = self.current_stroke[i+1]
                 pen_width = self.current_width + pressure1 * (self.current_width * 2)
-                pen = QPen(self.current_color, pen_width, Qt.PenStyle.SolidLine, 
+                pen = QPen(self.current_color, pen_width, Qt.PenStyle.SolidLine,
                           Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
                 painter.setPen(pen)
                 painter.drawLine(point1, point2)
@@ -190,6 +236,9 @@ class BSplineTool:
         path.moveTo(QPointF(x_fine[0], y_fine[0]))
         for i in range(1, len(x_fine)):
             path.lineTo(QPointF(x_fine[i], y_fine[i]))
+
+        ShadowRenderer.draw_shape_shadow(painter, 'path', path, stroke_data)
+
         painter.drawPath(path)
         painter.restore()
         
@@ -213,6 +262,39 @@ class BSplineTool:
     def set_line_style(self, style):
         """Çizgi stilini ayarla"""
         self.line_style = style
+
+    def set_shadow_enabled(self, enabled):
+        """Gölge durumunu ayarla"""
+        self.has_shadow = enabled
+
+    def set_shadow_color(self, color):
+        """Gölge rengini ayarla"""
+        self.shadow_color = color
+
+    def set_shadow_offset(self, x, y):
+        """Gölge offsetini ayarla"""
+        self.shadow_offset_x = x
+        self.shadow_offset_y = y
+
+    def set_shadow_blur(self, blur):
+        """Gölge bulanıklığını ayarla"""
+        self.shadow_blur = max(0, blur)
+
+    def set_shadow_size(self, size):
+        """Gölge boyutunu ayarla"""
+        self.shadow_size = max(0, size)
+
+    def set_shadow_opacity(self, opacity):
+        """Gölge şeffaflığını ayarla"""
+        self.shadow_opacity = max(0.0, min(1.0, opacity))
+
+    def set_inner_shadow(self, inner):
+        """İç/dış gölge durumunu ayarla"""
+        self.inner_shadow = inner
+
+    def set_shadow_quality(self, quality):
+        """Gölge kalitesini ayarla"""
+        self.shadow_quality = quality
     
     def draw_stroke(self, painter, stroke_data):
         """Tek bir B-spline stroke çiz (modüler sistem için)"""

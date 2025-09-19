@@ -482,6 +482,16 @@ class MainWindow(QMainWindow):
         self.shape_properties_widget.circleShadowOpacityChanged.connect(self.on_circle_shadow_opacity_changed)
         self.shape_properties_widget.circleShadowInnerChanged.connect(self.on_circle_shadow_inner_changed)
         self.shape_properties_widget.circleShadowQualityChanged.connect(self.on_circle_shadow_quality_changed)
+
+        # Çizgi gölge özellikleri sinyalleri
+        self.shape_properties_widget.strokeShadowEnabledChanged.connect(self.on_stroke_shadow_enabled_changed)
+        self.shape_properties_widget.strokeShadowColorChanged.connect(self.on_stroke_shadow_color_changed)
+        self.shape_properties_widget.strokeShadowOffsetChanged.connect(self.on_stroke_shadow_offset_changed)
+        self.shape_properties_widget.strokeShadowBlurChanged.connect(self.on_stroke_shadow_blur_changed)
+        self.shape_properties_widget.strokeShadowSizeChanged.connect(self.on_stroke_shadow_size_changed)
+        self.shape_properties_widget.strokeShadowOpacityChanged.connect(self.on_stroke_shadow_opacity_changed)
+        self.shape_properties_widget.strokeShadowInnerChanged.connect(self.on_stroke_shadow_inner_changed)
+        self.shape_properties_widget.strokeShadowQualityChanged.connect(self.on_stroke_shadow_quality_changed)
         
         # Grup işlemi sinyalleri
         self.shape_properties_widget.groupShapes.connect(self.on_group_shapes)
@@ -2275,15 +2285,216 @@ class MainWindow(QMainWindow):
             if selected:
                 # Undo için state kaydet
                 current_widget.save_current_state("Change circle shadow quality")
-                
+
                 # Sadece çember stroke'larını güncelle
                 for index in selected:
                     if index < len(current_widget.strokes):
                         stroke = current_widget.strokes[index]
                         if stroke.get('type') == 'circle':
                             stroke['shadow_quality'] = quality
-                
+
                 current_widget.update()
+
+    def on_stroke_shadow_enabled_changed(self, enabled):
+        """Çizgi gölge etkin/pasif değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow enabled")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['has_shadow'] = enabled
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_enabled'):
+                current_widget.line_tool.set_shadow_enabled(enabled)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_enabled'):
+                current_widget.freehand_tool.set_shadow_enabled(enabled)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_enabled'):
+                current_widget.bspline_tool.set_shadow_enabled(enabled)
+
+    def on_stroke_shadow_color_changed(self, color):
+        """Çizgi gölge rengi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow color")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_color'] = color
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_color'):
+                current_widget.line_tool.set_shadow_color(color)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_color'):
+                current_widget.freehand_tool.set_shadow_color(color)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_color'):
+                current_widget.bspline_tool.set_shadow_color(color)
+
+    def on_stroke_shadow_offset_changed(self, offset_x, offset_y):
+        """Çizgi gölge offseti değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow offset")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_offset_x'] = offset_x
+                            stroke['shadow_offset_y'] = offset_y
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_offset'):
+                current_widget.line_tool.set_shadow_offset(offset_x, offset_y)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_offset'):
+                current_widget.freehand_tool.set_shadow_offset(offset_x, offset_y)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_offset'):
+                current_widget.bspline_tool.set_shadow_offset(offset_x, offset_y)
+
+    def on_stroke_shadow_blur_changed(self, blur):
+        """Çizgi gölge bulanıklığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow blur")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_blur'] = blur
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_blur'):
+                current_widget.line_tool.set_shadow_blur(blur)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_blur'):
+                current_widget.freehand_tool.set_shadow_blur(blur)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_blur'):
+                current_widget.bspline_tool.set_shadow_blur(blur)
+
+    def on_stroke_shadow_size_changed(self, size):
+        """Çizgi gölge boyutu değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow size")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_size'] = size
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_size'):
+                current_widget.line_tool.set_shadow_size(size)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_size'):
+                current_widget.freehand_tool.set_shadow_size(size)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_size'):
+                current_widget.bspline_tool.set_shadow_size(size)
+
+    def on_stroke_shadow_opacity_changed(self, opacity):
+        """Çizgi gölge şeffaflığı değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow opacity")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_opacity'] = opacity
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_opacity'):
+                current_widget.line_tool.set_shadow_opacity(opacity)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_opacity'):
+                current_widget.freehand_tool.set_shadow_opacity(opacity)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_opacity'):
+                current_widget.bspline_tool.set_shadow_opacity(opacity)
+
+    def on_stroke_shadow_inner_changed(self, inner):
+        """Çizgi iç/dış gölge değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke inner shadow")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['inner_shadow'] = inner
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_inner_shadow'):
+                current_widget.line_tool.set_inner_shadow(inner)
+            if hasattr(current_widget.freehand_tool, 'set_inner_shadow'):
+                current_widget.freehand_tool.set_inner_shadow(inner)
+            if hasattr(current_widget.bspline_tool, 'set_inner_shadow'):
+                current_widget.bspline_tool.set_inner_shadow(inner)
+
+    def on_stroke_shadow_quality_changed(self, quality):
+        """Çizgi gölge kalitesi değişti"""
+        current_widget = self.get_current_drawing_widget()
+        if current_widget and hasattr(current_widget, 'selection_tool'):
+            selected = current_widget.selection_tool.selected_strokes
+            if selected:
+                current_widget.save_current_state("Change stroke shadow quality")
+                for index in selected:
+                    if index < len(current_widget.strokes):
+                        stroke = current_widget.strokes[index]
+                        if hasattr(stroke, 'stroke_type') and stroke.stroke_type == 'image':
+                            continue
+                        if not isinstance(stroke, dict) or 'type' not in stroke:
+                            continue
+                        if stroke['type'] in ['line', 'freehand', 'bspline']:
+                            stroke['shadow_quality'] = quality
+                current_widget.update()
+        if current_widget:
+            if hasattr(current_widget.line_tool, 'set_shadow_quality'):
+                current_widget.line_tool.set_shadow_quality(quality)
+            if hasattr(current_widget.freehand_tool, 'set_shadow_quality'):
+                current_widget.freehand_tool.set_shadow_quality(quality)
+            if hasattr(current_widget.bspline_tool, 'set_shadow_quality'):
+                current_widget.bspline_tool.set_shadow_quality(quality)
 
     def clear_image_cache(self):
         """Image cache klasörünü temizle"""
