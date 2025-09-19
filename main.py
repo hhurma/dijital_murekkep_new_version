@@ -434,7 +434,11 @@ class MainWindow(QMainWindow):
         """Şekil özellikleri dock widget'ı oluştur"""
         self.shape_properties_dock = QDockWidget("Şekil Özellikleri", self)
         self.shape_properties_widget = ShapePropertiesWidget()
-        
+
+        dock_width = self.shape_properties_widget.PANEL_WIDTH
+        self.shape_properties_dock.setMinimumWidth(dock_width)
+        self.shape_properties_dock.setMaximumWidth(dock_width)
+
         # Sinyalleri bağla
         self.shape_properties_widget.colorChanged.connect(self.on_shape_color_changed)
         self.shape_properties_widget.widthChanged.connect(self.on_shape_width_changed)

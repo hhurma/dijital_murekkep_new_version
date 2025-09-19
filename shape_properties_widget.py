@@ -1,13 +1,16 @@
-from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
+from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QColorDialog, QSpinBox, QButtonGroup,
-                            QGroupBox, QRadioButton, QCheckBox, QSlider, QComboBox)
+                            QGroupBox, QRadioButton, QCheckBox, QSlider, QComboBox,
+                            QSizePolicy)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 import qtawesome as qta
 
 class ShapePropertiesWidget(QWidget):
     """Seçilen şekillerin özelliklerini düzenlemek için widget"""
-    
+
+    PANEL_WIDTH = 360
+
     # Özellik değişiklik sinyalleri
     colorChanged = pyqtSignal(QColor)  # Çizgi rengi değişti
     widthChanged = pyqtSignal(int)     # Çizgi kalınlığı değişti
@@ -174,18 +177,18 @@ class ShapePropertiesWidget(QWidget):
     def setup_ui(self):
         """UI bileşenlerini oluştur"""
         from PyQt6.QtWidgets import QScrollArea
-        
+
         # Ana layout
         main_layout = QVBoxLayout()
         main_layout.setContentsMargins(0, 0, 0, 0)
         main_layout.setSpacing(0)
-        
+
         # Scroll area oluştur
-        scroll_area = QScrollArea()
-        scroll_area.setWidgetResizable(True)
-        scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
-        scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
-        
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        self.scroll_area.setHorizontalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAlwaysOff)
+        self.scroll_area.setVerticalScrollBarPolicy(Qt.ScrollBarPolicy.ScrollBarAsNeeded)
+
         # Scroll widget oluştur
         scroll_widget = QWidget()
         layout = QVBoxLayout()
@@ -1047,16 +1050,36 @@ class ShapePropertiesWidget(QWidget):
         
         # Scroll widget'ı ayarla
         scroll_widget.setLayout(layout)
-        scroll_area.setWidget(scroll_widget)
-        
+        self.scroll_area.setWidget(scroll_widget)
+
         # Ana layout'a scroll area'yı ekle
-        main_layout.addWidget(scroll_area)
+        main_layout.addWidget(self.scroll_area)
         self.setLayout(main_layout)
-        
+
+        self._apply_panel_width()
+
         # Başlangıçta UI'ı güncelle
         self.update_ui_values()
         self.update_button_states()
-        
+
+    def _apply_panel_width(self):
+        """Panel genişliği ayarlarını uygula"""
+        width = self.PANEL_WIDTH
+        self.setMinimumWidth(width)
+        self.setMaximumWidth(width)
+        self.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Fixed, QSizePolicy.Policy.Expanding))
+
+        if hasattr(self, "scroll_area") and self.scroll_area is not None:
+            self.scroll_area.setMinimumWidth(width)
+            self.scroll_area.setMaximumWidth(width)
+            self.scroll_area.setSizePolicy(QSizePolicy(QSizePolicy.Policy.Fixed,
+                                                     QSizePolicy.Policy.Expanding))
+
+        parent = self.parentWidget()
+        if parent is not None:
+            parent.setMinimumWidth(width)
+            parent.setMaximumWidth(width)
+
     def update_color_button(self):
         """Renk butonunu güncelle"""
         color_str = f"background-color: {self.current_color.name()}; border: 1px solid #000;"
@@ -1846,7 +1869,9 @@ class ShapePropertiesWidget(QWidget):
         # Çizgi gölge özelliklerini göster/gizle
         if hasattr(self, 'stroke_shadow_group'):
             self.stroke_shadow_group.setVisible(self.has_stroke_shadow_shapes)
-        
+
+        self._apply_panel_width()
+
         # Ortak özellikleri analiz et
         if self.selected_strokes:
             self.analyze_common_properties([self.stroke_data[i] for i in self.selected_strokes if i < len(self.stroke_data)])
@@ -2436,7 +2461,9 @@ class ShapePropertiesWidget(QWidget):
         # Şekil havuzu - herhangi bir seçim varsa
         any_selection = len(self.selected_strokes) > 0
         self.shape_library_group.setVisible(any_selection)
-        
+
+        self._apply_panel_width()
+
         # Buton durumlarını güncelle
         if multiple_selection:
             self.update_button_states()
@@ -2513,6 +2540,7 @@ class ShapePropertiesWidget(QWidget):
         self.has_circle_shapes = False
         self.has_stroke_shadow_shapes = False
         self.setVisible(False)
+        self._apply_panel_width()
 
     def on_toggle_control_points(self):
         """Kontrol noktalarını göster/gizle"""
