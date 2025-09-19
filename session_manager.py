@@ -1,5 +1,6 @@
 import json
 import os
+import tempfile
 from datetime import datetime
 from PyQt6.QtWidgets import QFileDialog, QMessageBox
 from PyQt6.QtCore import QStandardPaths
@@ -68,9 +69,41 @@ class SessionManager:
 
                     session_data['tabs'].append(tab_data)
                     
-            # JSON dosyasına kaydet
-            with open(filename, 'w', encoding='utf-8') as f:
-                json.dump(session_data, f, indent=2, ensure_ascii=False)
+            target_directory = os.path.dirname(filename)
+            if target_directory and not os.path.exists(target_directory):
+                os.makedirs(target_directory, exist_ok=True)
+
+            temp_file = None
+            temp_path = None
+            try:
+                temp_file = tempfile.NamedTemporaryFile(
+                    'w',
+                    encoding='utf-8',
+                    delete=False,
+                    dir=target_directory if target_directory else None,
+                    prefix='.tmp_session_',
+                    suffix='.sdm'
+                )
+                temp_path = temp_file.name
+                json.dump(session_data, temp_file, indent=2, ensure_ascii=False)
+                temp_file.flush()
+                os.fsync(temp_file.fileno())
+            finally:
+                if temp_file is not None:
+                    temp_file.close()
+
+            try:
+                os.replace(temp_path, filename)
+            finally:
+                if temp_path and os.path.exists(temp_path):
+                    # os.replace başarılıysa temp_path artık filename oldu;
+                    # başarısız olduysa geçici dosyayı temizle.
+                    try:
+                        os.remove(temp_path)
+                    except FileNotFoundError:
+                        pass
+                    except Exception:
+                        pass
                 
             # Status bar'da mesaj göster
             if hasattr(main_window, 'show_status_message'):
@@ -110,8 +143,15 @@ class SessionManager:
     def _load_session_from_path(self, main_window, filename):
         """Verilen dosya yolundan oturumu yükle"""
         # JSON dosyasından oku
-        with open(filename, 'r', encoding='utf-8') as f:
-            session_data = json.load(f)
+        try:
+            with open(filename, 'r', encoding='utf-8') as f:
+                session_data = json.load(f)
+        except json.JSONDecodeError as decode_error:
+            message = (
+                "Oturum dosyası okunamadı. Dosya eksik ya da bozulmuş görünüyor. "
+                "Lütfen farklı bir yedek seçmeyi deneyin."
+            )
+            raise json.JSONDecodeError(message, decode_error.doc, decode_error.pos) from decode_error
 
         # Mevcut tab'ları temizle
         main_window.tab_manager.clear_all_tabs()
@@ -378,6 +418,47 @@ class SessionManager:
 
         try:
             return self._load_session_from_path(main_window, auto_save_path)
+        except json.JSONDecodeError as decode_error:
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            backup_path = f"{auto_save_path}.corrupt_{timestamp}"
+            cleanup_message = ""
+
+            try:
+                os.replace(auto_save_path, backup_path)
+                cleanup_message = (
+                    f" Bozuk dosya yedek olarak '{os.path.basename(backup_path)}' adına taşındı."
+                )
+            except OSError:
+                backup_path = None
+                try:
+                    os.remove(auto_save_path)
+                    cleanup_message = " Bozuk dosya silindi."
+                except OSError:
+                    cleanup_message = (
+                        " Bozuk dosya otomatik olarak temizlenemedi; lütfen dosyayı manuel olarak silin."
+                    )
+
+            user_message = (
+                "Otomatik kayıt dosyası bozulduğu için yüklenemedi." + cleanup_message
+            )
+            technical_details = (
+                f"Teknik detay: {decode_error.msg} (satır {decode_error.lineno}, sütun {decode_error.colno})."
+            )
+
+            if hasattr(main_window, 'show_status_message'):
+                main_window.show_status_message(user_message)
+
+            try:
+                QMessageBox.warning(
+                    main_window,
+                    "Otomatik Kayıt Hatası",
+                    f"{user_message}\n\n{technical_details}"
+                )
+            except Exception:
+                # GUI henüz hazır değilse sessizce devam et
+                pass
+
+            return None
         except Exception as e:
             if hasattr(main_window, 'show_status_message'):
                 main_window.show_status_message(f"Otomatik kayıt yüklenemedi: {str(e)}")
