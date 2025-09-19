@@ -480,9 +480,8 @@ class ShapePropertiesWidget(QWidget):
         shadow_type_layout = QVBoxLayout()
         shadow_type_layout.setContentsMargins(20, 0, 0, 0)  # Sol taraftan girinti
         
-        from PyQt6.QtWidgets import QRadioButton, QButtonGroup
         self.shadow_type_group = QButtonGroup()
-        
+
         self.outer_shadow_radio = QRadioButton("Dış Gölge")
         self.inner_shadow_radio = QRadioButton("İç Gölge")
         
