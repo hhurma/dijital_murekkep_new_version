@@ -43,7 +43,7 @@ class SessionManager:
                 
             # Oturum verilerini topla
             session_data = {
-                'version': '1.0',
+                'version': '1.1',
                 'created': datetime.now().isoformat(),
                 'tabs': [],
                 'active_tab': main_window.tab_manager.get_current_index(),
@@ -187,6 +187,10 @@ class SessionManager:
             tab_index = main_window.tab_manager.get_current_index()
             main_window.tab_manager.set_tab_text(tab_index, tab_name)
 
+            if 'pdf_background' in tab_data and hasattr(current_widget, 'import_pdf_background_state'):
+                importer = self.pdf_importer or getattr(main_window, 'pdf_importer', None)
+                current_widget.import_pdf_background_state(tab_data['pdf_background'], importer)
+
             # Stroke'ları veya katmanları yükle
             if current_widget and 'layers' in tab_data:
                 self.deserialize_layers(current_widget, tab_data['layers'])
@@ -198,14 +202,13 @@ class SessionManager:
                 bg_settings = self.deserialize_background_settings(tab_data['background_settings'])
                 current_widget.set_background_settings(bg_settings)
 
-            if 'pdf_background' in tab_data and hasattr(current_widget, 'import_pdf_background_state'):
-                importer = self.pdf_importer or getattr(main_window, 'pdf_importer', None)
-                current_widget.import_pdf_background_state(tab_data['pdf_background'], importer)
-
-                if 'pdf_page_layers' in tab_data and hasattr(current_widget, 'import_pdf_page_states'):
-                    page_states = self.deserialize_pdf_page_states(tab_data['pdf_page_layers'])
-                    if page_states:
-                        current_widget.import_pdf_page_states(page_states)
+            if (
+                'pdf_page_layers' in tab_data
+                and hasattr(current_widget, 'import_pdf_page_states')
+            ):
+                page_states = self.deserialize_pdf_page_states(tab_data['pdf_page_layers'])
+                if page_states:
+                    current_widget.import_pdf_page_states(page_states)
 
             current_widget.update()
 
@@ -307,7 +310,20 @@ class SessionManager:
             }
 
         state = drawing_widget.layer_manager.export_state()
-        return self.serialize_layer_state(state)
+        serialized_state = self.serialize_layer_state(state)
+
+        if (
+            hasattr(drawing_widget, 'has_pdf_background')
+            and callable(getattr(drawing_widget, 'has_pdf_background'))
+            and drawing_widget.has_pdf_background()
+            and callable(getattr(drawing_widget, 'get_pdf_page_layer_states', None))
+        ):
+            pdf_payload = drawing_widget.get_pdf_page_layer_states()
+            serialized_pdf = self.serialize_pdf_layers_payload(pdf_payload)
+            if serialized_pdf:
+                serialized_state['pdf_layers'] = serialized_pdf
+
+        return serialized_state
 
     def serialize_layer_state(self, state):
         if not state:
@@ -347,6 +363,44 @@ class SessionManager:
                 continue
             serialized[str(page_index)] = self.serialize_layer_state(state)
         return serialized
+
+    def serialize_pdf_layers_payload(self, payload):
+        if not payload or not isinstance(payload, dict):
+            return None
+
+        serialized_payload = {}
+
+        page_states = payload.get('page_states')
+        if isinstance(page_states, dict):
+            serialized_pages = {}
+            for page_index, state in page_states.items():
+                if state is None:
+                    continue
+                serialized_pages[str(page_index)] = self.serialize_layer_state(state)
+            serialized_payload['page_states'] = serialized_pages
+        else:
+            serialized_payload['page_states'] = {}
+
+        if 'current_page' in payload:
+            try:
+                serialized_payload['current_page'] = int(payload['current_page'])
+            except (TypeError, ValueError):
+                pass
+
+        if 'page_count' in payload:
+            try:
+                serialized_payload['page_count'] = int(payload['page_count'])
+            except (TypeError, ValueError):
+                pass
+
+        for key in payload.keys():
+            if key in {'page_states', 'current_page', 'page_count'}:
+                continue
+            value = payload[key]
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                serialized_payload[key] = value
+
+        return serialized_payload
         
     def deserialize_strokes(self, serialized_strokes):
         """JSON'dan stroke'ları geri yükle"""
@@ -394,6 +448,18 @@ class SessionManager:
         state = self.deserialize_layer_state(serialized_layers)
         drawing_widget.layer_manager.import_state(state)
 
+        if (
+            isinstance(serialized_layers, dict)
+            and 'pdf_layers' in serialized_layers
+            and hasattr(drawing_widget, 'import_pdf_page_states')
+        ):
+            pdf_payload = self.deserialize_pdf_layers_payload(serialized_layers.get('pdf_layers'))
+            if pdf_payload is not None and (
+                not hasattr(drawing_widget, 'has_pdf_background')
+                or drawing_widget.has_pdf_background()
+            ):
+                drawing_widget.import_pdf_page_states(pdf_payload)
+
     def deserialize_layer_state(self, serialized_layers):
         if not serialized_layers:
             return {
@@ -438,6 +504,45 @@ class SessionManager:
             page_states[index] = state
 
         return page_states
+
+    def deserialize_pdf_layers_payload(self, payload):
+        if not payload or not isinstance(payload, dict):
+            return None
+
+        page_states_data = payload.get('page_states', {})
+        deserialized_states = {}
+
+        if isinstance(page_states_data, dict):
+            for key, value in page_states_data.items():
+                try:
+                    index = int(key)
+                except (TypeError, ValueError):
+                    continue
+                state = self.deserialize_layer_state(value)
+                deserialized_states[index] = state
+
+        result = {'page_states': deserialized_states}
+
+        if 'current_page' in payload:
+            try:
+                result['current_page'] = int(payload['current_page'])
+            except (TypeError, ValueError):
+                pass
+
+        if 'page_count' in payload:
+            try:
+                result['page_count'] = int(payload['page_count'])
+            except (TypeError, ValueError):
+                pass
+
+        for key in payload.keys():
+            if key in {'page_states', 'current_page', 'page_count'}:
+                continue
+            value = payload[key]
+            if isinstance(value, (str, int, float, bool)) or value is None:
+                result[key] = value
+
+        return result
         
     def get_recent_sessions(self, limit=10):
         """Son oturumları listele"""
