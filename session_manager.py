@@ -11,6 +11,10 @@ class SessionManager:
     def __init__(self):
         self.sessions_dir = self.get_sessions_directory()
         self.ensure_sessions_directory()
+        self.pdf_importer = None
+
+    def set_pdf_importer(self, importer):
+        self.pdf_importer = importer
         
     def get_sessions_directory(self):
         """Oturumlar için dizin yolunu al"""
@@ -60,6 +64,11 @@ class SessionManager:
                         'name': tab_name,
                         'background_settings': self.serialize_background_settings(tab_widget.background_settings)
                     }
+
+                    if hasattr(tab_widget, 'export_pdf_background_state'):
+                        pdf_state = tab_widget.export_pdf_background_state()
+                        if pdf_state:
+                            tab_data['pdf_background'] = pdf_state
 
                     if hasattr(tab_widget, 'layer_manager'):
                         tab_data['layers'] = self.serialize_layers(tab_widget)
@@ -181,6 +190,10 @@ class SessionManager:
             if 'background_settings' in tab_data:
                 bg_settings = self.deserialize_background_settings(tab_data['background_settings'])
                 current_widget.set_background_settings(bg_settings)
+
+            if 'pdf_background' in tab_data and hasattr(current_widget, 'import_pdf_background_state'):
+                importer = self.pdf_importer or getattr(main_window, 'pdf_importer', None)
+                current_widget.import_pdf_background_state(tab_data['pdf_background'], importer)
 
             current_widget.update()
 

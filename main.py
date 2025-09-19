@@ -18,6 +18,7 @@ from settings_manager import SettingsManager
 from session_manager import SessionManager
 from shape_properties_widget import ShapePropertiesWidget
 from layer_manager_widget import LayerManagerWidget
+from pdf_importer import PDFImporter
 
 class MainWindow(QMainWindow):
     def __init__(self):
@@ -25,9 +26,15 @@ class MainWindow(QMainWindow):
 
         # Settings manager'ı başlat
         self.settings = SettingsManager()
-        
+
+        # PDF importer'ı başlat
+        self.pdf_importer = PDFImporter()
+        self.default_pdf_dpi = 150
+        self.last_opened_pdf_dir = os.path.expanduser("~")
+
         # Session manager'ı başlat
         self.session_manager = SessionManager()
+        self.session_manager.set_pdf_importer(self.pdf_importer)
         self.current_session_file = None  # Açık olan dosya yolu
         self._setup_autosave_timer()
         
@@ -117,9 +124,28 @@ class MainWindow(QMainWindow):
         new_tab_action.setToolTip("Yeni çizim tab'ı oluştur")
         new_tab_action.triggered.connect(lambda: self.tab_manager.create_new_tab())
         toolbar.addAction(new_tab_action)
-        
+
+        # PDF navigasyon kontrolleri
+        self.pdf_prev_action = QAction(qta.icon('fa5s.arrow-left', color='#607D8B'), "Önceki PDF Sayfası", self)
+        self.pdf_prev_action.setToolTip("PDF arka planında önceki sayfa")
+        self.pdf_prev_action.triggered.connect(self.go_to_previous_pdf_page)
+        self.pdf_prev_action.setEnabled(False)
+        toolbar.addAction(self.pdf_prev_action)
+
+        self.pdf_next_action = QAction(qta.icon('fa5s.arrow-right', color='#607D8B'), "Sonraki PDF Sayfası", self)
+        self.pdf_next_action.setToolTip("PDF arka planında sonraki sayfa")
+        self.pdf_next_action.triggered.connect(self.go_to_next_pdf_page)
+        self.pdf_next_action.setEnabled(False)
+        toolbar.addAction(self.pdf_next_action)
+
+        self.pdf_dpi_action = QAction(qta.icon('fa5s.cog', color='#9C27B0'), "PDF Çözünürlüğü", self)
+        self.pdf_dpi_action.setToolTip("PDF sayfalarının çözünürlüğünü (DPI) ayarla")
+        self.pdf_dpi_action.triggered.connect(self.prompt_pdf_resolution_change)
+        self.pdf_dpi_action.setEnabled(False)
+        toolbar.addAction(self.pdf_dpi_action)
+
         toolbar.addSeparator()
-        
+
         # Çizim araçları
         self.bspline_action = QAction(qta.icon('fa5s.bezier-curve', color='#2196F3'), "B-Spline", self)
         self.bspline_action.setCheckable(True)
@@ -278,9 +304,16 @@ class MainWindow(QMainWindow):
         load_session_action.setToolTip("Kaydedilmiş oturumu aç")
         load_session_action.triggered.connect(self.load_session)
         file_menu.addAction(load_session_action)
-        
+
+        # PDF açma
+        open_pdf_action = QAction(qta.icon('fa5s.file-pdf', color='#9C27B0'), "PDF Aç", self)
+        open_pdf_action.setShortcut("Ctrl+Alt+O")
+        open_pdf_action.setToolTip("PDF dosyasını arka plan olarak yükle")
+        open_pdf_action.triggered.connect(self.open_pdf)
+        file_menu.addAction(open_pdf_action)
+
         file_menu.addSeparator()
-        
+
         # Resim import
         import_image_action = QAction(qta.icon('fa5s.image', color='#4CAF50'), "Resim Ekle", self)
         import_image_action.setShortcut("Ctrl+I")
@@ -346,6 +379,12 @@ class MainWindow(QMainWindow):
         self.tool_status_label.setFlat(True)
         self.tool_status_label.setMaximumWidth(100)
         self.status_bar.addPermanentWidget(self.tool_status_label)
+
+        self.pdf_status_label = QPushButton("PDF: Yok")
+        self.pdf_status_label.setFlat(True)
+        self.pdf_status_label.setEnabled(False)
+        self.pdf_status_label.setMaximumWidth(160)
+        self.status_bar.addPermanentWidget(self.pdf_status_label)
         
     def show_status_message(self, message, timeout=3000):
         """Status bar'da mesaj göster"""
@@ -364,12 +403,39 @@ class MainWindow(QMainWindow):
             "rectangle": "Dikdörtgen",
             "circle": "Çember",
             "select": "Seçim",
-            "move": "Taşıma", 
+            "move": "Taşıma",
             "rotate": "Döndürme",
             "scale": "Boyutlandırma"
         }
         display_name = tool_names.get(tool_name, tool_name)
         self.tool_status_label.setText(display_name)
+
+    def update_pdf_controls_state(self):
+        """PDF navigasyon ve durum kontrollerini güncelle"""
+        if not hasattr(self, 'pdf_prev_action'):
+            return
+
+        current_widget = self.get_current_drawing_widget()
+        has_pdf = bool(current_widget and hasattr(current_widget, 'has_pdf_background') and current_widget.has_pdf_background())
+        can_prev = False
+        can_next = False
+        status_text = "PDF: Yok"
+
+        if has_pdf:
+            layer = current_widget.get_pdf_background_layer()
+            if layer:
+                can_prev = layer.current_page > 0
+                can_next = layer.current_page < (layer.page_count - 1)
+                status_text = f"PDF: {layer.current_page + 1}/{layer.page_count} ({layer.dpi} DPI)"
+                self.default_pdf_dpi = layer.dpi
+
+        self.pdf_prev_action.setEnabled(can_prev)
+        self.pdf_next_action.setEnabled(can_next)
+        self.pdf_dpi_action.setEnabled(has_pdf)
+
+        if hasattr(self, 'pdf_status_label'):
+            self.pdf_status_label.setText(status_text)
+            self.pdf_status_label.setEnabled(False)
         
     def create_background_dock(self):
         """Ayarlar dock widget'ı oluştur"""
@@ -717,6 +783,7 @@ class MainWindow(QMainWindow):
             current_widget.set_main_window(self)
         if hasattr(self, 'layer_manager_widget'):
             self.layer_manager_widget.set_drawing_widget(current_widget)
+        self.update_pdf_controls_state()
 
     def set_tool(self, tool_name):
         """Aktif aracı değiştir"""
@@ -1122,6 +1189,7 @@ class MainWindow(QMainWindow):
             self.current_session_file = filename
             self.update_window_title()
             self.session_manager.clear_auto_save()
+            self.update_pdf_controls_state()
 
     def load_recent_session(self, filepath):
         """Son oturumlardan birini aç"""
@@ -1129,6 +1197,7 @@ class MainWindow(QMainWindow):
             self.current_session_file = filepath
             self.update_window_title()
             self.session_manager.clear_auto_save()
+            self.update_pdf_controls_state()
             
     def update_window_title(self):
         """Pencere başlığını güncelle"""
@@ -1260,6 +1329,97 @@ class MainWindow(QMainWindow):
 
         QMessageBox.information(self, "Başarılı", f"Resim başarıyla kaydedildi:\n{filename}")
         self.show_status_message("Resim başarıyla dışa aktarıldı")
+
+    def open_pdf(self):
+        """Seçilen PDF dosyasını arka plan olarak yükle"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            QMessageBox.warning(self, "Uyarı", "PDF yüklemek için açık bir çizim sekmesi bulunmuyor.")
+            return
+
+        start_dir = self.last_opened_pdf_dir if os.path.isdir(self.last_opened_pdf_dir) else ""
+        filename, _ = QFileDialog.getOpenFileName(
+            self,
+            "PDF Aç",
+            start_dir,
+            "PDF Dosyaları (*.pdf);;Tüm Dosyalar (*)"
+        )
+
+        if not filename:
+            return
+
+        self.last_opened_pdf_dir = os.path.dirname(filename) or self.last_opened_pdf_dir
+
+        try:
+            pdf_layer = self.pdf_importer.load_pdf(filename, dpi=self.default_pdf_dpi)
+        except Exception as exc:
+            QMessageBox.critical(self, "PDF Yükleme Hatası", str(exc))
+            return
+
+        current_widget.set_pdf_background_layer(pdf_layer)
+        base_name = os.path.basename(filename)
+        self.show_status_message(
+            f"PDF yüklendi: {base_name} ({pdf_layer.current_page + 1}/{pdf_layer.page_count})"
+        )
+        self.update_pdf_controls_state()
+
+    def go_to_previous_pdf_page(self):
+        """PDF arka planında bir önceki sayfaya geç"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.has_pdf_background():
+            return
+
+        if current_widget.previous_pdf_page():
+            layer = current_widget.get_pdf_background_layer()
+            if layer:
+                self.show_status_message(
+                    f"PDF sayfası: {layer.current_page + 1}/{layer.page_count}"
+                )
+        self.update_pdf_controls_state()
+
+    def go_to_next_pdf_page(self):
+        """PDF arka planında bir sonraki sayfaya geç"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.has_pdf_background():
+            return
+
+        if current_widget.next_pdf_page():
+            layer = current_widget.get_pdf_background_layer()
+            if layer:
+                self.show_status_message(
+                    f"PDF sayfası: {layer.current_page + 1}/{layer.page_count}"
+                )
+        self.update_pdf_controls_state()
+
+    def prompt_pdf_resolution_change(self):
+        """PDF rasterizasyon çözünürlüğünü ayarla"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not current_widget.has_pdf_background():
+            return
+
+        layer = current_widget.get_pdf_background_layer()
+        if not layer:
+            return
+
+        dpi, ok = QInputDialog.getInt(
+            self,
+            "PDF Çözünürlüğü",
+            "DPI değeri (72-600):",
+            layer.dpi,
+            72,
+            600,
+            10
+        )
+        if not ok:
+            return
+
+        if current_widget.set_pdf_dpi(dpi):
+            self.default_pdf_dpi = dpi
+            self.show_status_message(f"PDF çözünürlüğü {dpi} DPI olarak ayarlandı")
+        else:
+            self.show_status_message("PDF çözünürlüğü değiştirilmedi")
+
+        self.update_pdf_controls_state()
 
     def import_image(self):
         """Canvas'a resim ekle"""
