@@ -1567,43 +1567,54 @@ class ShapePropertiesWidget(QWidget):
 
     def apply_stroke_shadow_enabled_change(self):
         """Çizgi gölge etkin/pasif değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowEnabledChanged.emit(self.current_stroke_shadow_enabled)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowEnabledChanged.emit(self.current_stroke_shadow_enabled)
 
     def apply_stroke_shadow_color_change(self):
         """Çizgi gölge rengi değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowColorChanged.emit(self.current_stroke_shadow_color)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowColorChanged.emit(self.current_stroke_shadow_color)
 
     def apply_stroke_shadow_offset_change(self):
         """Çizgi gölge offseti değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowOffsetChanged.emit(self.current_stroke_shadow_offset_x, self.current_stroke_shadow_offset_y)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowOffsetChanged.emit(
+            self.current_stroke_shadow_offset_x,
+            self.current_stroke_shadow_offset_y,
+        )
 
     def apply_stroke_shadow_blur_change(self):
         """Çizgi gölge bulanıklığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowBlurChanged.emit(self.current_stroke_shadow_blur)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowBlurChanged.emit(self.current_stroke_shadow_blur)
 
     def apply_stroke_shadow_size_change(self):
         """Çizgi gölge boyutu değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowSizeChanged.emit(self.current_stroke_shadow_size)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowSizeChanged.emit(self.current_stroke_shadow_size)
 
     def apply_stroke_shadow_inner_change(self):
         """Çizgi iç/dış gölge değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowInnerChanged.emit(self.current_stroke_inner_shadow)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowInnerChanged.emit(self.current_stroke_inner_shadow)
 
     def apply_stroke_shadow_quality_change(self):
         """Çizgi gölge kalitesi değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowQualityChanged.emit(self.current_stroke_shadow_quality)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowQualityChanged.emit(self.current_stroke_shadow_quality)
 
     def apply_stroke_shadow_opacity_change(self):
         """Çizgi gölge şeffaflığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_stroke_shadow_shapes:
-            self.strokeShadowOpacityChanged.emit(self.current_stroke_shadow_opacity)
+        if self.selected_strokes and not self.has_stroke_shadow_shapes:
+            return
+        self.strokeShadowOpacityChanged.emit(self.current_stroke_shadow_opacity)
 
     def apply_rect_corner_radius_change(self):
         """Dikdörtgen kenar yuvarlama değişikliğini uygula"""
