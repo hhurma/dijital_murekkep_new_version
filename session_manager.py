@@ -235,6 +235,10 @@ class SessionManager:
         """Stroke'ları JSON'a dönüştürülebilir formata çevir"""
         from PyQt6.QtGui import QColor
         from PyQt6.QtCore import Qt, QPointF
+        try:
+            import numpy as np
+        except ImportError:  # pragma: no cover - numpy is an optional dependency
+            np = None
 
         serialized = []
         for i, stroke in enumerate(strokes):
@@ -286,6 +290,13 @@ class SessionManager:
                     elif isinstance(value, QPointF):
                         # Tek QPointF objesi
                         stroke_copy[key] = {'x': value.x(), 'y': value.y()}
+                    elif np is not None and isinstance(value, np.ndarray):
+                        stroke_copy[key] = value.tolist()
+                    elif (
+                        np is not None
+                        and isinstance(value, (np.generic,))
+                    ):
+                        stroke_copy[key] = value.item()
                     elif not isinstance(value, (str, int, float, bool, list, tuple, dict, type(None))):
                         # JSON serializable olmayan diğer tipler
                         stroke_copy[key] = str(value)
@@ -406,6 +417,10 @@ class SessionManager:
         """JSON'dan stroke'ları geri yükle"""
         from PyQt6.QtGui import QColor
         from PyQt6.QtCore import Qt
+        try:
+            import numpy as np
+        except ImportError:  # pragma: no cover - numpy is an optional dependency
+            np = None
         
         strokes = []
         for i, stroke_data in enumerate(serialized_strokes):
@@ -432,6 +447,29 @@ class SessionManager:
                     if 'line_style' in stroke and isinstance(stroke['line_style'], int):
                         stroke['line_style'] = Qt.PenStyle(stroke['line_style'])
                         
+                    if np is not None:
+                        is_bspline = (
+                            stroke.get('type') == 'bspline'
+                            or stroke.get('tool_type') == 'bspline'
+                        )
+
+                        if is_bspline:
+                            for key in ('knots', 'u'):
+                                if key not in stroke:
+                                    continue
+
+                                value = stroke[key]
+                                if isinstance(value, list):
+                                    stroke[key] = np.array(value, dtype=float)
+                                elif isinstance(value, tuple):
+                                    stroke[key] = np.array(list(value), dtype=float)
+                                elif isinstance(value, str):
+                                    try:
+                                        parsed = json.loads(value)
+                                    except (TypeError, json.JSONDecodeError):
+                                        continue
+                                    stroke[key] = np.array(parsed, dtype=float)
+
                     strokes.append(stroke)
                     
             except Exception as e:
