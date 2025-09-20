@@ -364,11 +364,28 @@ class StrokeHandler:
             # Çizgiye yakınlık kontrolü
             start = QPointF(stroke_data['start_point'][0], stroke_data['start_point'][1])
             end = QPointF(stroke_data['end_point'][0], stroke_data['end_point'][1])
-            
-            # Basit yakınlık - noktalara mesafe
-            if (pos - start).manhattanLength() < tolerance or (pos - end).manhattanLength() < tolerance:
+
+            # Çizgi segmentine dik uzaklığı kontrol et
+            start_vec = np.array([start.x(), start.y()], dtype=float)
+            end_vec = np.array([end.x(), end.y()], dtype=float)
+            pos_vec = np.array([pos.x(), pos.y()], dtype=float)
+
+            segment_vec = end_vec - start_vec
+            segment_len_sq = np.dot(segment_vec, segment_vec)
+
+            if segment_len_sq == 0:
+                # Degenerate case: çizgi noktaya dönüşmüş
+                return (pos - start).manhattanLength() <= tolerance
+
+            # Hit test noktasını çizgi segmentine projekte et
+            t = np.dot(pos_vec - start_vec, segment_vec) / segment_len_sq
+            t = max(0.0, min(1.0, t))
+            projection = start_vec + t * segment_vec
+
+            distance = np.linalg.norm(pos_vec - projection)
+            if distance <= tolerance:
                 return True
-                
+
         elif stroke_data['type'] == 'rectangle':
             if 'corners' in stroke_data:
                 # Yeni format - köşe noktalarına yakınlık
