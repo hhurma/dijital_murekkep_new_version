@@ -24,14 +24,17 @@ class LineTool:
         self.shadow_opacity = 0.7
         self.inner_shadow = False
         self.shadow_quality = "medium"
+        self.shift_constrain = False  # Shift kısıtlaması
         
     def start_stroke(self, pos, pressure=1.0):
         """Yeni bir çizgi çizimi başlat"""
         self.is_drawing = True
         
-        # Snap to grid uygulaması
-        if self.background_settings and self.background_settings.get('snap_to_grid', False):
-            pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
+        # Snap to grid uygulaması: grid açık veya Shift basılıysa
+        if self.background_settings:
+            force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
+            if self.background_settings.get('snap_to_grid', False) or force_snap:
+                pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
             
         self.start_point = pos
         self.current_point = pos
@@ -39,10 +42,19 @@ class LineTool:
     def add_point(self, pos, pressure=1.0):
         """Çizginin bitiş noktasını güncelle"""
         if self.is_drawing:
-            # Snap to grid uygulaması
-            if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
-                
+            # Snap to grid uygulaması: ya grid açık ya da Shift basılıysa
+            if self.background_settings:
+                force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
+                if self.background_settings.get('snap_to_grid', False) or force_snap:
+                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
+            # Shift kısıtlaması: yatay/dikey
+            if self.shift_constrain and self.start_point is not None:
+                dx = abs(pos.x() - self.start_point.x())
+                dy = abs(pos.y() - self.start_point.y())
+                if dx >= dy:
+                    pos = QPointF(pos.x(), self.start_point.y())
+                else:
+                    pos = QPointF(self.start_point.x(), pos.y())
             self.current_point = pos
             
     def finish_stroke(self):

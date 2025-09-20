@@ -112,6 +112,36 @@ class CanvasRenderer:
             self.drawing_widget.rectangle_tool.draw_current_stroke(painter)
         elif self.drawing_widget.active_tool == "circle":
             self.drawing_widget.circle_tool.draw_current_stroke(painter)
+
+        # Shift ile snap göstergesi çiz
+        try:
+            if hasattr(self.drawing_widget, 'line_tool') and getattr(self.drawing_widget.line_tool, 'shift_constrain', False):
+                self._draw_snap_indicator(painter)
+            if hasattr(self.drawing_widget, 'rectangle_tool') and getattr(self.drawing_widget.rectangle_tool, 'shift_constrain', False):
+                self._draw_snap_indicator(painter)
+            if hasattr(self.drawing_widget, 'circle_tool') and getattr(self.drawing_widget.circle_tool, 'shift_constrain', False):
+                self._draw_snap_indicator(painter)
+        except Exception:
+            pass
+
+    def _draw_snap_indicator(self, painter):
+        from grid_snap_utils import GridSnapUtils
+        mouse_pos = self.drawing_widget.mapFromGlobal(self.drawing_widget.cursor().pos())
+        # Canvas koordinatlarına çevir
+        from PyQt6.QtCore import QPointF
+        canvas_pos = self.drawing_widget.transform_mouse_pos(QPointF(mouse_pos)) if hasattr(self.drawing_widget, 'transform_mouse_pos') else QPointF(mouse_pos)
+        snap_pts = GridSnapUtils.get_snap_indicator_points(canvas_pos, self.drawing_widget.background_settings)
+        if not snap_pts:
+            return
+        painter.save()
+        from PyQt6.QtGui import QPen
+        from PyQt6.QtCore import Qt
+        painter.setPen(QPen(Qt.GlobalColor.blue, 1, Qt.PenStyle.SolidLine))
+        for i in range(0, len(snap_pts), 2):
+            a = snap_pts[i]
+            b = snap_pts[i+1]
+            painter.drawLine(a, b)
+        painter.restore()
             
     def stroke_intersects_scene(self, stroke_data, scene_rect):
         """Gelişmiş stroke-viewport intersection kontrolü"""
@@ -231,6 +261,10 @@ class CanvasRenderer:
         grid_size = self.drawing_widget.background_settings['grid_size']
         minor_width = self.drawing_widget.background_settings['grid_width']
         major_width = self.drawing_widget.background_settings.get('major_grid_width', 2)
+        # Minor/major aralık: minor her çizgide, isteğe göre atlanabilir
+        # 0.1 adımlı minor aralığı: faktör olarak uygula (1.0 = her çizgi)
+        minor_interval_val = float(self.drawing_widget.background_settings.get('minor_grid_interval', 1.0))
+        minor_interval_val = max(0.1, minor_interval_val)
         major_interval = self.drawing_widget.background_settings.get('major_grid_interval', 5)
         grid_opacity = self.drawing_widget.background_settings.get('grid_opacity', 1.0)
         
@@ -243,22 +277,16 @@ class CanvasRenderer:
         height = rect.height()
         
         # Sadece yatay çizgiler (çizgili kağıt gibi)
-        y = 0
-        line_count = 0
+        minor_step = max(1.0, grid_size * minor_interval_val)
+        y = 0.0
         while y <= height:
-            # Her major_interval çizgide bir major grid çiz
-            if line_count % major_interval == 0:
-                # Major çizgi
-                pen = QPen(major_color, major_width)
-                painter.setPen(pen)
+            idx = int(round(y / grid_size)) if grid_size > 0 else 0
+            if idx % int(max(1, round(major_interval))) == 0:
+                painter.setPen(QPen(major_color, major_width))
             else:
-                # Minor çizgi
-                pen = QPen(minor_color, minor_width)
-                painter.setPen(pen)
-            
-            painter.drawLine(0, y, width, y)
-            y += grid_size
-            line_count += 1
+                painter.setPen(QPen(minor_color, minor_width))
+            painter.drawLine(0, int(round(y)), width, int(round(y)))
+            y += minor_step
              
     def draw_snap_grid(self, painter):
         """Beyaz arka planda snap için hafif grid çiz - Major/Minor sistem"""
@@ -268,6 +296,8 @@ class CanvasRenderer:
         grid_size = self.drawing_widget.background_settings['grid_size']
         minor_width = max(1, self.drawing_widget.background_settings['grid_width'] - 1)  # Biraz daha ince
         major_width = max(1, self.drawing_widget.background_settings.get('major_grid_width', 2) - 1)  # Biraz daha ince
+        minor_interval_val = float(self.drawing_widget.background_settings.get('minor_grid_interval', 1.0))
+        minor_interval_val = max(0.1, minor_interval_val)
         major_interval = self.drawing_widget.background_settings.get('major_grid_interval', 5)
         grid_opacity = self.drawing_widget.background_settings.get('grid_opacity', 1.0) * 0.3  # Daha şeffaf
         
@@ -280,40 +310,28 @@ class CanvasRenderer:
         height = rect.height()
         
         # Dikey çizgiler
-        x = 0
-        line_count = 0
+        minor_step = max(1.0, grid_size * minor_interval_val)
+        x = 0.0
         while x <= width:
-            # Her major_interval çizgide bir major grid çiz
-            if line_count % major_interval == 0:
-                # Major çizgi
-                pen = QPen(major_color, major_width, Qt.PenStyle.DotLine)
-                painter.setPen(pen)
+            idx = int(round(x / grid_size)) if grid_size > 0 else 0
+            if idx % int(max(1, round(major_interval))) == 0:
+                painter.setPen(QPen(major_color, major_width, Qt.PenStyle.DotLine))
             else:
-                # Minor çizgi
-                pen = QPen(minor_color, minor_width, Qt.PenStyle.DotLine)
-                painter.setPen(pen)
-            
-            painter.drawLine(x, 0, x, height)
-            x += grid_size
-            line_count += 1
+                painter.setPen(QPen(minor_color, minor_width, Qt.PenStyle.DotLine))
+            painter.drawLine(int(round(x)), 0, int(round(x)), height)
+            x += minor_step
             
         # Yatay çizgiler
-        y = 0
-        line_count = 0
+        minor_step = max(1.0, grid_size * minor_interval_val)
+        y = 0.0
         while y <= height:
-            # Her major_interval çizgide bir major grid çiz
-            if line_count % major_interval == 0:
-                # Major çizgi
-                pen = QPen(major_color, major_width, Qt.PenStyle.DotLine)
-                painter.setPen(pen)
+            idx = int(round(y / grid_size)) if grid_size > 0 else 0
+            if idx % int(max(1, round(major_interval))) == 0:
+                painter.setPen(QPen(major_color, major_width, Qt.PenStyle.DotLine))
             else:
-                # Minor çizgi
-                pen = QPen(minor_color, minor_width, Qt.PenStyle.DotLine)
-                painter.setPen(pen)
-            
-            painter.drawLine(0, y, width, y)
-            y += grid_size
-            line_count += 1
+                painter.setPen(QPen(minor_color, minor_width, Qt.PenStyle.DotLine))
+            painter.drawLine(0, int(round(y)), width, int(round(y)))
+            y += minor_step
             
     def draw_dots_background(self, painter):
         """Kareli arka plan çiz (hem yatay hem dikey çizgiler) - Major/Minor sistem"""

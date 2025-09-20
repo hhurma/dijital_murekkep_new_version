@@ -1,5 +1,5 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel, 
-                            QPushButton, QColorDialog, QSpinBox, QButtonGroup,
+                            QPushButton, QColorDialog, QSpinBox, QDoubleSpinBox, QButtonGroup,
                             QGroupBox, QRadioButton, QCheckBox, QSlider, QComboBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
@@ -35,6 +35,7 @@ class SettingsWidget(QWidget):
         self.grid_width = 1
         self.major_grid_width = 2
         self.major_grid_interval = 5
+        self.minor_grid_interval = 1.0
         self.grid_opacity = 1.0
         self.snap_to_grid = False
         
@@ -215,6 +216,22 @@ class SettingsWidget(QWidget):
         width_layout.addStretch()
         
         grid_layout.addLayout(width_layout)
+
+        # İnce çizgi aralığı
+        minor_interval_layout = QHBoxLayout()
+        minor_interval_layout.addWidget(QLabel("İnce Çizgi Aralığı:"))
+        
+        self.minor_interval_spinbox = QDoubleSpinBox()
+        self.minor_interval_spinbox.setDecimals(1)
+        self.minor_interval_spinbox.setSingleStep(0.1)
+        self.minor_interval_spinbox.setRange(0.1, 10.0)
+        self.minor_interval_spinbox.setValue(self.minor_grid_interval)
+        self.minor_interval_spinbox.setSuffix(" çizgi")
+        self.minor_interval_spinbox.valueChanged.connect(self.on_minor_grid_interval_changed)
+        minor_interval_layout.addWidget(self.minor_interval_spinbox)
+        minor_interval_layout.addStretch()
+        
+        grid_layout.addLayout(minor_interval_layout)
         
         # Kalın çizgi kalınlığı
         major_width_layout = QHBoxLayout()
@@ -384,6 +401,11 @@ class SettingsWidget(QWidget):
         self.major_grid_interval = value
         self.emit_background_changed()
         
+    def on_minor_grid_interval_changed(self, value):
+        """İnce grid aralığı değiştiğinde"""
+        self.minor_grid_interval = float(value)
+        self.emit_background_changed()
+        
     def on_grid_opacity_changed(self, value):
         """Grid saydamlığı değiştiğinde"""
         self.grid_opacity = value / 100.0
@@ -406,6 +428,7 @@ class SettingsWidget(QWidget):
             'grid_width': self.grid_width,
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
+            'minor_grid_interval': self.minor_grid_interval,
             'grid_opacity': self.grid_opacity,
             'snap_to_grid': self.snap_to_grid
         }
@@ -422,6 +445,7 @@ class SettingsWidget(QWidget):
             'grid_width': self.grid_width,
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
+            'minor_grid_interval': self.minor_grid_interval,
             'grid_opacity': self.grid_opacity,
             'snap_to_grid': self.snap_to_grid
         }
@@ -436,6 +460,7 @@ class SettingsWidget(QWidget):
         self.grid_width = settings.get('grid_width', 1)
         self.major_grid_width = settings.get('major_grid_width', 2)
         self.major_grid_interval = settings.get('major_grid_interval', 5)
+        self.minor_grid_interval = float(settings.get('minor_grid_interval', 1.0))
         self.grid_opacity = settings.get('grid_opacity', 1.0)
         self.snap_to_grid = settings.get('snap_to_grid', False)
         
@@ -452,6 +477,7 @@ class SettingsWidget(QWidget):
         self.width_spinbox.setValue(self.grid_width)
         self.major_width_spinbox.setValue(self.major_grid_width)
         self.interval_spinbox.setValue(self.major_grid_interval)
+        self.minor_interval_spinbox.setValue(self.minor_grid_interval)
         self.opacity_slider.setValue(int(self.grid_opacity * 100))
         self.opacity_label.setText(f"{int(self.grid_opacity * 100)}%")
         self.snap_checkbox.setChecked(self.snap_to_grid)

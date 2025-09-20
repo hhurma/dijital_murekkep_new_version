@@ -273,6 +273,34 @@ class SessionManager:
                     
                     stroke_copy['points'] = serialized_points
                 
+                # B-spline için orijinal nokta+basınç listesini serialize et
+                if 'original_points_with_pressure' in stroke_copy:
+                    opp = stroke_copy['original_points_with_pressure']
+                    serialized_opp = []
+                    try:
+                        for item in opp:
+                            # item genellikle (QPointF, pressure)
+                            if isinstance(item, (list, tuple)) and len(item) == 2:
+                                point_obj, pressure_val = item
+                            elif isinstance(item, dict) and 'point' in item and 'pressure' in item:
+                                point_obj, pressure_val = item.get('point'), item.get('pressure')
+                            else:
+                                continue
+                            
+                            if isinstance(point_obj, QPointF):
+                                serialized_opp.append({'x': point_obj.x(), 'y': point_obj.y(), 'pressure': float(pressure_val) if pressure_val is not None else 1.0})
+                            elif hasattr(point_obj, 'x') and hasattr(point_obj, 'y'):
+                                serialized_opp.append({'x': point_obj.x(), 'y': point_obj.y(), 'pressure': float(pressure_val) if pressure_val is not None else 1.0})
+                            elif isinstance(point_obj, dict) and 'x' in point_obj and 'y' in point_obj:
+                                serialized_opp.append({'x': float(point_obj['x']), 'y': float(point_obj['y']), 'pressure': float(pressure_val) if pressure_val is not None else 1.0})
+                            else:
+                                # Tanınmayan tip - atla
+                                continue
+                    except Exception:
+                        serialized_opp = []
+                    
+                    stroke_copy['original_points_with_pressure'] = serialized_opp
+                
                 # Diğer değerleri kontrol et ve serialize et
                 for key, value in stroke_copy.items():
                     if key == 'points':
@@ -291,7 +319,11 @@ class SessionManager:
                         # Tek QPointF objesi
                         stroke_copy[key] = {'x': value.x(), 'y': value.y()}
                     elif np is not None and isinstance(value, np.ndarray):
-                        stroke_copy[key] = value.tolist()
+                        # Numpy array'leri listeye çevir
+                        try:
+                            stroke_copy[key] = value.tolist()
+                        except Exception:
+                            stroke_copy[key] = list(value)
                     elif (
                         np is not None
                         and isinstance(value, (np.generic,))
@@ -466,9 +498,13 @@ class SessionManager:
                                 elif isinstance(value, str):
                                     try:
                                         parsed = json.loads(value)
+                                        stroke[key] = np.array(parsed, dtype=float)
                                     except (TypeError, json.JSONDecodeError):
-                                        continue
-                                    stroke[key] = np.array(parsed, dtype=float)
+                                        # Son çare: string sayı ise float'a çevir
+                                        try:
+                                            stroke[key] = np.array([float(value)], dtype=float)
+                                        except Exception:
+                                            continue
 
                     strokes.append(stroke)
                     

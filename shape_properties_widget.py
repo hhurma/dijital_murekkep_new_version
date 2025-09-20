@@ -88,6 +88,7 @@ class ShapePropertiesWidget(QWidget):
     
     # B-spline kontrol noktaları sinyali
     toggleControlPoints = pyqtSignal()  # B-spline kontrol noktalarını göster/gizle
+    editBSpline = pyqtSignal()  # B-spline düzenleme modunu etkinleştir
     
     LINE_STYLES = {
         Qt.PenStyle.SolidLine: 'Düz',
@@ -255,6 +256,12 @@ class ShapePropertiesWidget(QWidget):
         self.toggle_control_points_button = QPushButton("Noktaları Göster")
         self.toggle_control_points_button.clicked.connect(self.on_toggle_control_points)
         bspline_layout.addWidget(self.toggle_control_points_button)
+        
+        # B-spline düzenle butonu
+        self.edit_bspline_button = QPushButton("B-Spline Düzenle")
+        self.edit_bspline_button.setToolTip("Kontrol noktalarını göster ve düzenleme moduna geç")
+        self.edit_bspline_button.clicked.connect(self.on_edit_bspline)
+        bspline_layout.addWidget(self.edit_bspline_button)
         
         self.bspline_group.setLayout(bspline_layout)
         layout.addWidget(self.bspline_group)
@@ -2551,5 +2558,9 @@ class ShapePropertiesWidget(QWidget):
             self.toggle_control_points_button.setText("Noktaları Gizle")
         else:
             self.toggle_control_points_button.setText("Noktaları Göster")
+        
+    def on_edit_bspline(self):
+        """B-spline düzenleme modunu etkinleştir"""
+        self.editBSpline.emit()
         
  

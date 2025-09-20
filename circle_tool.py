@@ -27,14 +27,17 @@ class CircleTool:
         self.shadow_opacity = 0.7
         self.inner_shadow = False
         self.shadow_quality = 'medium'
+        self.shift_constrain = False
         
     def start_stroke(self, pos, pressure=1.0):
         """Yeni bir çember çizimi başlat"""
         self.is_drawing = True
         
-        # Snap to grid uygulaması
-        if self.background_settings and self.background_settings.get('snap_to_grid', False):
-            pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
+        # Snap to grid uygulaması: grid açık veya Shift basılıysa
+        if self.background_settings:
+            force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
+            if self.background_settings.get('snap_to_grid', False) or force_snap:
+                pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
             
         self.start_point = pos
         self.current_point = pos
@@ -42,9 +45,11 @@ class CircleTool:
     def add_point(self, pos, pressure=1.0):
         """Çemberin yarıçapını güncelle"""
         if self.is_drawing:
-            # Snap to grid uygulaması
-            if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                pos = GridSnapUtils.snap_point_to_grid(pos, self.background_settings)
+            # Snap to grid uygulaması: grid açık veya Shift basılıysa
+            if self.background_settings:
+                force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
+                if self.background_settings.get('snap_to_grid', False) or force_snap:
+                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
                 
             self.current_point = pos
             

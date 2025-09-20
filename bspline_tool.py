@@ -1,5 +1,5 @@
 from PyQt6.QtCore import QPointF
-from PyQt6.QtGui import QPen, QPainter, QPainterPath
+from PyQt6.QtGui import QPen, QPainter, QPainterPath, QBrush
 from PyQt6.QtCore import Qt, QPointF
 from scipy.interpolate import splprep, splev
 import numpy as np
@@ -9,7 +9,9 @@ class BSplineTool:
     def __init__(self):
         self.current_stroke = []  # Aktif çizim [(QPoint, pressure)]
         self.selected_control_point = None  # (stroke_index, cp_index)
+        self.hovered_control_pos = None  # (x, y) hover edilen kontrol noktası
         self.is_drawing = False
+        self.edit_mode = False  # Düzenleme modunda yeni çizim başlatma
         self.current_color = Qt.GlobalColor.black
         self.current_width = 2
         self.line_style = Qt.PenStyle.SolidLine
@@ -68,14 +70,15 @@ class BSplineTool:
                 stroke_data = {
                     'type': 'bspline',  # Modüler sistem için 'type' anahtarı
                     'control_points': np.array(tck[1]).T.tolist(),  # Liste olarak kaydet
-                    'knots': tck[0],
-                    'degree': tck[2],
-                    'u': u,
+                    # JSON uyumu için numpy -> list
+                    'knots': np.array(tck[0]).tolist(),
+                    'degree': int(tck[2]),
+                    'u': np.array(u).tolist(),
                     'original_points_with_pressure': downsampled_points_with_pressure,
                     'tool_type': 'bspline',  # Eski uyumluluk için
                     'color': self.current_color,
                     'width': self.current_width,
-                    'style': self.line_style,  # 'style' field'ını kullan
+                    'style': (self.line_style.value if isinstance(self.line_style, Qt.PenStyle) else self.line_style),  # 'style' field'ını kullan
                     'show_control_points': self.show_control_points,  # Kontrol noktalarının görünürlüğü
                     'has_shadow': self.has_shadow,
                     'shadow_color': self.shadow_color,
@@ -134,6 +137,26 @@ class BSplineTool:
                     return True
                     
         self.selected_control_point = None
+        return False
+
+    def hit_test_control_point(self, pos, strokes, tolerance=10):
+        """Hover için kontrol noktası çakışmasını test et ve pozisyonu kaydet"""
+        pos_f = QPointF(pos)
+        for stroke_data in strokes:
+            # Image stroke kontrolü
+            if hasattr(stroke_data, 'stroke_type'):
+                continue
+            if stroke_data.get('type') != 'bspline' and stroke_data.get('tool_type') != 'bspline':
+                continue
+            if not stroke_data.get('show_control_points', False):
+                continue
+            control_points = stroke_data['control_points']
+            for cp in control_points:
+                cp_point = QPointF(cp[0], cp[1])
+                if (pos_f - cp_point).manhattanLength() < tolerance:
+                    self.hovered_control_pos = (cp_point.x(), cp_point.y())
+                    return True
+        self.hovered_control_pos = None
         return False
         
     def move_control_point(self, new_pos, strokes):
@@ -229,6 +252,11 @@ class BSplineTool:
         # Control points'i numpy array'e çevir
         if isinstance(control_points, list):
             control_points = np.array(control_points)
+        # Knots ve u numpy array'e çevir (liste olabilir)
+        if isinstance(knots, list):
+            knots = np.array(knots, dtype=float)
+        if isinstance(u, list):
+            u = np.array(u, dtype=float)
         
         tck = (knots, control_points.T, degree)
         x_fine, y_fine = splev(np.linspace(0, u[-1], 200), tck)
@@ -246,9 +274,26 @@ class BSplineTool:
         show_points = stroke_data.get('show_control_points', False)
         if show_points:
             painter.save()
-            painter.setPen(QPen(Qt.GlobalColor.red, 5, Qt.PenStyle.SolidLine))
+            # Normal noktalar için stil
+            normal_pen = QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.SolidLine)
+            normal_brush = QBrush(Qt.GlobalColor.white)
+            hover_pen = QPen(Qt.GlobalColor.red, 2, Qt.PenStyle.SolidLine)
+            hover_brush = QBrush(Qt.GlobalColor.red)
+            radius = 4
+            hovered = self.hovered_control_pos
             for cp in control_points:
-                painter.drawPoint(QPointF(cp[0], cp[1]))
+                cx, cy = cp[0], cp[1]
+                center = QPointF(cx, cy)
+                is_hover = hovered is not None and abs(hovered[0] - cx) < 0.001 and abs(hovered[1] - cy) < 0.001
+                if is_hover:
+                    painter.setPen(hover_pen)
+                    painter.setBrush(hover_brush)
+                    r = radius + 1
+                else:
+                    painter.setPen(normal_pen)
+                    painter.setBrush(normal_brush)
+                    r = radius
+                painter.drawEllipse(center, r, r)
             painter.restore()
         
     def set_color(self, color):

@@ -5,18 +5,29 @@ class GridSnapUtils:
     """Grid'e yapıştırma yardımcı fonksiyonları"""
     
     @staticmethod
+    def _get_minor_step(background_settings):
+        """Grid aralığı için etkili ince adımı döndür (grid_size * minor_grid_interval)."""
+        if not background_settings:
+            return 20.0
+        grid_size = float(background_settings.get('grid_size', 20))
+        minor_interval = float(background_settings.get('minor_grid_interval', 1.0))
+        step = grid_size * max(0.1, minor_interval)
+        # En az 1px adım
+        return max(1.0, step)
+
+    @staticmethod
     def snap_point_to_grid(point, background_settings):
         """Bir noktayı grid'e yapıştır"""
         if not background_settings or not background_settings.get('snap_to_grid', False):
             return point
             
-        grid_size = background_settings.get('grid_size', 20)
-        if grid_size <= 0:
+        step = GridSnapUtils._get_minor_step(background_settings)
+        if step <= 0:
             return point
             
         # En yakın grid noktasına yuvarlama - daha hassas
-        x = round(point.x() / grid_size) * grid_size
-        y = round(point.y() / grid_size) * grid_size
+        x = round(point.x() / step) * step
+        y = round(point.y() / step) * step
         
         return QPointF(float(x), float(y))
     
@@ -26,13 +37,13 @@ class GridSnapUtils:
         if not background_settings or (not background_settings.get('snap_to_grid', False) and not force_snap):
             return point
             
-        grid_size = background_settings.get('grid_size', 20)
-        if grid_size <= 0:
+        step = GridSnapUtils._get_minor_step(background_settings)
+        if step <= 0:
             return point
             
         # Tam grid koordinatlarına yuvarlama
-        x = round(point.x() / grid_size) * grid_size
-        y = round(point.y() / grid_size) * grid_size
+        x = round(point.x() / step) * step
+        y = round(point.y() / step) * step
         
         # Float precision sorunlarını önle
         x = round(x, 2)
@@ -70,17 +81,17 @@ class GridSnapUtils:
         if not background_settings or not background_settings.get('snap_to_grid', False):
             return center, radius
             
-        grid_size = background_settings.get('grid_size', 20)
-        if grid_size <= 0:
+        step = GridSnapUtils._get_minor_step(background_settings)
+        if step <= 0:
             return center, radius
             
         # Merkezi grid'e yapıştır
         snapped_center = GridSnapUtils.snap_point_to_grid_precise(center, background_settings)
         
         # Yarıçapı grid'in katına yuvarlama (isteğe bağlı)
-        snapped_radius = round(radius / grid_size) * grid_size
+        snapped_radius = round(radius / step) * step
         if snapped_radius == 0:
-            snapped_radius = grid_size
+            snapped_radius = step
             
         return snapped_center, snapped_radius
     
@@ -188,8 +199,8 @@ class GridSnapUtils:
         if not background_settings or not background_settings.get('snap_to_grid', False):
             return False
             
-        grid_size = background_settings.get('grid_size', 20)
-        if grid_size <= 0:
+        step = GridSnapUtils._get_minor_step(background_settings)
+        if step <= 0:
             return False
             
         # En yakın grid noktası

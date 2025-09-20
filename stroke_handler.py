@@ -349,7 +349,31 @@ class StrokeHandler:
                 if (pos - cp_point).manhattanLength() < tolerance:
                     return True
             
-            # B-spline eğrisi kontrolü de eklenebilir
+            # Eğriye yakınlık: knots/u/degree varsa yaklaşık örnekleme ile kontrol et
+            try:
+                from scipy.interpolate import splev
+                knots = stroke_data.get('knots')
+                u = stroke_data.get('u')
+                degree = stroke_data.get('degree', 3)
+                cps = stroke_data.get('control_points', [])
+                if isinstance(cps, list):
+                    cps = np.array(cps, dtype=float)
+                if isinstance(knots, list):
+                    knots = np.array(knots, dtype=float)
+                if isinstance(u, list):
+                    u = np.array(u, dtype=float)
+                if cps is not None and knots is not None and u is not None and len(cps) >= 4:
+                    tck = (knots, cps.T, int(degree))
+                    x_fine, y_fine = splev(np.linspace(0, u[-1], 100), tck)
+                    pos_vec = np.array([pos.x(), pos.y()], dtype=float)
+                    curve = np.stack([x_fine, y_fine], axis=1)
+                    # Noktaya en yakın segmentin mesafesi
+                    diffs = curve - pos_vec
+                    dists = np.linalg.norm(diffs, axis=1)
+                    if np.min(dists) <= tolerance:
+                        return True
+            except Exception:
+                pass
             return False
             
         elif stroke_data['type'] == 'freehand':

@@ -154,6 +154,13 @@ class MainWindow(QMainWindow):
         self.bspline_action.triggered.connect(lambda: self.set_tool("bspline"))
         toolbar.addAction(self.bspline_action)
         
+        # B-spline düzenleme aksiyonu (toggle)
+        self.bspline_edit_action = QAction(qta.icon('fa5s.edit', color='#2196F3'), "B-Spline Düzenle", self)
+        self.bspline_edit_action.setCheckable(True)
+        self.bspline_edit_action.setToolTip("B-spline düzenleme modunu aç/kapat")
+        self.bspline_edit_action.toggled.connect(self.on_bspline_edit_toggled)
+        toolbar.addAction(self.bspline_edit_action)
+        
         self.freehand_action = QAction(qta.icon('fa5s.pencil-alt', color='#FF9800'), "Serbest Çizim", self)
         self.freehand_action.setCheckable(True)
         self.freehand_action.setToolTip("Serbest el çizimi")
@@ -648,6 +655,7 @@ class MainWindow(QMainWindow):
         
         # B-spline kontrol noktaları sinyali
         self.shape_properties_widget.toggleControlPoints.connect(self.on_toggle_control_points)
+        self.shape_properties_widget.editBSpline.connect(self.on_edit_bspline)
         
         self.shape_properties_dock.setWidget(self.shape_properties_widget)
         self.shape_properties_dock.setFloating(False)
@@ -855,6 +863,11 @@ class MainWindow(QMainWindow):
         """Aktif aracı değiştir"""
         # Diğer butonları deselect yap
         self.bspline_action.setChecked(tool_name == "bspline")
+        # Bspline edit modu başka araca geçerken kapanmalı
+        if tool_name != "bspline" and hasattr(self, 'bspline_edit_action'):
+            if self.bspline_edit_action.isChecked():
+                # Toggle kapatma davranışını merkezi yerden kullan
+                self.bspline_edit_action.setChecked(False)
         self.freehand_action.setChecked(tool_name == "freehand")
         self.line_action.setChecked(tool_name == "line")
         self.rectangle_action.setChecked(tool_name == "rectangle")
@@ -2047,6 +2060,75 @@ class MainWindow(QMainWindow):
                 
             drawing_widget.update()
             self.show_status_message("Kontrol noktaları görünürlüğü değiştirildi")
+
+    def on_edit_bspline(self):
+        """B-spline düzenleme modunu aç: seçililerde noktaları aç, çizim aracı UI'ını değiştirmeden bspline etkileşimini etkinleştir"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+        
+        # Seçili yoksa: en üstteki bspline'ı bul ve seç
+        if not drawing_widget.selection_tool.selected_strokes:
+            # Ekranda en üstteki B-spline'ı bul
+            for idx in range(len(drawing_widget.strokes) - 1, -1, -1):
+                s = drawing_widget.strokes[idx]
+                if isinstance(s, dict) and (s.get('type') == 'bspline' or s.get('tool_type') == 'bspline'):
+                    drawing_widget.selection_tool.selected_strokes = [idx]
+                    break
+        
+        if not drawing_widget.selection_tool.selected_strokes:
+            self.show_status_message("Düzenlenecek B-spline bulunamadı")
+            return
+        
+        # Undo
+        drawing_widget.save_current_state("Edit B-spline")
+        
+        # Seçili bspline'larda kontrol noktalarını görünür yap
+        for index in drawing_widget.selection_tool.selected_strokes:
+            if 0 <= index < len(drawing_widget.strokes):
+                stroke = drawing_widget.strokes[index]
+                if isinstance(stroke, dict) and (stroke.get('type') == 'bspline' or stroke.get('tool_type') == 'bspline'):
+                    stroke['show_control_points'] = True
+        
+        # UI butonunu güncelle
+        if hasattr(self, 'shape_properties_widget'):
+            self.shape_properties_widget.update_control_points_button(True)
+        
+        # Çizim aracı UI'ını bozmayın; sadece aktif etkileşimi bspline olarak ayarla
+        drawing_widget.set_active_tool("bspline")
+        if hasattr(drawing_widget, 'bspline_tool'):
+            drawing_widget.bspline_tool.edit_mode = True
+        drawing_widget.selection_tool.clear_selection()
+        drawing_widget.update()
+        self.show_status_message("B-spline düzenleme modu aktif")
+
+    def on_bspline_edit_toggled(self, checked):
+        """Toolbar'daki B-spline Düzenle toggle davranışı"""
+        if checked:
+            # Açılıyor: mevcut akışla düzenlemeyi başlat
+            self.on_edit_bspline()
+        else:
+            # Kapanıyor: noktaları gizle ve select'e dön
+            drawing_widget = self.get_current_drawing_widget()
+            if not drawing_widget:
+                return
+            if hasattr(drawing_widget, 'bspline_tool'):
+                drawing_widget.bspline_tool.edit_mode = False
+            # Tüm bspline'larda açık noktaları kapat
+            changed = False
+            for s in drawing_widget.strokes:
+                if hasattr(s, 'get') and (s.get('type') == 'bspline' or s.get('tool_type') == 'bspline'):
+                    if s.get('show_control_points', False):
+                        s['show_control_points'] = False
+                        changed = True
+            if changed:
+                drawing_widget.update()
+            # Aracı select yap
+            self.set_tool("select")
+            drawing_widget.set_active_tool("select")
+            # Shape properties buton metnini de güncelle
+            if hasattr(self, 'shape_properties_widget'):
+                self.shape_properties_widget.update_control_points_button(False)
     
     def align_shapes(self, alignment_type):
         """Seçili şekilleri hizalar"""

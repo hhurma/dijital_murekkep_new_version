@@ -75,6 +75,21 @@ class EventHandler:
             return
         
         if self.drawing_widget.active_tool == "bspline":
+            # Hover tespiti için kontrol noktası hit-test
+            transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
+            hovered = self.drawing_widget.bspline_tool.hit_test_control_point(transformed_pos, self.drawing_widget.strokes, tolerance=10)
+            if getattr(self.drawing_widget.bspline_tool, 'edit_mode', False):
+                # Edit modunda varsayılan PointingHand, noktada OpenHand
+                if hovered:
+                    self.drawing_widget.setCursor(Qt.CursorShape.OpenHandCursor)
+                else:
+                    self.drawing_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                # Normal mod: noktada PointingHand, değilse CrossCursor
+                if hovered:
+                    self.drawing_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+                else:
+                    self.drawing_widget.setCursor(Qt.CursorShape.CrossCursor)
             self.handle_bspline_move(event)
         elif self.drawing_widget.active_tool == "freehand":
             self.handle_freehand_move(event)
@@ -301,6 +316,14 @@ class EventHandler:
                 # Eğer aktif olarak ölçeklendirme yapılıyorsa, ekranı güncelle
                 if self.drawing_widget.scale_tool.is_scaling:
                     self.drawing_widget.update()
+            # Line tool için yatay/dikey kısıtlama
+            if hasattr(self.drawing_widget, 'line_tool'):
+                self.drawing_widget.line_tool.shift_constrain = True
+            # Dikdörtgen ve çember için geçici snap
+            if hasattr(self.drawing_widget, 'rectangle_tool'):
+                self.drawing_widget.rectangle_tool.shift_constrain = True
+            if hasattr(self.drawing_widget, 'circle_tool'):
+                self.drawing_widget.circle_tool.shift_constrain = True
 
     def handle_key_release(self, event):
         """Klavye tuşu bırakıldığında"""
@@ -317,6 +340,40 @@ class EventHandler:
                 # Eğer aktif olarak ölçeklendirme yapılıyorsa, ekranı güncelle
                 if self.drawing_widget.scale_tool.is_scaling:
                     self.drawing_widget.update()
+            # Line tool için kısıtlamayı kapat
+            if hasattr(self.drawing_widget, 'line_tool'):
+                self.drawing_widget.line_tool.shift_constrain = False
+            # Dikdörtgen ve çember için geçici snap'i kapat
+            if hasattr(self.drawing_widget, 'rectangle_tool'):
+                self.drawing_widget.rectangle_tool.shift_constrain = False
+            if hasattr(self.drawing_widget, 'circle_tool'):
+                self.drawing_widget.circle_tool.shift_constrain = False
+        elif event.key() == Qt.Key.Key_Escape:
+            # ESC: B-spline düzenleme modunu kapat (noktaları gizle ve select aracına dön)
+            if self.drawing_widget.active_tool == "bspline":
+                # Seçili stroke'lar varsa onların noktalarını gizle
+                changed = False
+                for idx in getattr(self.drawing_widget.selection_tool, 'selected_strokes', []):
+                    if 0 <= idx < len(self.drawing_widget.strokes):
+                        s = self.drawing_widget.strokes[idx]
+                        if hasattr(s, 'get') and (s.get('type') == 'bspline' or s.get('tool_type') == 'bspline'):
+                            if s.get('show_control_points', False):
+                                s['show_control_points'] = False
+                                changed = True
+                # Eğer seçili yoksa, tüm bspline'larda açık olan noktaları kapat
+                if not getattr(self.drawing_widget.selection_tool, 'selected_strokes', []):
+                    for s in self.drawing_widget.strokes:
+                        if hasattr(s, 'get') and (s.get('type') == 'bspline' or s.get('tool_type') == 'bspline'):
+                            if s.get('show_control_points', False):
+                                s['show_control_points'] = False
+                                changed = True
+                if changed:
+                    self.drawing_widget.update()
+                # Cursor ve araç reset
+                self.drawing_widget.setCursor(Qt.CursorShape.ArrowCursor)
+                if hasattr(self.drawing_widget, 'main_window') and self.drawing_widget.main_window:
+                    self.drawing_widget.main_window.set_tool("select")
+                self.drawing_widget.set_active_tool("select")
 
     def handle_wheel(self, event):
         """Mouse wheel eventi - zoom için"""
@@ -341,8 +398,14 @@ class EventHandler:
         
         # Önce mevcut kontrol noktalarını kontrol et
         if self.drawing_widget.bspline_tool.select_control_point(transformed_pos, self.drawing_widget.strokes):
+            # Kontrol noktası sürükleme başlangıcı: kapalı el imleci
+            self.drawing_widget.setCursor(Qt.CursorShape.ClosedHandCursor)
             self.drawing_widget.save_current_state("Move control point")
             self.drawing_widget._throttled_update()
+            return
+        
+        # Düzenleme modunda yeni çizim başlatma
+        if getattr(self.drawing_widget.bspline_tool, 'edit_mode', False):
             return
         
         # Yeni B-spline başlat
@@ -354,11 +417,15 @@ class EventHandler:
         """B-spline çizimi devam ettir"""
         # Eğer kontrol noktası seçiliyse, onu taşı
         if self.drawing_widget.bspline_tool.selected_control_point is not None:
+            # Sürüklerken kapalı el
+            self.drawing_widget.setCursor(Qt.CursorShape.ClosedHandCursor)
             transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
             if self.drawing_widget.bspline_tool.move_control_point(transformed_pos, self.drawing_widget.strokes):
                 self.drawing_widget._throttled_update()
-        # B-spline çizimi devam ediyorsa
-        elif event.buttons() == Qt.MouseButton.LeftButton and self.drawing_widget.bspline_tool.is_drawing:
+        # B-spline çizimi devam ediyorsa (edit_mode değilken)
+        elif (not getattr(self.drawing_widget.bspline_tool, 'edit_mode', False)
+              and event.buttons() == Qt.MouseButton.LeftButton
+              and self.drawing_widget.bspline_tool.is_drawing):
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
             pressure = self.drawing_widget.tablet_handler.get_optimized_pressure(event)
@@ -371,6 +438,11 @@ class EventHandler:
         if self.drawing_widget.bspline_tool.selected_control_point is not None:
             self.drawing_widget.bspline_tool.clear_selection()
             self.drawing_widget.update()
+            # Bırakınca edit modundaysa PointingHand, değilse varsayılan
+            if getattr(self.drawing_widget.bspline_tool, 'edit_mode', False):
+                self.drawing_widget.setCursor(Qt.CursorShape.PointingHandCursor)
+            else:
+                self.drawing_widget.setCursor(Qt.CursorShape.ArrowCursor)
         # B-spline çizimi tamamla
         elif self.drawing_widget.bspline_tool.is_drawing:
             stroke_data = self.drawing_widget.bspline_tool.finish_stroke()
@@ -416,6 +488,11 @@ class EventHandler:
         """Çizgi çizimi başlat"""
         pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
         transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+        # Anlık modifier'a göre shift kısıtlamasını ayarla (geçici snap + eksen kilidi)
+        try:
+            self.drawing_widget.line_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        except Exception:
+            pass
         self.drawing_widget.line_tool.start_stroke(transformed_pos, pressure)
         self.drawing_widget.update()
 
@@ -424,6 +501,11 @@ class EventHandler:
         if event.buttons() == Qt.MouseButton.LeftButton and self.drawing_widget.line_tool.is_drawing:
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+            # Anlık modifier'a göre shift kısıtlamasını güncelle
+            try:
+                self.drawing_widget.line_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            except Exception:
+                pass
             self.drawing_widget.line_tool.add_point(transformed_pos, pressure)
             self.drawing_widget._throttled_freehand_update()
 
@@ -440,6 +522,10 @@ class EventHandler:
         """Dikdörtgen çizimi başlat"""
         pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
         transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+        try:
+            self.drawing_widget.rectangle_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        except Exception:
+            pass
         self.drawing_widget.rectangle_tool.start_stroke(transformed_pos, pressure)
         self.drawing_widget.update()
 
@@ -448,6 +534,10 @@ class EventHandler:
         if event.buttons() == Qt.MouseButton.LeftButton and self.drawing_widget.rectangle_tool.is_drawing:
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+            try:
+                self.drawing_widget.rectangle_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            except Exception:
+                pass
             self.drawing_widget.rectangle_tool.add_point(transformed_pos, pressure)
             self.drawing_widget._throttled_freehand_update()
 
@@ -464,6 +554,10 @@ class EventHandler:
         """Çember çizimi başlat"""
         pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
         transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+        try:
+            self.drawing_widget.circle_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+        except Exception:
+            pass
         self.drawing_widget.circle_tool.start_stroke(transformed_pos, pressure)
         self.drawing_widget.update()
 
@@ -472,6 +566,10 @@ class EventHandler:
         if event.buttons() == Qt.MouseButton.LeftButton and self.drawing_widget.circle_tool.is_drawing:
             pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
             transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+            try:
+                self.drawing_widget.circle_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+            except Exception:
+                pass
             self.drawing_widget.circle_tool.add_point(transformed_pos, pressure)
             self.drawing_widget._throttled_freehand_update()
 
