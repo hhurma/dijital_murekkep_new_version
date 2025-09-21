@@ -224,7 +224,7 @@ class CanvasRenderer:
                     x_coords = [tl[0], br[0]]
                     y_coords = [tl[1], br[1]]
                 
-                width = stroke_data.get('width', 2) + 5
+                width = (stroke_data.get('line_width', stroke_data.get('width', 2))) + 5
                 min_x, max_x = min(x_coords) - width, max(x_coords) + width
                 min_y, max_y = min(y_coords) - width, max(y_coords) + width
                 stroke_rect = QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
@@ -232,7 +232,7 @@ class CanvasRenderer:
                 
             elif stroke_data.get('type') == 'circle':
                 center = stroke_data['center']
-                radius = stroke_data['radius'] + stroke_data.get('width', 2) + 5
+                radius = stroke_data['radius'] + (stroke_data.get('line_width', stroke_data.get('width', 2))) + 5
                 stroke_rect = QRectF(center[0] - radius, center[1] - radius, 
                                    2 * radius, 2 * radius)
                 return scene_rect.intersects(stroke_rect)
@@ -272,10 +272,10 @@ class CanvasRenderer:
     def draw_grid_background(self, painter):
         """Çizgili arka plan çiz (sadece yatay çizgiler) - Major/Minor sistem"""
         # Minor grid ayarları
-        minor_color = QColor(self.drawing_widget.background_settings['grid_color'])
+        minor_color = QColor(self.drawing_widget.background_settings.get('grid_color', QColor(200, 200, 200)))
         major_color = QColor(self.drawing_widget.background_settings.get('major_grid_color', QColor(150, 150, 150)))
-        grid_size = self.drawing_widget.background_settings['grid_size']
-        minor_width = self.drawing_widget.background_settings['grid_width']
+        grid_size = self.drawing_widget.background_settings.get('grid_size', 20)
+        minor_width = self.drawing_widget.background_settings.get('grid_width', 1)
         major_width = self.drawing_widget.background_settings.get('major_grid_width', 2)
         # Minor/major aralık: minor her çizgide, isteğe göre atlanabilir
         # 0.1 adımlı minor aralığı: faktör olarak uygula (1.0 = her çizgi)
@@ -307,11 +307,11 @@ class CanvasRenderer:
     def draw_snap_grid(self, painter):
         """Beyaz arka planda snap için hafif grid çiz - Major/Minor sistem"""
         # Minor grid ayarları
-        minor_color = QColor(self.drawing_widget.background_settings['grid_color'])
+        minor_color = QColor(self.drawing_widget.background_settings.get('grid_color', QColor(200, 200, 200)))
         major_color = QColor(self.drawing_widget.background_settings.get('major_grid_color', QColor(150, 150, 150)))
-        grid_size = self.drawing_widget.background_settings['grid_size']
-        minor_width = max(1, self.drawing_widget.background_settings['grid_width'] - 1)  # Biraz daha ince
-        major_width = max(1, self.drawing_widget.background_settings.get('major_grid_width', 2) - 1)  # Biraz daha ince
+        grid_size = self.drawing_widget.background_settings.get('grid_size', 20)
+        minor_width = max(1, int(self.drawing_widget.background_settings.get('grid_width', 1)) - 1)  # Biraz daha ince
+        major_width = max(1, int(self.drawing_widget.background_settings.get('major_grid_width', 2)) - 1)  # Biraz daha ince
         minor_interval_val = float(self.drawing_widget.background_settings.get('minor_grid_interval', 1.0))
         minor_interval_val = max(0.1, minor_interval_val)
         major_interval = self.drawing_widget.background_settings.get('major_grid_interval', 5)

@@ -60,11 +60,21 @@ class BSplineTool:
                 
             # Sadece koordinatları al
             points_only = np.array([(p.x(), p.y()) for p, pressure in downsampled_points_with_pressure])
+            # Kapalı mı? ilk ve son nokta yakınsa kapat
+            try:
+                start_p = downsampled_points_with_pressure[0][0]
+                end_p = downsampled_points_with_pressure[-1][0]
+                dx = float(end_p.x() - start_p.x())
+                dy = float(end_p.y() - start_p.y())
+                closed = (dx*dx + dy*dy) ** 0.5 <= 12.0  # ~3-4px tolerans
+            except Exception:
+                closed = False
             
             try:
                 # B-spline hesapla
                 s_factor = len(points_only) * 3.0
-                tck, u = splprep(points_only.T, s=s_factor, k=3)
+                # Kapalı ise per=True (periodic) kullan
+                tck, u = splprep(points_only.T, s=s_factor, k=3, per=closed)
                 
                 # Stroke data oluştur
                 stroke_data = {
@@ -80,6 +90,11 @@ class BSplineTool:
                     'width': self.current_width,
                     'style': (self.line_style.value if isinstance(self.line_style, Qt.PenStyle) else self.line_style),  # 'style' field'ını kullan
                     'show_control_points': self.show_control_points,  # Kontrol noktalarının görünürlüğü
+                    'closed': closed,
+                    # Dolgu alanları (kapalıysa sonradan doldurulabilir)
+                    'fill': False,
+                    'fill_color': self.current_color,
+                    'fill_opacity': 1.0,
                     'has_shadow': self.has_shadow,
                     'shadow_color': self.shadow_color,
                     'shadow_offset_x': self.shadow_offset_x,
@@ -259,13 +274,43 @@ class BSplineTool:
             u = np.array(u, dtype=float)
         
         tck = (knots, control_points.T, degree)
-        x_fine, y_fine = splev(np.linspace(0, u[-1], 200), tck)
+        # Kapalı eğri için başlangıç ve bitiş noktalarının aynı olmasını garanti et
+        ts = np.linspace(0, u[-1], 201)
+        x_fine, y_fine = splev(ts, tck)
         path = QPainterPath()
+        # Kapalı ise son noktayı ilk noktayla eşitle (sıfır uzunluklu kapanış)
+        if stroke_data.get('closed', False):
+            x_fine[-1] = x_fine[0]
+            y_fine[-1] = y_fine[0]
+        
         path.moveTo(QPointF(x_fine[0], y_fine[0]))
         for i in range(1, len(x_fine)):
             path.lineTo(QPointF(x_fine[i], y_fine[i]))
+        # Kapalıysa alt yolu kapat (son==ilk olduğundan düz çizgi oluşmaz)
+        if stroke_data.get('closed', False):
+            path.closeSubpath()
 
         ShadowRenderer.draw_shape_shadow(painter, 'path', path, stroke_data)
+
+        # Dolgu varsa fırçayı ayarla ve hem doldur hem çiz
+        fill_enabled = bool(stroke_data.get('fill', False)) and stroke_data.get('closed', False)
+        if fill_enabled:
+            from PyQt6.QtGui import QColor
+            fill_color = stroke_data.get('fill_color', Qt.GlobalColor.transparent)
+            if isinstance(fill_color, str):
+                fill_qc = QColor(fill_color)
+            else:
+                fill_qc = QColor(fill_color)
+            # Opaklığı uygula
+            try:
+                op = float(stroke_data.get('fill_opacity', 1.0))
+                op = max(0.0, min(1.0, op))
+                fill_qc.setAlphaF(op)
+            except Exception:
+                pass
+            painter.setBrush(QBrush(fill_qc))
+        else:
+            painter.setBrush(Qt.BrushStyle.NoBrush)
 
         painter.drawPath(path)
         painter.restore()

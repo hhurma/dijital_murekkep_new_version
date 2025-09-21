@@ -2743,15 +2743,12 @@ class ShapePropertiesWidget(QWidget):
             self.rectangle_group.setVisible(tool_name == 'rectangle')
         if hasattr(self, 'circle_group'):
             self.circle_group.setVisible(tool_name == 'circle')
-        # Diğer gruplar (gölge vs.) çizgiler için gösterilebilir
+        # Diğer gruplar (gölge vs.) çizgiler için sadece görünürlük ayarla
         if hasattr(self, 'stroke_shadow_group'):
             self.stroke_shadow_group.setVisible(tool_name in ['line', 'bspline'])
-            # Line için gölge kontrollerini aktif et
-            self.current_stroke_shadow_enabled = True
-            try:
-                self.stroke_shadow_checkbox.setChecked(True)
-            except Exception:
-                pass
+            # Not: Araç değişiminde gölge durumu kullanıcıdan bağımsız
+            # olarak değiştirilmemelidir. Burada checkbox durumunu
+            # değiştirmiyoruz ki seçimdeki şekillere gölge eklenmesin.
         # Freehand grubu yalnızca freehand modunda
         self.freehand_group.setVisible(False)
         # Paneli aç ve değerleri UI'ye bas

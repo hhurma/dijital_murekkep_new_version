@@ -43,6 +43,10 @@ class SettingsManager:
             'grid_color': '#C8C8C8',
             'grid_size': '20',
             'grid_width': '1',
+            'major_grid_color': '#969696',
+            'major_grid_width': '2',
+            'major_grid_interval': '5',
+            'minor_grid_interval': '1.0',
             'grid_opacity': '1.0',
             'snap_to_grid': 'False'
         }
@@ -289,6 +293,7 @@ class SettingsManager:
             'grid_width': self.get_grid_width(),
             'major_grid_width': self.get_major_grid_width(),
             'major_grid_interval': self.get_major_grid_interval(),
+            'minor_grid_interval': float(self.config.get('Background', 'minor_grid_interval', fallback='1.0')),
             'grid_opacity': self.get_grid_opacity(),
             'snap_to_grid': self.get_snap_to_grid()
         }
@@ -303,6 +308,15 @@ class SettingsManager:
         self.set_grid_width(settings.get('grid_width', 1))
         self.set_major_grid_width(settings.get('major_grid_width', 2))
         self.set_major_grid_interval(settings.get('major_grid_interval', 5))
+        # Minor grid interval (float)
+        try:
+            minor_val = float(settings.get('minor_grid_interval', 1.0))
+        except Exception:
+            minor_val = 1.0
+        # Arka planda sakla
+        if not self.config.has_section('Background'):
+            self.config.add_section('Background')
+        self.config.set('Background', 'minor_grid_interval', str(minor_val))
         self.set_grid_opacity(settings.get('grid_opacity', 1.0))
         self.set_snap_to_grid(settings.get('snap_to_grid', False))
         

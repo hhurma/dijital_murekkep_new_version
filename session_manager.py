@@ -222,8 +222,13 @@ class SessionManager:
             size = session_data['window_size']
             main_window.resize(size.get('width', 800), size.get('height', 600))
 
-        # UI'yi güncelle
-        main_window.load_settings_to_tab(main_window.get_current_drawing_widget())
+        # UI'yi güncelle + ayarlar panelini aktif tab ile senkronize et
+        try:
+            if hasattr(main_window, 'sync_background_panel_from_tab'):
+                current_widget = main_window.get_current_drawing_widget()
+                main_window.sync_background_panel_from_tab(current_widget)
+        except Exception:
+            pass
 
         # Status bar'da mesaj göster
         if hasattr(main_window, 'show_status_message'):

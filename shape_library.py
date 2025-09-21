@@ -766,9 +766,9 @@ class ShapeLibraryWidget(QWidget):
         selected_strokes = []
         for stroke_index in current_widget.selection_tool.selected_strokes:
             if stroke_index < len(current_widget.strokes):
+                # Stroke'lar zaten world koordinatlarında tutuluyor.
+                # Bu nedenle zoom/pan tersine çevrilmemeli; birebir kopya alınmalı.
                 stroke = current_widget.strokes[stroke_index].copy()
-                # Zoom transform'unu tersine çevir
-                stroke = self.remove_zoom_transform(stroke, current_widget)
                 selected_strokes.append(stroke)
                 
         if not selected_strokes:
@@ -790,9 +790,14 @@ class ShapeLibraryWidget(QWidget):
             current_category = "Genel"
             
         # Şekli havuza ekle (canvas widget ve seçili stroke indeksleriyle)
-        shape_id = self.library_manager.add_shape(current_category, name.strip(), 
-                                                 selected_strokes, description.strip(),
-                                                 current_widget, current_widget.selection_tool.selected_strokes)
+        shape_id = self.library_manager.add_shape(
+            current_category,
+            name.strip(),
+            selected_strokes,
+            description.strip(),
+            current_widget,
+            current_widget.selection_tool.selected_strokes,
+        )
         if shape_id:
             self.refresh_shapes()
             QMessageBox.information(self, "Başarılı", f"Şekil '{name}' havuza eklendi!")
@@ -900,8 +905,30 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
         inverse_zoom = 1.0 / zoom_level
         
         stroke_copy = stroke.copy()
-        
-        if stroke_copy['type'] == 'freehand':
+
+        # ImageStroke nesneleri için özel dönüşüm (attr tabanlı)
+        try:
+            if hasattr(stroke_copy, 'stroke_type') and getattr(stroke_copy, 'stroke_type', None) == 'image':
+                # Pozisyonu world koordinatına çevir
+                pos = getattr(stroke_copy, 'position', None)
+                size = getattr(stroke_copy, 'size', None)
+                if pos is not None and size is not None:
+                    world_x = (pos.x() - zoom_offset.x()) * inverse_zoom
+                    world_y = (pos.y() - zoom_offset.y()) * inverse_zoom
+                    stroke_copy.position = QPointF(world_x, world_y)
+                    stroke_copy.size = QPointF(size.x() * inverse_zoom, size.y() * inverse_zoom)
+                return stroke_copy
+        except Exception:
+            # Sessizce devam et, alttaki dict tabanlı işleme düşsün
+            pass
+
+        # Dict tabanlı stroke'lar için güvenli tür alma
+        if isinstance(stroke_copy, dict):
+            stroke_type = stroke_copy.get('type') or stroke_copy.get('stroke_type')
+        else:
+            stroke_type = None
+
+        if stroke_type == 'freehand':
             # Freehand points'leri dönüştür
             if 'points' in stroke_copy:
                 transformed_points = []
@@ -929,7 +956,7 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
                                 transformed_points.append(point)  # Olduğu gibi bırak
                 stroke_copy['points'] = transformed_points
                 
-        elif stroke_copy['type'] == 'bspline':
+        elif stroke_type == 'bspline':
             # B-spline control points'leri dönüştür
             if 'control_points' in stroke_copy:
                 transformed_points = []
@@ -939,7 +966,7 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
                     transformed_points.append([world_x, world_y])
                 stroke_copy['control_points'] = transformed_points
                 
-        elif stroke_copy['type'] == 'line':
+        elif stroke_type == 'line':
             # Line endpoints'leri dönüştür
             if 'start_point' in stroke_copy:
                 start = stroke_copy['start_point']
@@ -953,7 +980,7 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
                 world_end_y = (end[1] - zoom_offset.y()) * inverse_zoom
                 stroke_copy['end_point'] = (world_end_x, world_end_y)
                 
-        elif stroke_copy['type'] == 'rectangle':
+        elif stroke_type == 'rectangle':
             # Rectangle corner'larını dönüştür
             if 'corners' in stroke_copy:
                 transformed_corners = []
@@ -973,7 +1000,7 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
                 stroke_copy['top_left'] = (world_tl_x, world_tl_y)
                 stroke_copy['bottom_right'] = (world_br_x, world_br_y)
                 
-        elif stroke_copy['type'] == 'circle':
+        elif stroke_type == 'circle':
             # Circle center'ını dönüştür
             if 'center' in stroke_copy:
                 center = stroke_copy['center']
@@ -984,6 +1011,24 @@ Favori: {'Evet' if shape_info.get('favorite', False) else 'Hayır'}
             # Radius'u da ölçekle
             if 'radius' in stroke_copy:
                 stroke_copy['radius'] = stroke_copy['radius'] * inverse_zoom
+        elif stroke_type == 'image':
+            # Dict formatında image stroke (nadir durum) için destek
+            pos = stroke_copy.get('position')
+            size = stroke_copy.get('size')
+            # position [x, y] veya {'x':..}
+            if isinstance(pos, (list, tuple)) and len(pos) == 2:
+                world_x = (pos[0] - zoom_offset.x()) * inverse_zoom
+                world_y = (pos[1] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['position'] = [world_x, world_y]
+            elif isinstance(pos, dict) and 'x' in pos and 'y' in pos:
+                world_x = (pos['x'] - zoom_offset.x()) * inverse_zoom
+                world_y = (pos['y'] - zoom_offset.y()) * inverse_zoom
+                stroke_copy['position'] = {'x': world_x, 'y': world_y}
+
+            if isinstance(size, (list, tuple)) and len(size) == 2:
+                stroke_copy['size'] = [size[0] * inverse_zoom, size[1] * inverse_zoom]
+            elif isinstance(size, dict) and 'x' in size and 'y' in size:
+                stroke_copy['size'] = {'x': size['x'] * inverse_zoom, 'y': size['y'] * inverse_zoom}
         
         return stroke_copy
                 

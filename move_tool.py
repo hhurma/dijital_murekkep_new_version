@@ -37,10 +37,10 @@ class MoveTool:
             if abs(delta.x()) < 1.0 and abs(delta.y()) < 1.0:
                 return False
             
-            # Delta'yı grid boyutuna göre ayarla
-            grid_size = self.background_settings.get('grid_size', 20)
-            delta_x = round(delta.x() / grid_size) * grid_size
-            delta_y = round(delta.y() / grid_size) * grid_size
+            # Delta'yı etkin küçük adım (minor interval) üzerinden kuantize et
+            step = GridSnapUtils._get_minor_step(self.background_settings)
+            delta_x = round(delta.x() / step) * step
+            delta_y = round(delta.y() / step) * step
             delta = QPointF(delta_x, delta_y)
             
             # Sıfır hareket varsa çık
@@ -134,44 +134,18 @@ class MoveTool:
                 for cp in stroke['control_points']:
                     cp[0] += delta.x()
                     cp[1] += delta.y()
-                    
-                    # Grid snap aktifse control point'i snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                        snapped = GridSnapUtils.snap_point_to_grid_precise(
-                            QPointF(cp[0], cp[1]), self.background_settings
-                        )
-                        cp[0] = snapped.x()
-                        cp[1] = snapped.y()
         
         elif stroke_type == 'line':
             if 'start_point' in stroke:
                 start = list(stroke['start_point'])
                 start[0] += delta.x()
                 start[1] += delta.y()
-                
-                # Grid snap aktifse endpoint'i snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    snapped = GridSnapUtils.snap_point_to_grid_precise(
-                        QPointF(start[0], start[1]), self.background_settings
-                    )
-                    start[0] = snapped.x()
-                    start[1] = snapped.y()
-                
                 stroke['start_point'] = tuple(start)
             
             if 'end_point' in stroke:
                 end = list(stroke['end_point'])
                 end[0] += delta.x()
                 end[1] += delta.y()
-                
-                # Grid snap aktifse endpoint'i snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    snapped = GridSnapUtils.snap_point_to_grid_precise(
-                        QPointF(end[0], end[1]), self.background_settings
-                    )
-                    end[0] = snapped.x()
-                    end[1] = snapped.y()
-                
                 stroke['end_point'] = tuple(end)
         
         elif stroke_type == 'rectangle':
@@ -180,15 +154,6 @@ class MoveTool:
                     corner_list = list(corner)
                     corner_list[0] += delta.x()
                     corner_list[1] += delta.y()
-                    
-                    # Grid snap aktifse corner'ı snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                        snapped = GridSnapUtils.snap_point_to_grid_precise(
-                            QPointF(corner_list[0], corner_list[1]), self.background_settings
-                        )
-                        corner_list[0] = snapped.x()
-                        corner_list[1] = snapped.y()
-                    
                     stroke['corners'][i] = tuple(corner_list)
             elif 'top_left' in stroke and 'bottom_right' in stroke:
                 # Eski format desteği
@@ -200,17 +165,6 @@ class MoveTool:
                 br[0] += delta.x()
                 br[1] += delta.y()
                 
-                # Grid snap aktifse corner'ları snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    snapped_tl = GridSnapUtils.snap_point_to_grid_precise(
-                        QPointF(tl[0], tl[1]), self.background_settings
-                    )
-                    snapped_br = GridSnapUtils.snap_point_to_grid_precise(
-                        QPointF(br[0], br[1]), self.background_settings
-                    )
-                    tl[0], tl[1] = snapped_tl.x(), snapped_tl.y()
-                    br[0], br[1] = snapped_br.x(), snapped_br.y()
-                
                 stroke['top_left'] = tuple(tl)
                 stroke['bottom_right'] = tuple(br)
         
@@ -219,13 +173,4 @@ class MoveTool:
                 center = list(stroke['center'])
                 center[0] += delta.x()
                 center[1] += delta.y()
-                
-                # Grid snap aktifse center'ı snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                    snapped = GridSnapUtils.snap_point_to_grid_precise(
-                        QPointF(center[0], center[1]), self.background_settings
-                    )
-                    center[0] = snapped.x()
-                    center[1] = snapped.y()
-                
                 stroke['center'] = tuple(center) 

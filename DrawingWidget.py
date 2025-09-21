@@ -271,7 +271,13 @@ class DrawingWidget(QWidget):
             'background_color': Qt.GlobalColor.white,
             'grid_color': Qt.GlobalColor.lightGray,
             'grid_size': 20,
-            'grid_width': 1
+            'grid_width': 1,
+            'major_grid_color': Qt.GlobalColor.gray,
+            'major_grid_width': 2,
+            'major_grid_interval': 5,
+            'minor_grid_interval': 1.0,
+            'grid_opacity': 1.0,
+            'snap_to_grid': False
         }
 
         # Araç örnekleri

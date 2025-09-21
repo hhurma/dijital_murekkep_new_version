@@ -275,25 +275,21 @@ class MainWindow(QMainWindow):
         
         # Kes/Kopyala/Yapıştır/Sil butonları
         copy_action_toolbar = QAction(qta.icon('fa5s.copy', color='#2196F3'), "Kopyala", self)
-        copy_action_toolbar.setShortcut("Ctrl+C")
         copy_action_toolbar.setToolTip("Seçili öğeleri kopyala (Ctrl+C)")
         copy_action_toolbar.triggered.connect(self.copy_selected_strokes)
         toolbar.addAction(copy_action_toolbar)
         
         cut_action_toolbar = QAction(qta.icon('fa5s.cut', color='#FF9800'), "Kes", self)
-        cut_action_toolbar.setShortcut("Ctrl+X")
         cut_action_toolbar.setToolTip("Seçili öğeleri kes (Ctrl+X)")
         cut_action_toolbar.triggered.connect(self.cut_selected_strokes)
         toolbar.addAction(cut_action_toolbar)
         
         paste_action_toolbar = QAction(qta.icon('fa5s.paste', color='#4CAF50'), "Yapıştır", self)
-        paste_action_toolbar.setShortcut("Ctrl+V")
         paste_action_toolbar.setToolTip("Clipboard'dan yapıştır (Ctrl+V)")
         paste_action_toolbar.triggered.connect(self.paste_strokes)
         toolbar.addAction(paste_action_toolbar)
         
         delete_action_toolbar = QAction(qta.icon('fa5s.times', color='#F44336'), "Sil", self)
-        delete_action_toolbar.setShortcut("Del")
         delete_action_toolbar.setToolTip("Seçili öğeleri sil (Del)")
         delete_action_toolbar.triggered.connect(self.delete_selected_strokes)
         toolbar.addAction(delete_action_toolbar)
@@ -599,6 +595,19 @@ class MainWindow(QMainWindow):
         
         # Sinyalleri bağla
         self.settings_widget.backgroundChanged.connect(self.on_background_changed)
+        # Yeni: arka plan ayarlarını tüm sekmelere uygula
+        try:
+            from PyQt6.QtWidgets import QPushButton
+            apply_all_btn = QPushButton("Bu arka planı tüm sekmelere uygula")
+            apply_all_btn.setToolTip("Mevcut sekmenin arka plan/grid ayarlarını tüm sekmelere kopyala")
+            apply_all_btn.clicked.connect(self.apply_current_background_to_all_tabs)
+            # SettingsWidget bir layout'a sahip; alta ekleyelim
+            if hasattr(self.settings_widget, 'layout') and callable(self.settings_widget.layout):
+                lay = self.settings_widget.layout()
+                if lay is not None:
+                    lay.addWidget(apply_all_btn)
+        except Exception:
+            pass
         self.settings_widget.pdfOrientationChanged.connect(self.on_pdf_orientation_changed)
         self.settings_widget.canvasOrientationChanged.connect(self.on_canvas_orientation_changed)
         self.settings_widget.canvasSizeChanged.connect(self.on_canvas_size_changed)
@@ -821,10 +830,24 @@ class MainWindow(QMainWindow):
                 offset_x = canvas_center_x - shape_center_x
                 offset_y = canvas_center_y - shape_center_y
                 
+                # Grid'e hizalama: tüm grubu bozmadan delta'yı grid'in ince adımına yuvarla
+                try:
+                    from grid_snap_utils import GridSnapUtils
+                    bg = current_widget.background_settings if hasattr(current_widget, 'background_settings') else None
+                    step = GridSnapUtils._get_minor_step(bg)
+                    if step and step > 0:
+                        offset_x = round(offset_x / step) * step
+                        offset_y = round(offset_y / step) * step
+                        # Hassasiyet için 2 ondalık basamağa yuvarla
+                        offset_x = round(offset_x, 2)
+                        offset_y = round(offset_y, 2)
+                except Exception:
+                    pass
+                
                 # Undo için state kaydet
                 current_widget.save_current_state("Add shape from library")
                 
-                # Stroke'ları offset ile ekle ve seçili yap
+                # Stroke'ları offset ile ekle ve seçili yap (nokta bazlı snap uygulanmaz)
                 added_stroke_indices = []
                 for stroke in strokes:
                     new_stroke = self.apply_offset_to_stroke(stroke, offset_x, offset_y)
@@ -857,29 +880,40 @@ class MainWindow(QMainWindow):
     def get_stroke_points_for_bounds(self, stroke):
         """Stroke'tan bounding hesaplama için point'leri al"""
         points = []
-        
-        if stroke['type'] == 'freehand':
+        # ImageStroke nesneleri için doğrudan bounds'tan köşe noktalarını türet
+        if hasattr(stroke, 'stroke_type') and getattr(stroke, 'stroke_type', None) == 'image':
+            bounds = stroke.get_bounds()
+            return [
+                (bounds.left(), bounds.top()),
+                (bounds.right(), bounds.bottom())
+            ]
+
+        # Dict tabanlı stroke'lar için güvenli kontrol
+        if not isinstance(stroke, dict):
+            return points
+
+        if stroke.get('type') == 'freehand':
             for point in stroke.get('points', []):
                 if isinstance(point, dict):
                     points.append((point['x'], point['y']))
-                    
-        elif stroke['type'] == 'bspline':
+
+        elif stroke.get('type') == 'bspline':
             for cp in stroke.get('control_points', []):
                 points.append((cp[0], cp[1]))
-                
-        elif stroke['type'] == 'line':
+
+        elif stroke.get('type') == 'line':
             if 'start_point' in stroke:
                 points.append(stroke['start_point'])
             if 'end_point' in stroke:
                 points.append(stroke['end_point'])
-                
-        elif stroke['type'] == 'rectangle':
+
+        elif stroke.get('type') == 'rectangle':
             if 'corners' in stroke:
                 points.extend(stroke['corners'])
             elif 'top_left' in stroke and 'bottom_right' in stroke:
                 points.extend([stroke['top_left'], stroke['bottom_right']])
-                
-        elif stroke['type'] == 'circle':
+
+        elif stroke.get('type') == 'circle':
             if 'center' in stroke:
                 center = stroke['center']
                 radius = stroke.get('radius', 0)
@@ -888,14 +922,23 @@ class MainWindow(QMainWindow):
                     (center[0] - radius, center[1] - radius),
                     (center[0] + radius, center[1] + radius)
                 ])
-        
+
         return points
         
     def apply_offset_to_stroke(self, stroke, offset_x, offset_y):
         """Stroke'a offset uygula"""
+        # ImageStroke için attr tabanlı kopyalama ve kaydırma
+        if hasattr(stroke, 'stroke_type') and getattr(stroke, 'stroke_type', None) == 'image':
+            new_stroke = stroke.copy()
+            new_stroke.position = QPointF(
+                new_stroke.position.x() + offset_x,
+                new_stroke.position.y() + offset_y
+            )
+            return new_stroke
+
         new_stroke = stroke.copy()
-        
-        if new_stroke['type'] == 'freehand':
+
+        if isinstance(new_stroke, dict) and new_stroke.get('type') == 'freehand':
             if 'points' in new_stroke:
                 new_points = []
                 for point in new_stroke['points']:
@@ -907,23 +950,23 @@ class MainWindow(QMainWindow):
                     else:
                         new_points.append(point)  # Değiştirilmemiş bırak
                 new_stroke['points'] = new_points
-                
-        elif new_stroke['type'] == 'bspline':
+
+        elif isinstance(new_stroke, dict) and new_stroke.get('type') == 'bspline':
             if 'control_points' in new_stroke:
                 new_control_points = []
                 for cp in new_stroke['control_points']:
                     new_control_points.append([cp[0] + offset_x, cp[1] + offset_y])
                 new_stroke['control_points'] = new_control_points
-                
-        elif new_stroke['type'] == 'line':
+
+        elif isinstance(new_stroke, dict) and new_stroke.get('type') == 'line':
             if 'start_point' in new_stroke:
                 start = new_stroke['start_point']
                 new_stroke['start_point'] = (start[0] + offset_x, start[1] + offset_y)
             if 'end_point' in new_stroke:
                 end = new_stroke['end_point']
                 new_stroke['end_point'] = (end[0] + offset_x, end[1] + offset_y)
-                
-        elif new_stroke['type'] == 'rectangle':
+
+        elif isinstance(new_stroke, dict) and new_stroke.get('type') == 'rectangle':
             if 'corners' in new_stroke:
                 new_corners = []
                 for corner in new_stroke['corners']:
@@ -934,12 +977,12 @@ class MainWindow(QMainWindow):
                 br = new_stroke['bottom_right']
                 new_stroke['top_left'] = (tl[0] + offset_x, tl[1] + offset_y)
                 new_stroke['bottom_right'] = (br[0] + offset_x, br[1] + offset_y)
-                
-        elif new_stroke['type'] == 'circle':
+
+        elif isinstance(new_stroke, dict) and new_stroke.get('type') == 'circle':
             if 'center' in new_stroke:
                 center = new_stroke['center']
                 new_stroke['center'] = (center[0] + offset_x, center[1] + offset_y)
-        
+
         return new_stroke
 
     def get_current_drawing_widget(self):
@@ -954,6 +997,12 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'layer_manager_widget'):
             self.layer_manager_widget.set_drawing_widget(current_widget)
         self.update_pdf_controls_state()
+        # Ayarlar panelini aktif sekmenin arka planı ile senkronize et
+        try:
+            if hasattr(self, 'settings_widget') and current_widget and hasattr(current_widget, 'background_settings'):
+                self.settings_widget.set_background_settings(current_widget.background_settings)
+        except Exception:
+            pass
         
         # F12 kısa yolunun ana pencerede çalışması için focus policy
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1311,6 +1360,37 @@ class MainWindow(QMainWindow):
         # Arka plan ayarlarını kaydet
         self.settings.set_background_settings(settings)
         self.settings.save_settings()
+
+    def sync_background_panel_from_tab(self, drawing_widget):
+        """Ayarlar panelini verilen tab'ın arka plan ayarlarıyla güncelle"""
+        try:
+            if hasattr(self, 'settings_widget') and drawing_widget and hasattr(drawing_widget, 'background_settings'):
+                self.settings_widget.set_background_settings(drawing_widget.background_settings)
+        except Exception:
+            pass
+
+    def apply_current_background_to_all_tabs(self):
+        """Aktif sekmenin arka plan/grid ayarlarını tüm sekmelere uygula"""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget or not hasattr(self, 'tab_manager'):
+            return
+        bg_settings = getattr(current_widget, 'background_settings', None)
+        if not bg_settings:
+            try:
+                bg_settings = self.settings.get_background_settings()
+            except Exception:
+                bg_settings = None
+        if not bg_settings:
+            return
+        for i in range(self.tab_manager.get_tab_count()):
+            widget = self.tab_manager.get_tab_widget_at_index(i)
+            if widget and hasattr(widget, 'set_background_settings'):
+                widget.set_background_settings(bg_settings)
+        try:
+            self.settings.set_background_settings(bg_settings)
+            self.settings.save_settings()
+        except Exception:
+            pass
     
     def on_pdf_orientation_changed(self, orientation):
         """PDF yönü değiştiğinde"""
@@ -3339,20 +3419,56 @@ class MainWindow(QMainWindow):
         # Edit menüsü için kes/kopyala/yapıştır aksiyonları
         self.copy_action = QAction("Kopyala", self)
         self.copy_action.setShortcut(QKeySequence.StandardKey.Copy)
+        try:
+            self.copy_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        except Exception:
+            pass
         self.copy_action.triggered.connect(self.copy_selected_strokes)
         
         self.cut_action = QAction("Kes", self)
         self.cut_action.setShortcut(QKeySequence.StandardKey.Cut)
+        try:
+            self.cut_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        except Exception:
+            pass
         self.cut_action.triggered.connect(self.cut_selected_strokes)
         
         self.paste_action = QAction("Yapıştır", self)
         self.paste_action.setShortcut(QKeySequence.StandardKey.Paste)
+        try:
+            self.paste_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        except Exception:
+            pass
         self.paste_action.triggered.connect(self.paste_strokes)
+        
+        # Özel yapıştır (Ctrl+Shift+V) - grid'e hizalayarak, ölçekte yapıştır
+        self.special_paste_action = QAction("Özel Yapıştır", self)
+        try:
+            from PyQt6.QtGui import QKeySequence as _QKS
+            self.special_paste_action.setShortcut(_QKS("Ctrl+Shift+V"))
+        except Exception:
+            pass
+        try:
+            self.special_paste_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        except Exception:
+            pass
+        self.special_paste_action.triggered.connect(self.paste_strokes_special)
         
         # Silme aksiyonu
         self.delete_action = QAction("Sil", self)
         self.delete_action.setShortcut(QKeySequence.StandardKey.Delete)
+        try:
+            self.delete_action.setShortcutContext(Qt.ShortcutContext.ApplicationShortcut)
+        except Exception:
+            pass
         self.delete_action.triggered.connect(self.delete_selected_strokes)
+
+        # Ana pencereye ekle ki her durumda çalışsın
+        try:
+            for act in [self.copy_action, self.cut_action, self.paste_action, self.special_paste_action, self.delete_action]:
+                self.addAction(act)
+        except Exception:
+            pass
         
     def setup_menubar(self):
         """Menü çubuğunu oluştur"""
@@ -3436,6 +3552,9 @@ class MainWindow(QMainWindow):
             return
 
         if not self.clipboard_strokes:
+            # Panodan resim yapıştırmayı dene
+            if self.try_paste_image_from_clipboard():
+                return
             self.show_status_message("Yapıştırılacak öğe yok")
             return
 
@@ -3471,6 +3590,234 @@ class MainWindow(QMainWindow):
             self.clipboard_offset = QPointF(20, 20)
         
         self.show_status_message(f"{len(self.clipboard_strokes)} öğe yapıştırıldı")
+
+    def paste_strokes_special(self):
+        """Özel yapıştır: Panodan resmi/stroke'u grid'e hizalayarak ve ölçekte yapıştır."""
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            return
+        
+        # Ölçek faktörü al
+        scale_factor = 1.0
+        try:
+            scale_factor, ok = QInputDialog.getDouble(
+                self,
+                "Özel Yapıştır",
+                "Ölçek faktörü (1.0 = orijinal):",
+                1.0,
+                0.1,
+                10.0,
+                1
+            )
+            if not ok:
+                return
+        except Exception:
+            pass
+
+        # Öncelik: clipboard resim → değilse normal yapıştır (grid'e hizalı delta ile)
+        if self.try_paste_image_from_clipboard(scale_factor=scale_factor, snap_to_grid=True):
+            return
+
+        # Stroke yapıştırma (grid hizalı)
+        if not self.clipboard_strokes:
+            self.show_status_message("Yapıştırılacak öğe yok")
+            return
+        
+        if hasattr(current_widget, 'ensure_layer_editable') and not current_widget.ensure_layer_editable():
+            return
+        
+        current_widget.save_current_state("Special paste strokes")
+        
+        import copy
+        pasted_indices = []
+        
+        # Canvas merkezini world'e çevir + grid step
+        cx, cy = self.transform_canvas_to_world(
+            current_widget.width() // 2,
+            current_widget.height() // 2,
+            current_widget,
+        )
+        from grid_snap_utils import GridSnapUtils
+        step = GridSnapUtils._get_minor_step(getattr(current_widget, 'background_settings', None))
+        
+        for clipboard_stroke in self.clipboard_strokes:
+            new_stroke = copy.deepcopy(clipboard_stroke)
+            
+            # Ölçek uygula (dictionary stroke'lar için basit ölçek)
+            try:
+                self._scale_stroke_inplace(new_stroke, scale_factor)
+            except Exception:
+                pass
+            
+            # Merkeze taşı ve grid'e hizalı delta uygula
+            bounds = self.get_stroke_bounds(new_stroke)
+            if bounds:
+                center_x = (bounds[0] + bounds[2]) / 2
+                center_y = (bounds[1] + bounds[3]) / 2
+                dx = cx - center_x
+                dy = cy - center_y
+                if step and step > 0:
+                    dx = round(dx / step) * step
+                    dy = round(dy / step) * step
+                    dx = round(dx, 2)
+                    dy = round(dy, 2)
+                self.apply_offset_to_stroke_inplace(new_stroke, dx, dy)
+            else:
+                self.apply_offset_to_stroke_inplace(new_stroke, self.clipboard_offset.x(), self.clipboard_offset.y())
+            
+            current_widget.strokes.append(new_stroke)
+            pasted_indices.append(len(current_widget.strokes) - 1)
+        
+        current_widget.selection_tool.selected_strokes = pasted_indices
+        current_widget.update_shape_properties()
+        current_widget.update()
+        self.show_status_message("Özel yapıştır tamamlandı")
+
+    def _scale_stroke_inplace(self, stroke, scale_factor: float):
+        """Basit ölçek: stroke koordinatlarını merkezine göre ölçekle (dict türleri için)."""
+        if not isinstance(stroke, dict):
+            return
+        if not scale_factor or abs(scale_factor - 1.0) < 1e-6:
+            return
+        
+        bounds = self.get_stroke_bounds(stroke)
+        if not bounds:
+            return
+        cx = (bounds[0] + bounds[2]) / 2
+        cy = (bounds[1] + bounds[3]) / 2
+        
+        def s(x, y):
+            return (cx + (x - cx) * scale_factor, cy + (y - cy) * scale_factor)
+        
+        stype = stroke.get('type')
+        if stype == 'freehand' and 'points' in stroke:
+            for p in stroke['points']:
+                if isinstance(p, dict):
+                    nx, ny = s(p['x'], p['y'])
+                    p['x'], p['y'] = nx, ny
+        elif stype == 'bspline' and 'control_points' in stroke:
+            for cp in stroke['control_points']:
+                nx, ny = s(cp[0], cp[1])
+                cp[0], cp[1] = nx, ny
+        elif stype == 'line':
+            if 'start_point' in stroke:
+                nx, ny = s(stroke['start_point'][0], stroke['start_point'][1])
+                stroke['start_point'] = (nx, ny)
+            if 'end_point' in stroke:
+                nx, ny = s(stroke['end_point'][0], stroke['end_point'][1])
+                stroke['end_point'] = (nx, ny)
+        elif stype == 'rectangle':
+            if 'corners' in stroke:
+                for i, corner in enumerate(stroke['corners']):
+                    nx, ny = s(corner[0], corner[1])
+                    stroke['corners'][i] = (nx, ny)
+            elif 'top_left' in stroke and 'bottom_right' in stroke:
+                nx, ny = s(stroke['top_left'][0], stroke['top_left'][1])
+                stroke['top_left'] = (nx, ny)
+                nx, ny = s(stroke['bottom_right'][0], stroke['bottom_right'][1])
+                stroke['bottom_right'] = (nx, ny)
+        elif stype == 'circle':
+            if 'center' in stroke:
+                nx, ny = s(stroke['center'][0], stroke['center'][1])
+                stroke['center'] = (nx, ny)
+            if 'radius' in stroke:
+                stroke['radius'] = stroke['radius'] * scale_factor
+
+    def try_paste_image_from_clipboard(self, scale_factor: float = 1.0, snap_to_grid: bool = False) -> bool:
+        """Panodan (QClipboard) gelen resmi canvas'a ImageStroke olarak yapıştır.
+        scale_factor ile ölçekle, snap_to_grid True ise merkeze delta'yı grid'e hizala."""
+        try:
+            from PyQt6.QtWidgets import QApplication
+            from PyQt6.QtCore import QPointF
+            from image_stroke import ImageStroke
+            import uuid
+            import os
+        except Exception:
+            return False
+
+        clipboard = QApplication.clipboard()
+        if clipboard is None:
+            return False
+
+        mime = clipboard.mimeData()
+        if mime is None or not mime.hasImage():
+            return False
+
+        # QImage olarak al
+        qimage = clipboard.image()
+        if qimage is None or qimage.isNull():
+            return False
+
+        # Kaydetme klasörü
+        try:
+            os.makedirs(self.image_cache_dir, exist_ok=True)
+        except Exception:
+            return False
+
+        # Benzersiz dosya adı
+        filename = f"clipboard_{uuid.uuid4().hex}.png"
+        file_path = os.path.join(self.image_cache_dir, filename)
+
+        # PNG olarak yaz
+        if not qimage.save(file_path, "PNG"):
+            return False
+
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            return False
+
+        # Undo için state kaydet
+        current_widget.save_current_state("Paste image from clipboard")
+
+        # Canvas merkezini world'e çevir
+        cx, cy = self.transform_canvas_to_world(
+            current_widget.width() // 2,
+            current_widget.height() // 2,
+            current_widget,
+        )
+
+        # Önce (0,0) konumla oluştur, sonra merkeze göre ayarla
+        image_stroke = ImageStroke(file_path, QPointF(0, 0), cache_manager=None)
+        # Ölçek uygula (KeepAspectRatio korunur)
+        try:
+            if scale_factor and abs(scale_factor - 1.0) > 1e-6:
+                new_w = max(1.0, image_stroke.size.x() * scale_factor)
+                new_h = max(1.0, image_stroke.size.y() * scale_factor)
+                image_stroke.set_size(QPointF(new_w, new_h))
+        except Exception:
+            pass
+        try:
+            # Üst-sol köşe = merkez - (genişlik/2, yükseklik/2)
+            pos = QPointF(cx - image_stroke.size.x() / 2, cy - image_stroke.size.y() / 2)
+            # Grid'e hizalı yerleşim istenirse delta'yı grid step'e yuvarla
+            if snap_to_grid:
+                try:
+                    from grid_snap_utils import GridSnapUtils
+                    step = GridSnapUtils._get_minor_step(getattr(current_widget, 'background_settings', None))
+                    dx = pos.x() - image_stroke.position.x()
+                    dy = pos.y() - image_stroke.position.y()
+                    if step and step > 0:
+                        dx = round(dx / step) * step
+                        dy = round(dy / step) * step
+                        dx = round(dx, 2)
+                        dy = round(dy, 2)
+                        pos = QPointF(image_stroke.position.x() + dx, image_stroke.position.y() + dy)
+                except Exception:
+                    pass
+            image_stroke.set_position(pos)
+        except Exception:
+            # Hata olursa (50,50) fallback
+            image_stroke.set_position(QPointF(50, 50))
+
+        # Ekle ve seç
+        current_widget.strokes.append(image_stroke)
+        idx = len(current_widget.strokes) - 1
+        current_widget.selection_tool.selected_strokes = [idx]
+        current_widget.set_active_tool("select")
+        self.set_tool("select")
+        current_widget.update()
+        self.show_status_message("Pano resmi eklendi")
+        return True
         
     def delete_selected_strokes(self):
         """Seçili stroke'ları sil"""
