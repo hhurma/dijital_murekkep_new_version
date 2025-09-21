@@ -84,6 +84,17 @@ class SettingsManager:
             'inner': 'False',
             'quality': 'medium'
         }
+
+        # Araç bazlı override bölümleri
+        for section in ['ShadowDefaults.Line','ShadowDefaults.Rectangle','ShadowDefaults.Circle','ShadowDefaults.BSpline','ShadowDefaults.Freehand']:
+            self.config[section] = {}
+
+        # Dolgu varsayılanları (dikdörtgen/daire)
+        self.config['FillDefaults'] = {
+            'enabled': 'False',
+            'color': '#FFFFFF',
+            'opacity': '1.0'
+        }
         
         self.save_settings()
         
@@ -305,9 +316,14 @@ class SettingsManager:
         self.config.set('Tools', 'active_tool', tool)
 
     # Gölge varsayılanları
-    def get_shadow_defaults(self):
+    def get_shadow_defaults(self, tool_key: str | None = None):
         from PyQt6.QtGui import QColor
         sec = 'ShadowDefaults'
+        # Araç bazlı override mevcutsa kullan
+        if tool_key:
+            tool_section = f'ShadowDefaults.{tool_key}'
+            if self.config.has_section(tool_section) and self.config.items(tool_section):
+                sec = tool_section
         enabled = self.config.getboolean(sec, 'enabled', fallback=False)
         color = QColor(self.config.get(sec, 'color', fallback='#000000'))
         offset_x = self.config.getint(sec, 'offset_x', fallback=5)
@@ -329,8 +345,10 @@ class SettingsManager:
             'shadow_quality': quality,
         }
 
-    def set_shadow_defaults(self, payload):
+    def set_shadow_defaults(self, payload, tool_key: str | None = None):
         sec = 'ShadowDefaults'
+        if tool_key:
+            sec = f'ShadowDefaults.{tool_key}'
         if not self.config.has_section(sec):
             self.config.add_section(sec)
         if 'has_shadow' in payload:
@@ -351,6 +369,26 @@ class SettingsManager:
             self.config.set(sec, 'inner', str(bool(payload['inner_shadow'])))
         if 'shadow_quality' in payload:
             self.config.set(sec, 'quality', str(payload['shadow_quality']))
+
+    # Dolgu varsayılanları
+    def get_fill_defaults(self):
+        from PyQt6.QtGui import QColor
+        sec = 'FillDefaults'
+        enabled = self.config.getboolean(sec, 'enabled', fallback=False)
+        color = QColor(self.config.get(sec, 'color', fallback='#FFFFFF'))
+        opacity = self.config.getfloat(sec, 'opacity', fallback=1.0)
+        return {'enabled': enabled, 'color': color, 'opacity': opacity}
+
+    def set_fill_defaults(self, payload):
+        sec = 'FillDefaults'
+        if not self.config.has_section(sec):
+            self.config.add_section(sec)
+        if 'enabled' in payload:
+            self.config.set(sec, 'enabled', str(bool(payload['enabled'])))
+        if 'color' in payload:
+            self.config.set(sec, 'color', payload['color'].name())
+        if 'opacity' in payload:
+            self.config.set(sec, 'opacity', str(float(payload['opacity'])))
         
     # Pencere ayarları
     def get_window_size(self):

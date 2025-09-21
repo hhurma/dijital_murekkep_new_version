@@ -603,6 +603,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.canvasOrientationChanged.connect(self.on_canvas_orientation_changed)
         self.settings_widget.canvasSizeChanged.connect(self.on_canvas_size_changed)
         self.settings_widget.shadowDefaultsChanged.connect(self.on_shadow_defaults_changed)
+        self.settings_widget.fillDefaultsChanged.connect(self.on_fill_defaults_changed)
         
         self.settings_dock.setWidget(self.settings_widget)
         self.settings_dock.setFloating(False)
@@ -1484,7 +1485,7 @@ class MainWindow(QMainWindow):
         drawing_widget.set_background_settings(bg_settings)
 
         # Gölge varsayılanlarını araçlara uygula
-        shadow_defaults = self.settings.get_shadow_defaults()
+        shadow_defaults = self.settings.get_shadow_defaults(None)
         if hasattr(drawing_widget, 'line_tool'):
             drawing_widget.line_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
             drawing_widget.line_tool.set_shadow_color(shadow_defaults['shadow_color'])
@@ -1542,18 +1543,26 @@ class MainWindow(QMainWindow):
     def on_shadow_defaults_changed(self, payload):
         """Ayarlar panelinden Varsayılan Gölge değişti"""
         try:
-            self.settings.set_shadow_defaults(payload)
+            tool_key = payload.pop('tool_key', None)
+            self.settings.set_shadow_defaults(payload, tool_key)
             self.settings.save_settings()
         except Exception:
             pass
         # Aktif sekmedeki araçlara hemen uygula
         current_widget = self.get_current_drawing_widget()
         if current_widget:
-            defaults = self.settings.get_shadow_defaults()
+            defaults = self.settings.get_shadow_defaults(tool_key)
             for tool_name in ['line_tool','freehand_tool','bspline_tool','rectangle_tool','circle_tool']:
                 tool = getattr(current_widget, tool_name, None)
                 if not tool:
                     continue
+                # Araç anahtarı verilmişse sadece ona uygula
+                if tool_key:
+                    map_key = {
+                        'Line':'line_tool','Rectangle':'rectangle_tool','Circle':'circle_tool','BSpline':'bspline_tool','Freehand':'freehand_tool'
+                    }.get(tool_key)
+                    if map_key != tool_name:
+                        continue
                 try:
                     tool.set_shadow_enabled(defaults['has_shadow'])
                     tool.set_shadow_color(defaults['shadow_color'])
@@ -1563,6 +1572,28 @@ class MainWindow(QMainWindow):
                     tool.set_shadow_opacity(defaults['shadow_opacity'])
                     tool.set_inner_shadow(defaults['inner_shadow'])
                     tool.set_shadow_quality(defaults['shadow_quality'])
+                except Exception:
+                    continue
+            current_widget.update()
+
+    def on_fill_defaults_changed(self, payload):
+        try:
+            self.settings.set_fill_defaults(payload)
+            self.settings.save_settings()
+        except Exception:
+            pass
+        # Aktif tabdaki dikdörtgen/daire araçlarına uygula
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            d = self.settings.get_fill_defaults()
+            for tool_attr in ['rectangle_tool','circle_tool']:
+                tool = getattr(current_widget, tool_attr, None)
+                if not tool:
+                    continue
+                try:
+                    tool.set_filled(d['enabled'])
+                    tool.set_fill_color(d['color'])
+                    tool.set_fill_opacity(d['opacity'])
                 except Exception:
                     continue
             current_widget.update()

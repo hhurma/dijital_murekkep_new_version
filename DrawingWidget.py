@@ -491,6 +491,11 @@ class DrawingWidget(QWidget):
             self.rectangle_tool.set_filled(filled)
         if hasattr(self.circle_tool, 'set_filled'):
             self.circle_tool.set_filled(filled)
+        try:
+            if self.main_window and hasattr(self.main_window, 'settings'):
+                self.main_window.settings.set_fill_defaults({'enabled': filled})
+        except Exception:
+            pass
             
     def set_current_opacity(self, opacity):
         """Aktif opacity'yi ayarla ve araçlara bildir"""
@@ -501,6 +506,12 @@ class DrawingWidget(QWidget):
             self.rectangle_tool.set_fill_opacity(opacity)
         if hasattr(self.circle_tool, 'set_fill_opacity'):
             self.circle_tool.set_fill_opacity(opacity)
+        # Varsayılan dolguya yaz
+        try:
+            if self.main_window and hasattr(self.main_window, 'settings'):
+                self.main_window.settings.set_fill_defaults({'opacity': opacity})
+        except Exception:
+            pass
             
     def set_fill_color(self, color):
         """Dolgu rengini ayarla ve araçlara bildir"""
@@ -512,6 +523,11 @@ class DrawingWidget(QWidget):
             self.rectangle_tool.set_fill_color(self.fill_color)
         if hasattr(self.circle_tool, 'set_fill_color'):
             self.circle_tool.set_fill_color(self.fill_color)
+        try:
+            if self.main_window and hasattr(self.main_window, 'settings'):
+                self.main_window.settings.set_fill_defaults({'color': self.fill_color})
+        except Exception:
+            pass
             
     def set_line_style(self, style):
         """Çizgi stilini ayarla ve araçlara bildir"""

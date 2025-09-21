@@ -12,6 +12,7 @@ class SettingsWidget(QWidget):
     canvasOrientationChanged = pyqtSignal(str)
     canvasSizeChanged = pyqtSignal(str)
     shadowDefaultsChanged = pyqtSignal(dict)
+    fillDefaultsChanged = pyqtSignal(dict)
     
     BACKGROUND_TYPES = {
         'solid': 'Düz Renk',
@@ -51,6 +52,13 @@ class SettingsWidget(QWidget):
         
     def setup_ui(self):
         """UI bileşenlerini oluştur"""
+        from PyQt6.QtWidgets import QScrollArea, QWidget as QtWidget
+        main_layout = QVBoxLayout()
+        main_layout.setContentsMargins(5, 5, 5, 5)
+        main_layout.setSpacing(0)
+        self.scroll_area = QScrollArea()
+        self.scroll_area.setWidgetResizable(True)
+        scroll_widget = QtWidget()
         layout = QVBoxLayout()
         layout.setContentsMargins(5, 5, 5, 5)
         layout.setSpacing(8)
@@ -297,6 +305,21 @@ class SettingsWidget(QWidget):
         shadow_group = QGroupBox("Varsayılan Gölge")
         sh_layout = QVBoxLayout()
 
+        # Araç seçimi (global veya araç bazlı)
+        tool_row = QHBoxLayout()
+        tool_row.addWidget(QLabel("Araç:"))
+        self.shadow_tool_combo = QComboBox()
+        # key -> etiket
+        self.shadow_tool_combo.addItem("Genel", "")
+        self.shadow_tool_combo.addItem("Line", "Line")
+        self.shadow_tool_combo.addItem("Rectangle", "Rectangle")
+        self.shadow_tool_combo.addItem("Circle", "Circle")
+        self.shadow_tool_combo.addItem("B‑Spline", "BSpline")
+        self.shadow_tool_combo.addItem("Freehand", "Freehand")
+        tool_row.addWidget(self.shadow_tool_combo)
+        tool_row.addStretch()
+        sh_layout.addLayout(tool_row)
+
         # Etkin
         sh_enabled_layout = QHBoxLayout()
         self.shadow_enabled_checkbox = QCheckBox("Gölge Kullan")
@@ -368,6 +391,11 @@ class SettingsWidget(QWidget):
 
         # Başlangıç değerleri
         self.load_shadow_defaults_from_settings()
+        # Araç değişince mevcut ayarları yükleyelim
+        def on_tool_combo_changed(_):
+            self.load_shadow_defaults_from_settings()
+            self.emit_shadow_defaults()
+        self.shadow_tool_combo.currentIndexChanged.connect(on_tool_combo_changed)
 
         # Değişiklikleri dinle
         self.shadow_enabled_checkbox.toggled.connect(self.emit_shadow_defaults)
@@ -379,8 +407,14 @@ class SettingsWidget(QWidget):
         self.shadow_inner_checkbox.toggled.connect(self.emit_shadow_defaults)
         self.shadow_quality_combo.currentIndexChanged.connect(self.emit_shadow_defaults)
         
+        # Fill defaults section
+        self.add_fill_defaults_section(layout)
+        
         layout.addStretch()
-        self.setLayout(layout)
+        scroll_widget.setLayout(layout)
+        self.scroll_area.setWidget(scroll_widget)
+        main_layout.addWidget(self.scroll_area)
+        self.setLayout(main_layout)
         
     def update_bg_color_button(self):
         """Arka plan renk butonunu güncelle"""
@@ -440,7 +474,8 @@ class SettingsWidget(QWidget):
         try:
             from settings_manager import SettingsManager
             mgr = SettingsManager()
-            defaults = mgr.get_shadow_defaults()
+            tool_key = self.shadow_tool_combo.currentData()
+            defaults = mgr.get_shadow_defaults(tool_key)
         except Exception:
             from PyQt6.QtGui import QColor
             defaults = {
@@ -496,7 +531,15 @@ class SettingsWidget(QWidget):
             'inner_shadow': self.shadow_inner_checkbox.isChecked(),
             'shadow_quality': self.shadow_quality_combo.currentData(),
         }
+        tool_key = self.shadow_tool_combo.currentData()
+        payload['tool_key'] = tool_key
         self.shadowDefaultsChanged.emit(payload)
+
+        # --- Varsayılan Dolgu ---
+        # (Bu fonksiyon içinde değil; aşağıda ayrı bölümde sinyallenecek)
+
+        
+        
             
     def on_canvas_orientation_changed(self):
         """Canvas yönü değiştiğinde"""
@@ -670,3 +713,70 @@ class SettingsWidget(QWidget):
             if self.canvas_size_combo.itemData(i) == size:
                 self.canvas_size_combo.setCurrentIndex(i)
                 break 
+
+    def add_fill_defaults_section(self, parent_layout: QVBoxLayout):
+        group = QGroupBox("Varsayılan Dolgu")
+        lay = QVBoxLayout()
+        row1 = QHBoxLayout()
+        self.fill_enabled_checkbox = QCheckBox("Dolgu Kullan")
+        row1.addWidget(self.fill_enabled_checkbox)
+        row1.addStretch()
+        lay.addLayout(row1)
+
+        row2 = QHBoxLayout()
+        row2.addWidget(QLabel("Renk:"))
+        self.fill_color_button = QPushButton()
+        self.fill_color_button.setFixedSize(30,25)
+        self.fill_color_button.clicked.connect(self.choose_fill_default_color)
+        row2.addWidget(self.fill_color_button)
+        row2.addStretch()
+        lay.addLayout(row2)
+
+        row3 = QHBoxLayout()
+        row3.addWidget(QLabel("Şeffaflık:"))
+        self.fill_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.fill_opacity_slider.setRange(0,100)
+        self.fill_opacity_label = QLabel("100%")
+        self.fill_opacity_label.setMinimumWidth(35)
+        row3.addWidget(self.fill_opacity_slider)
+        row3.addWidget(self.fill_opacity_label)
+        lay.addLayout(row3)
+
+        group.setLayout(lay)
+        parent_layout.addWidget(group)
+
+        # Başlangıç değerleri yükle
+        self.load_fill_defaults_from_settings()
+        # Eventler
+        self.fill_enabled_checkbox.toggled.connect(self.emit_fill_defaults)
+        self.fill_opacity_slider.valueChanged.connect(self.on_fill_opacity_slider)
+
+    def load_fill_defaults_from_settings(self):
+        try:
+            from settings_manager import SettingsManager
+            mgr = SettingsManager()
+            d = mgr.get_fill_defaults()
+        except Exception:
+            from PyQt6.QtGui import QColor
+            d = {'enabled': False, 'color': QColor('#FFFFFF'), 'opacity': 1.0}
+        self.fill_enabled_checkbox.setChecked(d['enabled'])
+        color_hex = d['color'].name()
+        self.fill_color_button.setStyleSheet(f"background-color: {color_hex}; border:1px solid #999; border-radius:3px;")
+        self.fill_opacity_slider.setValue(int(d['opacity']*100))
+        self.fill_opacity_label.setText(f"{int(d['opacity']*100)}%")
+
+    def choose_fill_default_color(self):
+        color = QColorDialog.getColor(QColor('#FFFFFF'), self)
+        if color.isValid():
+            self.fill_color_button.setStyleSheet(f"background-color: {color.name()}; border:1px solid #999; border-radius:3px;")
+            self.emit_fill_defaults()
+
+    def on_fill_opacity_slider(self, value):
+        self.fill_opacity_label.setText(f"{value}%")
+        self.emit_fill_defaults()
+
+    def emit_fill_defaults(self):
+        # Rengi butondan oku
+        color = self.fill_color_button.palette().button().color()
+        payload = {'enabled': self.fill_enabled_checkbox.isChecked(), 'color': color, 'opacity': self.fill_opacity_slider.value()/100.0}
+        self.fillDefaultsChanged.emit(payload) 
