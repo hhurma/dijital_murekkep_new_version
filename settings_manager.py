@@ -66,7 +66,23 @@ class SettingsManager:
         
         # Canvas ayarları
         self.config['Canvas'] = {
-            'orientation': 'landscape'  # portrait veya landscape
+            'orientation': 'landscape',  # portrait veya landscape
+            'size': 'small',
+            'custom_width': '1200',
+            'custom_height': '800'
+        }
+
+        # Gölge varsayılanları (tüm araçlar için ortak)
+        self.config['ShadowDefaults'] = {
+            'enabled': 'False',
+            'color': '#000000',
+            'offset_x': '5',
+            'offset_y': '5',
+            'blur': '10',
+            'size': '0',
+            'opacity': '0.7',
+            'inner': 'False',
+            'quality': 'medium'
         }
         
         self.save_settings()
@@ -287,6 +303,54 @@ class SettingsManager:
     def set_active_tool(self, tool):
         """Aktif aracı kaydet"""
         self.config.set('Tools', 'active_tool', tool)
+
+    # Gölge varsayılanları
+    def get_shadow_defaults(self):
+        from PyQt6.QtGui import QColor
+        sec = 'ShadowDefaults'
+        enabled = self.config.getboolean(sec, 'enabled', fallback=False)
+        color = QColor(self.config.get(sec, 'color', fallback='#000000'))
+        offset_x = self.config.getint(sec, 'offset_x', fallback=5)
+        offset_y = self.config.getint(sec, 'offset_y', fallback=5)
+        blur = self.config.getint(sec, 'blur', fallback=10)
+        size = self.config.getint(sec, 'size', fallback=0)
+        opacity = self.config.getfloat(sec, 'opacity', fallback=0.7)
+        inner = self.config.getboolean(sec, 'inner', fallback=False)
+        quality = self.config.get(sec, 'quality', fallback='medium')
+        return {
+            'has_shadow': enabled,
+            'shadow_color': color,
+            'shadow_offset_x': offset_x,
+            'shadow_offset_y': offset_y,
+            'shadow_blur': blur,
+            'shadow_size': size,
+            'shadow_opacity': opacity,
+            'inner_shadow': inner,
+            'shadow_quality': quality,
+        }
+
+    def set_shadow_defaults(self, payload):
+        sec = 'ShadowDefaults'
+        if not self.config.has_section(sec):
+            self.config.add_section(sec)
+        if 'has_shadow' in payload:
+            self.config.set(sec, 'enabled', str(bool(payload['has_shadow'])))
+        if 'shadow_color' in payload:
+            self.config.set(sec, 'color', payload['shadow_color'].name())
+        if 'shadow_offset_x' in payload:
+            self.config.set(sec, 'offset_x', str(int(payload['shadow_offset_x'])))
+        if 'shadow_offset_y' in payload:
+            self.config.set(sec, 'offset_y', str(int(payload['shadow_offset_y'])))
+        if 'shadow_blur' in payload:
+            self.config.set(sec, 'blur', str(int(payload['shadow_blur'])))
+        if 'shadow_size' in payload:
+            self.config.set(sec, 'size', str(int(payload['shadow_size'])))
+        if 'shadow_opacity' in payload:
+            self.config.set(sec, 'opacity', str(float(payload['shadow_opacity'])))
+        if 'inner_shadow' in payload:
+            self.config.set(sec, 'inner', str(bool(payload['inner_shadow'])))
+        if 'shadow_quality' in payload:
+            self.config.set(sec, 'quality', str(payload['shadow_quality']))
         
     # Pencere ayarları
     def get_window_size(self):
@@ -354,3 +418,22 @@ class SettingsManager:
         if not self.config.has_section('Canvas'):
             self.config.add_section('Canvas')
         self.config.set('Canvas', 'orientation', orientation) 
+
+    def get_canvas_size_key(self):
+        return self.config.get('Canvas', 'size', fallback='small')
+
+    def set_canvas_size_key(self, size_key):
+        if not self.config.has_section('Canvas'):
+            self.config.add_section('Canvas')
+        self.config.set('Canvas', 'size', size_key)
+
+    def get_custom_canvas_size(self):
+        w = self.config.getint('Canvas', 'custom_width', fallback=1200)
+        h = self.config.getint('Canvas', 'custom_height', fallback=800)
+        return w, h
+
+    def set_custom_canvas_size(self, width, height):
+        if not self.config.has_section('Canvas'):
+            self.config.add_section('Canvas')
+        self.config.set('Canvas', 'custom_width', str(int(width)))
+        self.config.set('Canvas', 'custom_height', str(int(height)))

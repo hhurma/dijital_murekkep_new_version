@@ -11,6 +11,7 @@ class SettingsWidget(QWidget):
     pdfOrientationChanged = pyqtSignal(str)
     canvasOrientationChanged = pyqtSignal(str)
     canvasSizeChanged = pyqtSignal(str)
+    shadowDefaultsChanged = pyqtSignal(dict)
     
     BACKGROUND_TYPES = {
         'solid': 'Düz Renk',
@@ -21,7 +22,9 @@ class SettingsWidget(QWidget):
     CANVAS_SIZES = {
         'small': 'Küçük (827x1169)',
         'medium': 'Orta (1240x1754)',
-        'large': 'Büyük (2480x3508)'
+        'large': 'Büyük (2480x3508)',
+        'custom': 'Özel...',
+        'screen': 'Ekran'
     }
     
     def __init__(self, parent=None):
@@ -289,6 +292,92 @@ class SettingsWidget(QWidget):
         
         bg_group.setLayout(bg_layout)
         layout.addWidget(bg_group)
+
+        # Varsayılan Gölge Ayarları
+        shadow_group = QGroupBox("Varsayılan Gölge")
+        sh_layout = QVBoxLayout()
+
+        # Etkin
+        sh_enabled_layout = QHBoxLayout()
+        self.shadow_enabled_checkbox = QCheckBox("Gölge Kullan")
+        sh_enabled_layout.addWidget(self.shadow_enabled_checkbox)
+        sh_enabled_layout.addStretch()
+        sh_layout.addLayout(sh_enabled_layout)
+
+        # Renk
+        sh_color_layout = QHBoxLayout()
+        sh_color_layout.addWidget(QLabel("Renk:"))
+        self.shadow_color_button = QPushButton()
+        self.shadow_color_button.setFixedSize(30, 25)
+        self.shadow_color_button.clicked.connect(self.choose_shadow_default_color)
+        sh_color_layout.addWidget(self.shadow_color_button)
+        sh_color_layout.addStretch()
+        sh_layout.addLayout(sh_color_layout)
+
+        # Offset
+        sh_off_layout = QHBoxLayout()
+        sh_off_layout.addWidget(QLabel("Offset:"))
+        self.shadow_off_x = QSpinBox()
+        self.shadow_off_x.setRange(-50, 50)
+        self.shadow_off_y = QSpinBox()
+        self.shadow_off_y.setRange(-50, 50)
+        sh_off_layout.addWidget(self.shadow_off_x)
+        sh_off_layout.addWidget(self.shadow_off_y)
+        sh_off_layout.addStretch()
+        sh_layout.addLayout(sh_off_layout)
+
+        # Blur / Size
+        sh_blur_layout = QHBoxLayout()
+        sh_blur_layout.addWidget(QLabel("Bulanıklık:"))
+        self.shadow_blur_spin = QSpinBox()
+        self.shadow_blur_spin.setRange(0, 50)
+        sh_blur_layout.addWidget(self.shadow_blur_spin)
+        sh_blur_layout.addWidget(QLabel("Boyut:"))
+        self.shadow_size_spin = QSpinBox()
+        self.shadow_size_spin.setRange(0, 50)
+        sh_blur_layout.addWidget(self.shadow_size_spin)
+        sh_blur_layout.addStretch()
+        sh_layout.addLayout(sh_blur_layout)
+
+        # Opacity
+        sh_op_layout = QHBoxLayout()
+        sh_op_layout.addWidget(QLabel("Şeffaflık:"))
+        self.shadow_opacity_slider = QSlider(Qt.Orientation.Horizontal)
+        self.shadow_opacity_slider.setRange(0, 100)
+        self.shadow_opacity_label = QLabel("70%")
+        self.shadow_opacity_label.setMinimumWidth(35)
+        sh_op_layout.addWidget(self.shadow_opacity_slider)
+        sh_op_layout.addWidget(self.shadow_opacity_label)
+        sh_layout.addLayout(sh_op_layout)
+
+        # İç/Dış ve kalite
+        sh_type_layout = QHBoxLayout()
+        self.shadow_inner_checkbox = QCheckBox("İç Gölge")
+        sh_type_layout.addWidget(self.shadow_inner_checkbox)
+        sh_type_layout.addWidget(QLabel("Kalite:"))
+        self.shadow_quality_combo = QComboBox()
+        self.shadow_quality_combo.addItem("Düşük", "low")
+        self.shadow_quality_combo.addItem("Orta", "medium")
+        self.shadow_quality_combo.addItem("Yüksek", "high")
+        sh_type_layout.addWidget(self.shadow_quality_combo)
+        sh_type_layout.addStretch()
+        sh_layout.addLayout(sh_type_layout)
+
+        shadow_group.setLayout(sh_layout)
+        layout.addWidget(shadow_group)
+
+        # Başlangıç değerleri
+        self.load_shadow_defaults_from_settings()
+
+        # Değişiklikleri dinle
+        self.shadow_enabled_checkbox.toggled.connect(self.emit_shadow_defaults)
+        self.shadow_off_x.valueChanged.connect(self.emit_shadow_defaults)
+        self.shadow_off_y.valueChanged.connect(self.emit_shadow_defaults)
+        self.shadow_blur_spin.valueChanged.connect(self.emit_shadow_defaults)
+        self.shadow_size_spin.valueChanged.connect(self.emit_shadow_defaults)
+        self.shadow_opacity_slider.valueChanged.connect(self.on_shadow_opacity_slider)
+        self.shadow_inner_checkbox.toggled.connect(self.emit_shadow_defaults)
+        self.shadow_quality_combo.currentIndexChanged.connect(self.emit_shadow_defaults)
         
         layout.addStretch()
         self.setLayout(layout)
@@ -329,9 +418,85 @@ class SettingsWidget(QWidget):
     def on_canvas_size_changed(self):
         """Canvas boyutu değiştiğinde"""
         current_data = self.canvas_size_combo.currentData()
-        if current_data:
-            self.canvas_size = current_data
+        if not current_data:
+            return
+        self.canvas_size = current_data
+        if current_data == 'custom':
+            from PyQt6.QtWidgets import QInputDialog
+            width, ok_w = QInputDialog.getInt(self, "Özel Genişlik", "Genişlik (px)", 1200, 100, 10000, 10)
+            if not ok_w:
+                return
+            height, ok_h = QInputDialog.getInt(self, "Özel Yükseklik", "Yükseklik (px)", 800, 100, 10000, 10)
+            if not ok_h:
+                return
+            self.canvasSizeChanged.emit(f"custom:{width}x{height}")
+        elif current_data == 'screen':
+            self.canvasSizeChanged.emit('screen')
+        else:
             self.canvasSizeChanged.emit(current_data)
+
+    # ---------- Varsayılan Gölge Yardımcıları ----------
+    def load_shadow_defaults_from_settings(self):
+        try:
+            from settings_manager import SettingsManager
+            mgr = SettingsManager()
+            defaults = mgr.get_shadow_defaults()
+        except Exception:
+            from PyQt6.QtGui import QColor
+            defaults = {
+                'has_shadow': False,
+                'shadow_color': QColor('#000000'),
+                'shadow_offset_x': 5,
+                'shadow_offset_y': 5,
+                'shadow_blur': 10,
+                'shadow_size': 0,
+                'shadow_opacity': 0.7,
+                'inner_shadow': False,
+                'shadow_quality': 'medium'
+            }
+        self.shadow_enabled_checkbox.setChecked(defaults['has_shadow'])
+        self.set_shadow_color_button(defaults['shadow_color'])
+        self.shadow_off_x.setValue(defaults['shadow_offset_x'])
+        self.shadow_off_y.setValue(defaults['shadow_offset_y'])
+        self.shadow_blur_spin.setValue(defaults['shadow_blur'])
+        self.shadow_size_spin.setValue(defaults['shadow_size'])
+        self.shadow_opacity_slider.setValue(int(defaults['shadow_opacity'] * 100))
+        self.shadow_opacity_label.setText(f"{int(defaults['shadow_opacity']*100)}%")
+        self.shadow_inner_checkbox.setChecked(defaults['inner_shadow'])
+        for i in range(self.shadow_quality_combo.count()):
+            if self.shadow_quality_combo.itemData(i) == defaults['shadow_quality']:
+                self.shadow_quality_combo.setCurrentIndex(i)
+                break
+
+    def set_shadow_color_button(self, color: QColor):
+        color_hex = color.name()
+        self.shadow_color_button.setStyleSheet(f"background-color: {color_hex}; border:1px solid #999; border-radius:3px;")
+
+    def choose_shadow_default_color(self):
+        color = QColorDialog.getColor(QColor('#000000'), self)
+        if color.isValid():
+            self.set_shadow_color_button(color)
+            self.emit_shadow_defaults()
+
+    def on_shadow_opacity_slider(self, value):
+        self.shadow_opacity_label.setText(f"{value}%")
+        self.emit_shadow_defaults()
+
+    def emit_shadow_defaults(self):
+        # Renk butonundaki rengi palette üzerinden al
+        color = self.shadow_color_button.palette().button().color()
+        payload = {
+            'has_shadow': self.shadow_enabled_checkbox.isChecked(),
+            'shadow_color': color,
+            'shadow_offset_x': self.shadow_off_x.value(),
+            'shadow_offset_y': self.shadow_off_y.value(),
+            'shadow_blur': self.shadow_blur_spin.value(),
+            'shadow_size': self.shadow_size_spin.value(),
+            'shadow_opacity': self.shadow_opacity_slider.value()/100.0,
+            'inner_shadow': self.shadow_inner_checkbox.isChecked(),
+            'shadow_quality': self.shadow_quality_combo.currentData(),
+        }
+        self.shadowDefaultsChanged.emit(payload)
             
     def on_canvas_orientation_changed(self):
         """Canvas yönü değiştiğinde"""

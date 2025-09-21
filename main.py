@@ -247,8 +247,30 @@ class MainWindow(QMainWindow):
         
         toolbar.addSeparator()
         
+        # Paneller: Ayarlar, Şekil Havuzu, Katmanlar
+        settings_panel_action_tb = QAction(qta.icon('fa5s.cog', color='#607D8B'), "Ayarlar Paneli", self)
+        settings_panel_action_tb.setToolTip("Ayarlar panelini göster/gizle")
+        settings_panel_action_tb.triggered.connect(self.toggle_background_dock)
+        toolbar.addAction(settings_panel_action_tb)
 
-        
+        shape_library_toggle_tb = QAction(qta.icon('fa5s.shapes', color='#9C27B0'), "Şekil Havuzu", self)
+        shape_library_toggle_tb.setToolTip("Şekil Havuzu panelini göster/gizle")
+        shape_library_toggle_tb.triggered.connect(self.toggle_shape_library_dock)
+        toolbar.addAction(shape_library_toggle_tb)
+
+        layers_toggle_tb = QAction(qta.icon('fa5s.layer-group', color='#607D8B'), "Katmanlar", self)
+        layers_toggle_tb.setToolTip("Katmanlar panelini göster/gizle")
+        layers_toggle_tb.triggered.connect(self.toggle_layer_dock)
+        toolbar.addAction(layers_toggle_tb)
+
+        # Şekil Özellikleri paneli toggle
+        shape_props_toggle_tb = QAction(qta.icon('fa5s.sliders-h', color='#455A64'), "Şekil Özellikleri", self)
+        shape_props_toggle_tb.setToolTip("Şekil Özellikleri panelini göster/gizle")
+        shape_props_toggle_tb.triggered.connect(self.toggle_shape_properties_dock)
+        toolbar.addAction(shape_props_toggle_tb)
+
+        toolbar.addSeparator()
+
         toolbar.addSeparator()
         
         # Kes/Kopyala/Yapıştır/Sil butonları
@@ -388,6 +410,18 @@ class MainWindow(QMainWindow):
         shape_library_action = QAction("Şekil Havuzu", self)
         shape_library_action.triggered.connect(self.toggle_shape_library_dock)
         view_menu.addAction(shape_library_action)
+
+        # Şekil Özellikleri paneli
+        shape_props_action = QAction("Şekil Özellikleri", self)
+        shape_props_action.setToolTip("Şekil Özellikleri panelini göster/gizle")
+        shape_props_action.triggered.connect(self.toggle_shape_properties_dock)
+        view_menu.addAction(shape_props_action)
+
+        # Katmanlar paneli
+        layers_action = QAction("Katmanlar", self)
+        layers_action.setToolTip("Katmanlar panelini göster/gizle")
+        layers_action.triggered.connect(self.toggle_layer_dock)
+        view_menu.addAction(layers_action)
         
         # Sekme çubuğunu göster/gizle
         self.toggle_tabbar_action = QAction("Sekme Çubuğunu Göster", self)
@@ -568,6 +602,7 @@ class MainWindow(QMainWindow):
         self.settings_widget.pdfOrientationChanged.connect(self.on_pdf_orientation_changed)
         self.settings_widget.canvasOrientationChanged.connect(self.on_canvas_orientation_changed)
         self.settings_widget.canvasSizeChanged.connect(self.on_canvas_size_changed)
+        self.settings_widget.shadowDefaultsChanged.connect(self.on_shadow_defaults_changed)
         
         self.settings_dock.setWidget(self.settings_widget)
         self.settings_dock.setFloating(False)
@@ -681,6 +716,12 @@ class MainWindow(QMainWindow):
         self.shape_properties_widget.strokeShadowOpacityChanged.connect(self.on_stroke_shadow_opacity_changed)
         self.shape_properties_widget.strokeShadowInnerChanged.connect(self.on_stroke_shadow_inner_changed)
         self.shape_properties_widget.strokeShadowQualityChanged.connect(self.on_stroke_shadow_quality_changed)
+
+        # Serbest çizim özellikleri sinyalleri
+        self.shape_properties_widget.freehandBrushModeChanged.connect(self.on_freehand_brush_mode_changed)
+        self.shape_properties_widget.freehandAdvancedStyleChanged.connect(self.on_freehand_advanced_style_changed)
+        self.shape_properties_widget.freehandSmoothingChanged.connect(self.on_freehand_smoothing_changed)
+        self.shape_properties_widget.freehandMinDistanceChanged.connect(self.on_freehand_min_distance_changed)
         
         # Grup işlemi sinyalleri
         self.shape_properties_widget.groupShapes.connect(self.on_group_shapes)
@@ -737,6 +778,14 @@ class MainWindow(QMainWindow):
             self.shape_library_dock.hide()
         else:
             self.shape_library_dock.show()
+    
+    def toggle_layer_dock(self):
+        """Katmanlar dock widget'ını aç/kapat"""
+        if hasattr(self, 'layer_dock') and self.layer_dock is not None:
+            if self.layer_dock.isVisible():
+                self.layer_dock.hide()
+            else:
+                self.layer_dock.show()
             
     def add_shape_to_canvas(self, strokes):
         """Şekil havuzundan seçilen şekli canvas'a ekle"""
@@ -930,6 +979,22 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if current_widget:
             current_widget.set_active_tool(tool_name)
+            # Serbest çizime geçince sağ panelde freehand ayarlarını göster
+            if hasattr(self, 'shape_properties_widget'):
+                if tool_name == "freehand":
+                    try:
+                        self.shape_properties_widget.enter_freehand_mode(current_widget.freehand_tool)
+                        self.shape_properties_dock.show()
+                    except Exception:
+                        pass
+                else:
+                    try:
+                        # Önce genel moda geçir, sonra freehand modunu kapat
+                        self.shape_properties_widget.enter_generic_mode(tool_name, current_widget)
+                        self.shape_properties_widget.exit_freehand_mode()
+                        self.shape_properties_dock.show()
+                    except Exception:
+                        pass
             
         # Aktif aracı ayarlara kaydet
         self.settings.set_active_tool(tool_name)
@@ -1039,6 +1104,19 @@ class MainWindow(QMainWindow):
             
             current_widget.update()
             self.show_status_message("Şekil rengi değiştirildi")
+        else:
+            # Seçim yoksa aktif aracın rengini güncelle (freehand vb.)
+            if current_widget:
+                current_widget.set_current_color(color)
+                # Toolbar renk paletini de güncel tut (widget kendi dinliyorsa atlanır)
+                try:
+                    if hasattr(self, 'color_palette'):
+                        self.color_palette.set_selected_color(color)
+                except Exception:
+                    pass
+                # Ayarlara kaydet
+                self.settings.set_drawing_color(color)
+                self.settings.save_settings()
     
     def on_shape_width_changed(self, width):
         """Seçilen şekillerin kalınlığını değiştir"""
@@ -1067,6 +1145,17 @@ class MainWindow(QMainWindow):
             
             current_widget.update()
             self.show_status_message("Şekil kalınlığı değiştirildi")
+        else:
+            # Seçim yoksa aktif aracın kalınlığını güncelle ve toolbar'ı senkronla
+            if current_widget:
+                current_widget.set_current_width(width)
+                try:
+                    self.line_width_widget.set_current_width(width)
+                except Exception:
+                    pass
+                # Ayarlara kaydet
+                self.settings.set_line_width(width)
+                self.settings.save_settings()
     
     def on_shape_line_style_changed(self, line_style):
         """Seçilen şekillerin çizgi stilini değiştir"""
@@ -1095,6 +1184,50 @@ class MainWindow(QMainWindow):
             
             current_widget.update()
             self.show_status_message("Şekil çizgi stili değiştirildi")
+        else:
+            # Seçim yoksa aktif aracın çizgi stilini güncelle
+            if current_widget:
+                current_widget.set_line_style(line_style)
+                # Ayarlara kaydet
+                self.settings.set_line_style(line_style)
+                self.settings.save_settings()
+
+    # -------- Serbest Çizim ayarları handler'ları --------
+    def on_freehand_brush_mode_changed(self, mode: str):
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            try:
+                current_widget.freehand_tool.set_brush_mode(mode)
+            except Exception:
+                pass
+            self.show_status_message("Serbest çizim fırça modu güncellendi")
+
+    def on_freehand_advanced_style_changed(self, style: str):
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            try:
+                current_widget.freehand_tool.set_advanced_style(style)
+            except Exception:
+                pass
+            self.show_status_message("Serbest çizim gelişmiş stil güncellendi")
+
+    def on_freehand_smoothing_changed(self, mouse_smoothing: float, tablet_smoothing: float):
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            try:
+                current_widget.freehand_tool.set_mouse_smoothing(mouse_smoothing)
+                current_widget.freehand_tool.set_tablet_smoothing(tablet_smoothing)
+            except Exception:
+                pass
+
+    def on_freehand_min_distance_changed(self, min_dist: float, tablet_min_dist: float):
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            try:
+                current_widget.freehand_tool.set_min_distance(min_dist)
+                current_widget.freehand_tool.set_tablet_min_distance(tablet_min_dist)
+            except Exception:
+                pass
     
     def on_shape_fill_color_changed(self, color):
         """Seçilen şekillerin dolgu rengini değiştir"""
@@ -1197,11 +1330,29 @@ class MainWindow(QMainWindow):
         
     def on_canvas_size_changed(self, size):
         """Canvas boyutu değiştiğinde"""
-        # Canvas boyutlarını güncelle
-        self.update_canvas_sizes(size)
+        # Kaydet ve uygula
+        if isinstance(size, str) and size.startswith('custom:'):
+            try:
+                dims = size.split(':', 1)[1]
+                w_str, h_str = dims.split('x')
+                w, h = int(w_str), int(h_str)
+                self.settings.set_canvas_size_key('custom')
+                self.settings.set_custom_canvas_size(w, h)
+                self.update_canvas_sizes('custom')
+                label = f"Özel ({w}x{h})"
+            except Exception:
+                label = 'Özel'
+        elif size == 'screen':
+            self.settings.set_canvas_size_key('screen')
+            self.update_canvas_sizes('screen')
+            label = 'Ekran'
+        else:
+            self.settings.set_canvas_size_key(size)
+            self.update_canvas_sizes(size)
+            size_names = {'small': 'Küçük', 'medium': 'Orta', 'large': 'Büyük'}
+            label = size_names.get(size, size)
         self.settings.save_settings()
-        size_names = {'small': 'Küçük', 'medium': 'Orta', 'large': 'Büyük'}
-        self.show_status_message(f"Canvas boyutu: {size_names.get(size, size)}")
+        self.show_status_message(f"Canvas boyutu: {label}")
         
     def on_image_loaded(self, image_hash, pixmap):
         """Resim async yüklendiğinde canvas'ı güncelle"""
@@ -1215,7 +1366,30 @@ class MainWindow(QMainWindow):
         for i in range(self.tab_widget.count()):
             drawing_widget = self.tab_manager.get_tab_widget_at_index(i)
             if drawing_widget:
-                if size == 'medium':
+                if size == 'screen':
+                    try:
+                        from PyQt6.QtWidgets import QApplication
+                        screen = QApplication.primaryScreen()
+                        geo = screen.availableGeometry()
+                        w, h = geo.width(), geo.height()
+                    except Exception:
+                        w, h = 1920, 1080
+                    # Doğru eşleme: portrait = min(w,h) x max(w,h), landscape = max(w,h) x min(w,h)
+                    pw, ph = (min(w, h), max(w, h))
+                    lw, lh = (max(w, h), min(w, h))
+                    drawing_widget.a4_width_portrait = pw
+                    drawing_widget.a4_height_portrait = ph
+                    drawing_widget.a4_width_landscape = lw
+                    drawing_widget.a4_height_landscape = lh
+                elif size == 'custom':
+                    w, h = self.settings.get_custom_canvas_size()
+                    pw, ph = (min(w, h), max(w, h))
+                    lw, lh = (max(w, h), min(w, h))
+                    drawing_widget.a4_width_portrait = pw
+                    drawing_widget.a4_height_portrait = ph
+                    drawing_widget.a4_width_landscape = lw
+                    drawing_widget.a4_height_landscape = lh
+                elif size == 'medium':
                     drawing_widget.a4_width_portrait = 1240
                     drawing_widget.a4_height_portrait = 1754
                     drawing_widget.a4_width_landscape = 1754
@@ -1297,15 +1471,108 @@ class MainWindow(QMainWindow):
         # Canvas yönü
         canvas_orientation = self.settings.get_canvas_orientation()
         drawing_widget.set_canvas_orientation(canvas_orientation)
+        # Canvas boyutu (son kullanılan)
+        try:
+            size_key = self.settings.get_canvas_size_key()
+            if size_key in ['small','medium','large','custom','screen']:
+                self.update_canvas_sizes(size_key)
+        except Exception:
+            pass
         
         # Arka plan ayarları
         bg_settings = self.settings.get_background_settings()
         drawing_widget.set_background_settings(bg_settings)
+
+        # Gölge varsayılanlarını araçlara uygula
+        shadow_defaults = self.settings.get_shadow_defaults()
+        if hasattr(drawing_widget, 'line_tool'):
+            drawing_widget.line_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
+            drawing_widget.line_tool.set_shadow_color(shadow_defaults['shadow_color'])
+            drawing_widget.line_tool.set_shadow_offset(
+                shadow_defaults['shadow_offset_x'], shadow_defaults['shadow_offset_y'])
+            drawing_widget.line_tool.set_shadow_blur(shadow_defaults['shadow_blur'])
+            drawing_widget.line_tool.set_shadow_size(shadow_defaults['shadow_size'])
+            drawing_widget.line_tool.set_shadow_opacity(shadow_defaults['shadow_opacity'])
+            drawing_widget.line_tool.set_inner_shadow(shadow_defaults['inner_shadow'])
+            drawing_widget.line_tool.set_shadow_quality(shadow_defaults['shadow_quality'])
+        if hasattr(drawing_widget, 'freehand_tool'):
+            drawing_widget.freehand_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
+            drawing_widget.freehand_tool.set_shadow_color(shadow_defaults['shadow_color'])
+            drawing_widget.freehand_tool.set_shadow_offset(
+                shadow_defaults['shadow_offset_x'], shadow_defaults['shadow_offset_y'])
+            drawing_widget.freehand_tool.set_shadow_blur(shadow_defaults['shadow_blur'])
+            drawing_widget.freehand_tool.set_shadow_size(shadow_defaults['shadow_size'])
+            drawing_widget.freehand_tool.set_shadow_opacity(shadow_defaults['shadow_opacity'])
+            drawing_widget.freehand_tool.set_inner_shadow(shadow_defaults['inner_shadow'])
+            drawing_widget.freehand_tool.set_shadow_quality(shadow_defaults['shadow_quality'])
+        if hasattr(drawing_widget, 'bspline_tool'):
+            try:
+                drawing_widget.bspline_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
+                drawing_widget.bspline_tool.set_shadow_color(shadow_defaults['shadow_color'])
+                drawing_widget.bspline_tool.set_shadow_offset(
+                    shadow_defaults['shadow_offset_x'], shadow_defaults['shadow_offset_y'])
+                drawing_widget.bspline_tool.set_shadow_blur(shadow_defaults['shadow_blur'])
+                drawing_widget.bspline_tool.set_shadow_size(shadow_defaults['shadow_size'])
+                drawing_widget.bspline_tool.set_shadow_opacity(shadow_defaults['shadow_opacity'])
+                drawing_widget.bspline_tool.set_inner_shadow(shadow_defaults['inner_shadow'])
+                drawing_widget.bspline_tool.set_shadow_quality(shadow_defaults['shadow_quality'])
+            except Exception:
+                pass
+        if hasattr(drawing_widget, 'rectangle_tool'):
+            drawing_widget.rectangle_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
+            drawing_widget.rectangle_tool.set_shadow_color(shadow_defaults['shadow_color'])
+            drawing_widget.rectangle_tool.set_shadow_offset(
+                shadow_defaults['shadow_offset_x'], shadow_defaults['shadow_offset_y'])
+            drawing_widget.rectangle_tool.set_shadow_blur(shadow_defaults['shadow_blur'])
+            drawing_widget.rectangle_tool.set_shadow_size(shadow_defaults['shadow_size'])
+            drawing_widget.rectangle_tool.set_shadow_opacity(shadow_defaults['shadow_opacity'])
+            drawing_widget.rectangle_tool.set_inner_shadow(shadow_defaults['inner_shadow'])
+            drawing_widget.rectangle_tool.set_shadow_quality(shadow_defaults['shadow_quality'])
+        if hasattr(drawing_widget, 'circle_tool'):
+            drawing_widget.circle_tool.set_shadow_enabled(shadow_defaults['has_shadow'])
+            drawing_widget.circle_tool.set_shadow_color(shadow_defaults['shadow_color'])
+            drawing_widget.circle_tool.set_shadow_offset(
+                shadow_defaults['shadow_offset_x'], shadow_defaults['shadow_offset_y'])
+            drawing_widget.circle_tool.set_shadow_blur(shadow_defaults['shadow_blur'])
+            drawing_widget.circle_tool.set_shadow_size(shadow_defaults['shadow_size'])
+            drawing_widget.circle_tool.set_shadow_opacity(shadow_defaults['shadow_opacity'])
+            drawing_widget.circle_tool.set_inner_shadow(shadow_defaults['inner_shadow'])
+            drawing_widget.circle_tool.set_shadow_quality(shadow_defaults['shadow_quality'])
+
+    def on_shadow_defaults_changed(self, payload):
+        """Ayarlar panelinden Varsayılan Gölge değişti"""
+        try:
+            self.settings.set_shadow_defaults(payload)
+            self.settings.save_settings()
+        except Exception:
+            pass
+        # Aktif sekmedeki araçlara hemen uygula
+        current_widget = self.get_current_drawing_widget()
+        if current_widget:
+            defaults = self.settings.get_shadow_defaults()
+            for tool_name in ['line_tool','freehand_tool','bspline_tool','rectangle_tool','circle_tool']:
+                tool = getattr(current_widget, tool_name, None)
+                if not tool:
+                    continue
+                try:
+                    tool.set_shadow_enabled(defaults['has_shadow'])
+                    tool.set_shadow_color(defaults['shadow_color'])
+                    tool.set_shadow_offset(defaults['shadow_offset_x'], defaults['shadow_offset_y'])
+                    tool.set_shadow_blur(defaults['shadow_blur'])
+                    tool.set_shadow_size(defaults['shadow_size'])
+                    tool.set_shadow_opacity(defaults['shadow_opacity'])
+                    tool.set_inner_shadow(defaults['inner_shadow'])
+                    tool.set_shadow_quality(defaults['shadow_quality'])
+                except Exception:
+                    continue
+            current_widget.update()
         
         # UI widget'larını güncelle
-        self.color_palette.load_from_settings()
-        self.line_width_widget.set_width(self.settings.get_line_width())
-        self.settings_widget.set_background_settings(bg_settings)
+        try:
+            self.color_palette.load_from_settings()
+            self.line_width_widget.set_width(self.settings.get_line_width())
+        except Exception:
+            pass
         
     def save_session(self):
         """Oturumu kaydet (mevcut dosya varsa üzerine yaz)"""
@@ -2406,6 +2673,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_enabled_changed(self, enabled):
         """Dikdörtgen gölge etkin/pasif değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'has_shadow': enabled})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2424,6 +2696,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_color_changed(self, color):
         """Dikdörtgen gölge rengi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_color': color})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2442,6 +2719,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_offset_changed(self, offset_x, offset_y):
         """Dikdörtgen gölge offseti değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_offset_x': offset_x, 'shadow_offset_y': offset_y})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2461,6 +2743,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_blur_changed(self, blur):
         """Dikdörtgen gölge bulanıklığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_blur': blur})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2479,6 +2766,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_size_changed(self, size):
         """Dikdörtgen gölge boyutu değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_size': size})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2497,6 +2789,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_opacity_changed(self, opacity):
         """Dikdörtgen gölge şeffaflığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_opacity': opacity})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2515,6 +2812,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_inner_changed(self, inner):
         """Dikdörtgen iç/dış gölge değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'inner_shadow': inner})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2533,6 +2835,11 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_quality_changed(self, quality):
         """Dikdörtgen gölge kalitesi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_quality': quality})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2552,6 +2859,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_enabled_changed(self, enabled):
         """Çember gölge etkin/pasif değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'has_shadow': enabled})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2570,6 +2882,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_color_changed(self, color):
         """Çember gölge rengi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_color': color})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2588,6 +2905,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_offset_changed(self, offset_x, offset_y):
         """Çember gölge offseti değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_offset_x': offset_x, 'shadow_offset_y': offset_y})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2607,6 +2929,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_blur_changed(self, blur):
         """Çember gölge bulanıklığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_blur': blur})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2625,6 +2952,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_size_changed(self, size):
         """Çember gölge boyutu değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_size': size})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2643,6 +2975,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_opacity_changed(self, opacity):
         """Çember gölge şeffaflığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_opacity': opacity})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2661,6 +2998,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_inner_changed(self, inner):
         """Çember iç/dış gölge değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'inner_shadow': inner})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2679,6 +3021,11 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_quality_changed(self, quality):
         """Çember gölge kalitesi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_quality': quality})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2697,6 +3044,12 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_enabled_changed(self, enabled):
         """Çizgi gölge etkin/pasif değişti"""
         current_widget = self.get_current_drawing_widget()
+        # Varsayılanları güncelle
+        try:
+            self.settings.set_shadow_defaults({'has_shadow': enabled})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2714,6 +3067,8 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_enabled'):
                 current_widget.line_tool.set_shadow_enabled(enabled)
+            # Aktif araç çizgiyse anında görünür değişim için update
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_enabled'):
                 current_widget.freehand_tool.set_shadow_enabled(enabled)
             if hasattr(current_widget.bspline_tool, 'set_shadow_enabled'):
@@ -2722,6 +3077,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_color_changed(self, color):
         """Çizgi gölge rengi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_color': color})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2739,6 +3099,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_color'):
                 current_widget.line_tool.set_shadow_color(color)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_color'):
                 current_widget.freehand_tool.set_shadow_color(color)
             if hasattr(current_widget.bspline_tool, 'set_shadow_color'):
@@ -2747,6 +3108,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_offset_changed(self, offset_x, offset_y):
         """Çizgi gölge offseti değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_offset_x': offset_x, 'shadow_offset_y': offset_y})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2765,6 +3131,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_offset'):
                 current_widget.line_tool.set_shadow_offset(offset_x, offset_y)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_offset'):
                 current_widget.freehand_tool.set_shadow_offset(offset_x, offset_y)
             if hasattr(current_widget.bspline_tool, 'set_shadow_offset'):
@@ -2773,6 +3140,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_blur_changed(self, blur):
         """Çizgi gölge bulanıklığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_blur': blur})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2790,6 +3162,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_blur'):
                 current_widget.line_tool.set_shadow_blur(blur)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_blur'):
                 current_widget.freehand_tool.set_shadow_blur(blur)
             if hasattr(current_widget.bspline_tool, 'set_shadow_blur'):
@@ -2798,6 +3171,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_size_changed(self, size):
         """Çizgi gölge boyutu değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_size': size})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2815,6 +3193,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_size'):
                 current_widget.line_tool.set_shadow_size(size)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_size'):
                 current_widget.freehand_tool.set_shadow_size(size)
             if hasattr(current_widget.bspline_tool, 'set_shadow_size'):
@@ -2823,6 +3202,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_opacity_changed(self, opacity):
         """Çizgi gölge şeffaflığı değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_opacity': opacity})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2840,6 +3224,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_opacity'):
                 current_widget.line_tool.set_shadow_opacity(opacity)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_opacity'):
                 current_widget.freehand_tool.set_shadow_opacity(opacity)
             if hasattr(current_widget.bspline_tool, 'set_shadow_opacity'):
@@ -2848,6 +3233,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_inner_changed(self, inner):
         """Çizgi iç/dış gölge değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'inner_shadow': inner})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2865,6 +3255,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_inner_shadow'):
                 current_widget.line_tool.set_inner_shadow(inner)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_inner_shadow'):
                 current_widget.freehand_tool.set_inner_shadow(inner)
             if hasattr(current_widget.bspline_tool, 'set_inner_shadow'):
@@ -2873,6 +3264,11 @@ class MainWindow(QMainWindow):
     def on_stroke_shadow_quality_changed(self, quality):
         """Çizgi gölge kalitesi değişti"""
         current_widget = self.get_current_drawing_widget()
+        try:
+            self.settings.set_shadow_defaults({'shadow_quality': quality})
+            self.settings.save_settings()
+        except Exception:
+            pass
         if current_widget and hasattr(current_widget, 'selection_tool'):
             selected = current_widget.selection_tool.selected_strokes
             if selected:
@@ -2890,6 +3286,7 @@ class MainWindow(QMainWindow):
         if current_widget:
             if hasattr(current_widget.line_tool, 'set_shadow_quality'):
                 current_widget.line_tool.set_shadow_quality(quality)
+            current_widget.update()
             if hasattr(current_widget.freehand_tool, 'set_shadow_quality'):
                 current_widget.freehand_tool.set_shadow_quality(quality)
             if hasattr(current_widget.bspline_tool, 'set_shadow_quality'):

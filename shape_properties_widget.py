@@ -1,7 +1,7 @@
 from PyQt6.QtWidgets import (QWidget, QVBoxLayout, QHBoxLayout, QLabel,
                             QPushButton, QColorDialog, QSpinBox, QButtonGroup,
                             QGroupBox, QRadioButton, QCheckBox, QSlider, QComboBox,
-                            QSizePolicy)
+                            QSizePolicy, QDoubleSpinBox)
 from PyQt6.QtCore import Qt, pyqtSignal
 from PyQt6.QtGui import QColor, QPainter, QPen
 import qtawesome as qta
@@ -37,6 +37,12 @@ class ShapePropertiesWidget(QWidget):
     imageBlurChanged = pyqtSignal(int)  # Resim bulanıklığı değişti
     imageCornerRadiusChanged = pyqtSignal(int)  # Kenar yuvarlama değişti
     imageShadowOpacityChanged = pyqtSignal(float)  # Gölge şeffaflığı değişti
+    
+    # Serbest çizim (freehand) özellikleri sinyalleri
+    freehandBrushModeChanged = pyqtSignal(str)  # 'simple' | 'advanced'
+    freehandAdvancedStyleChanged = pyqtSignal(str)  # 'solid' | 'dashed' | 'dotted' | 'dashdot' | 'zigzag' | 'double'
+    freehandSmoothingChanged = pyqtSignal(float, float)  # mouse_smoothing, tablet_smoothing
+    freehandMinDistanceChanged = pyqtSignal(float, float)  # min_distance, tablet_min_distance
     
     # Dikdörtgen özellikleri sinyalleri
     rectangleCornerRadiusChanged = pyqtSignal(int)  # Dikdörtgen kenar yuvarlama değişti
@@ -162,6 +168,16 @@ class ShapePropertiesWidget(QWidget):
         self.current_stroke_shadow_opacity = 0.7
         self.current_stroke_inner_shadow = False
         self.current_stroke_shadow_quality = "medium"
+
+        # Serbest çizim değerleri (varsayılanlar)
+        self.freehand_mode_active = False
+        self.generic_mode_active = False  # bspline/line/rectangle/circle için genel mod
+        self.current_freehand_brush_mode = 'simple'
+        self.current_freehand_advanced_style = 'solid'
+        self.current_freehand_mouse_smoothing = 0.5
+        self.current_freehand_tablet_smoothing = 0.2
+        self.current_freehand_min_distance = 1.0
+        self.current_freehand_tablet_min_distance = 0.3
 
         # Seçilen şekil bilgileri
         self.selected_strokes = []
@@ -371,6 +387,82 @@ class ShapePropertiesWidget(QWidget):
         self.stroke_shadow_group.setLayout(stroke_shadow_layout)
         layout.addWidget(self.stroke_shadow_group)
         self.stroke_shadow_group.setVisible(False)
+        
+        # Serbest çizim grubu
+        self.freehand_group = QGroupBox("Serbest Çizim")
+        fh_layout = QVBoxLayout()
+        
+        # Brush mode
+        fh_mode_layout = QHBoxLayout()
+        fh_mode_layout.addWidget(QLabel("Fırça:"))
+        self.freehand_mode_combo = QComboBox()
+        self.freehand_mode_combo.addItem("Basit", 'simple')
+        self.freehand_mode_combo.addItem("Gelişmiş", 'advanced')
+        self.freehand_mode_combo.currentIndexChanged.connect(self.on_freehand_mode_changed)
+        fh_mode_layout.addWidget(self.freehand_mode_combo)
+        fh_mode_layout.addStretch()
+        fh_layout.addLayout(fh_mode_layout)
+        
+        # Advanced style
+        fh_adv_layout = QHBoxLayout()
+        fh_adv_layout.addWidget(QLabel("Stil:"))
+        self.freehand_adv_style_combo = QComboBox()
+        for style in ['solid','dashed','dotted','dashdot','zigzag','double']:
+            # Türkçe görünen adlar
+            names = {
+                'solid':'Düz','dashed':'Kesikli','dotted':'Noktalı',
+                'dashdot':'Çizgi-Nokta','zigzag':'Zigzag','double':'Çift'
+            }
+            self.freehand_adv_style_combo.addItem(names[style], style)
+        self.freehand_adv_style_combo.currentIndexChanged.connect(self.on_freehand_advanced_style_changed)
+        fh_adv_layout.addWidget(self.freehand_adv_style_combo)
+        fh_adv_layout.addStretch()
+        fh_layout.addLayout(fh_adv_layout)
+        
+        # Mouse smoothing
+        fh_ms_layout = QHBoxLayout()
+        fh_ms_layout.addWidget(QLabel("Mouse Yumuşatma:"))
+        self.freehand_mouse_smooth_slider = QSlider(Qt.Orientation.Horizontal)
+        self.freehand_mouse_smooth_slider.setRange(0, 100)
+        self.freehand_mouse_smooth_slider.valueChanged.connect(self.on_freehand_mouse_smoothing_changed)
+        fh_ms_layout.addWidget(self.freehand_mouse_smooth_slider)
+        self.freehand_mouse_smooth_label = QLabel("50%")
+        self.freehand_mouse_smooth_label.setMinimumWidth(35)
+        fh_ms_layout.addWidget(self.freehand_mouse_smooth_label)
+        fh_layout.addLayout(fh_ms_layout)
+        
+        # Tablet smoothing
+        fh_ts_layout = QHBoxLayout()
+        fh_ts_layout.addWidget(QLabel("Tablet Yumuşatma:"))
+        self.freehand_tablet_smooth_slider = QSlider(Qt.Orientation.Horizontal)
+        self.freehand_tablet_smooth_slider.setRange(0, 100)
+        self.freehand_tablet_smooth_slider.valueChanged.connect(self.on_freehand_tablet_smoothing_changed)
+        fh_ts_layout.addWidget(self.freehand_tablet_smooth_slider)
+        self.freehand_tablet_smooth_label = QLabel("20%")
+        self.freehand_tablet_smooth_label.setMinimumWidth(35)
+        fh_ts_layout.addWidget(self.freehand_tablet_smooth_label)
+        fh_layout.addLayout(fh_ts_layout)
+        
+        # Min distances
+        fh_md_layout = QHBoxLayout()
+        fh_md_layout.addWidget(QLabel("Min Mesafe:"))
+        self.freehand_min_distance = QDoubleSpinBox()
+        self.freehand_min_distance.setRange(0.0, 5.0)
+        self.freehand_min_distance.setSingleStep(0.1)
+        self.freehand_min_distance.valueChanged.connect(self.on_freehand_min_distance_changed)
+        fh_md_layout.addWidget(self.freehand_min_distance)
+        fh_md_layout.addWidget(QLabel("Tablet:"))
+        self.freehand_tablet_min_distance = QDoubleSpinBox()
+        self.freehand_tablet_min_distance.setRange(0.0, 5.0)
+        self.freehand_tablet_min_distance.setSingleStep(0.1)
+        self.freehand_tablet_min_distance.valueChanged.connect(self.on_freehand_tablet_min_distance_changed)
+        fh_md_layout.addWidget(self.freehand_tablet_min_distance)
+        fh_md_layout.addStretch()
+        fh_layout.addLayout(fh_md_layout)
+        
+        self.freehand_group.setLayout(fh_layout)
+        layout.addWidget(self.freehand_group)
+        self.freehand_group.setVisible(False)
         
         # Dolgu özellikleri grubu (sadece dikdörtgen/daire için)
         self.fill_group = QGroupBox("Dolgu Özellikleri")
@@ -1311,17 +1403,17 @@ class ShapePropertiesWidget(QWidget):
         
     def apply_color_change(self):
         """Renk değişikliğini uygula"""
-        if self.selected_strokes:
+        if self.selected_strokes or self.freehand_mode_active:
             self.colorChanged.emit(self.current_color)
     
     def apply_width_change(self):
         """Kalınlık değişikliğini uygula"""
-        if self.selected_strokes:
+        if self.selected_strokes or self.freehand_mode_active:
             self.widthChanged.emit(self.current_width)
     
     def apply_style_change(self):
         """Stil değişikliğini uygula"""
-        if self.selected_strokes:
+        if self.selected_strokes or self.freehand_mode_active:
             self.lineStyleChanged.emit(self.current_line_style)
     
     def apply_fill_color_change(self):
@@ -1596,20 +1688,14 @@ class ShapePropertiesWidget(QWidget):
 
     def apply_stroke_shadow_enabled_change(self):
         """Çizgi gölge etkin/pasif değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowEnabledChanged.emit(self.current_stroke_shadow_enabled)
 
     def apply_stroke_shadow_color_change(self):
         """Çizgi gölge rengi değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowColorChanged.emit(self.current_stroke_shadow_color)
 
     def apply_stroke_shadow_offset_change(self):
         """Çizgi gölge offseti değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowOffsetChanged.emit(
             self.current_stroke_shadow_offset_x,
             self.current_stroke_shadow_offset_y,
@@ -1617,32 +1703,22 @@ class ShapePropertiesWidget(QWidget):
 
     def apply_stroke_shadow_blur_change(self):
         """Çizgi gölge bulanıklığı değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowBlurChanged.emit(self.current_stroke_shadow_blur)
 
     def apply_stroke_shadow_size_change(self):
         """Çizgi gölge boyutu değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowSizeChanged.emit(self.current_stroke_shadow_size)
 
     def apply_stroke_shadow_inner_change(self):
         """Çizgi iç/dış gölge değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowInnerChanged.emit(self.current_stroke_inner_shadow)
 
     def apply_stroke_shadow_quality_change(self):
         """Çizgi gölge kalitesi değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowQualityChanged.emit(self.current_stroke_shadow_quality)
 
     def apply_stroke_shadow_opacity_change(self):
         """Çizgi gölge şeffaflığı değişikliğini uygula"""
-        if self.selected_strokes and not self.has_stroke_shadow_shapes:
-            return
         self.strokeShadowOpacityChanged.emit(self.current_stroke_shadow_opacity)
 
     def apply_rect_corner_radius_change(self):
@@ -1652,82 +1728,83 @@ class ShapePropertiesWidget(QWidget):
     
     def apply_rect_shadow_enabled_change(self):
         """Dikdörtgen gölge etkin/pasif değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        # Seçim yoksa bile varsayılanları güncellemek için yayınla
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowEnabledChanged.emit(self.current_rect_shadow_enabled)
     
     def apply_rect_shadow_color_change(self):
         """Dikdörtgen gölge rengi değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowColorChanged.emit(self.current_rect_shadow_color)
     
     def apply_rect_shadow_offset_change(self):
         """Dikdörtgen gölge offseti değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowOffsetChanged.emit(self.current_rect_shadow_offset_x, self.current_rect_shadow_offset_y)
     
     def apply_rect_shadow_blur_change(self):
         """Dikdörtgen gölge bulanıklığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowBlurChanged.emit(self.current_rect_shadow_blur)
     
     def apply_rect_shadow_size_change(self):
         """Dikdörtgen gölge boyutu değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowSizeChanged.emit(self.current_rect_shadow_size)
     
     def apply_rect_shadow_opacity_change(self):
         """Dikdörtgen gölge şeffaflığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowOpacityChanged.emit(self.current_rect_shadow_opacity)
     
     def apply_rect_inner_shadow_change(self):
         """Dikdörtgen iç gölge değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowInnerChanged.emit(self.current_rect_inner_shadow)
     
     def apply_rect_quality_change(self):
         """Dikdörtgen gölge kalitesi değişikliğini uygula"""
-        if self.selected_strokes and self.has_rectangle_shapes:
+        if not self.selected_strokes or self.has_rectangle_shapes:
             self.rectangleShadowQualityChanged.emit(self.current_rect_shadow_quality)
             
     def apply_circle_shadow_enabled_change(self):
         """Çember gölge etkin/pasif değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowEnabledChanged.emit(self.current_circle_shadow_enabled)
         
     def apply_circle_shadow_color_change(self):
         """Çember gölge rengi değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowColorChanged.emit(self.current_circle_shadow_color)
         
     def apply_circle_shadow_offset_change(self):
         """Çember gölge offseti değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowOffsetChanged.emit(self.current_circle_shadow_offset_x, self.current_circle_shadow_offset_y)
         
     def apply_circle_shadow_blur_change(self):
         """Çember gölge bulanıklığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowBlurChanged.emit(self.current_circle_shadow_blur)
         
     def apply_circle_shadow_size_change(self):
         """Çember gölge boyutu değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowSizeChanged.emit(self.current_circle_shadow_size)
         
     def apply_circle_shadow_opacity_change(self):
         """Çember gölge şeffaflığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowOpacityChanged.emit(self.current_circle_shadow_opacity)
         
     def apply_circle_inner_shadow_change(self):
         """Çember iç/dış gölge değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowInnerChanged.emit(self.current_circle_inner_shadow)
         
     def apply_circle_quality_change(self):
         """Çember gölge kalitesi değişikliğini uygula"""
-        if self.selected_strokes and self.has_circle_shapes:
+        if not self.selected_strokes or self.has_circle_shapes:
             self.circleShadowQualityChanged.emit(self.current_circle_shadow_quality)
     
     # Grup işlemi event handler'ları
@@ -1868,13 +1945,27 @@ class ShapePropertiesWidget(QWidget):
         
         # Dikdörtgen özelliklerini göster/gizle
         self.rectangle_group.setVisible(self.has_rectangle_shapes)
+        # Dikdörtgen gölge grubu aktif kalsın
+        try:
+            self.rect_shadow_color_button.setEnabled(True)
+        except Exception:
+            pass
 
         # Çember özelliklerini göster/gizle
         self.circle_group.setVisible(self.has_circle_shapes)
+        try:
+            self.circle_shadow_color_button.setEnabled(True)
+        except Exception:
+            pass
 
         # Çizgi gölge özelliklerini göster/gizle
         if hasattr(self, 'stroke_shadow_group'):
             self.stroke_shadow_group.setVisible(self.has_stroke_shadow_shapes)
+
+        # Serbest çizim özellikleri: seçimde freehand varsa veya tool modu aktifse
+        if hasattr(self, 'freehand_group'):
+            show_fh = getattr(self, 'has_freehand_shapes', False) or self.freehand_mode_active
+            self.freehand_group.setVisible(show_fh)
 
         self._apply_panel_width()
 
@@ -2545,8 +2636,162 @@ class ShapePropertiesWidget(QWidget):
         self.has_rectangle_shapes = False
         self.has_circle_shapes = False
         self.has_stroke_shadow_shapes = False
-        self.setVisible(False)
+        # Freehand veya genel tool modu açıksa panel görünür kalmalı
+        self.setVisible(self.freehand_mode_active or self.generic_mode_active)
         self._apply_panel_width()
+
+    # -------- Serbest Çizim: Tool Modu API --------
+    def enter_freehand_mode(self, tool):
+        """Seçim olmasa da serbest çizim ayarlarını göster"""
+        self.freehand_mode_active = True
+        self.generic_mode_active = False
+        self.load_freehand_params_from_tool(tool)
+        self.freehand_group.setVisible(True)
+        # Freehand'de çizgi gölgesi her zaman gösterilsin
+        if hasattr(self, 'stroke_shadow_group'):
+            self.stroke_shadow_group.setVisible(True)
+        self.setVisible(True)
+        self._apply_panel_width()
+
+    def exit_freehand_mode(self):
+        self.freehand_mode_active = False
+        # Seçim yoksa paneli gizle
+        if not self.selected_strokes and not self.generic_mode_active:
+            self.setVisible(False)
+        # Freehand grubunu da seçim durumuna göre kapat
+        self.freehand_group.setVisible(getattr(self, 'has_freehand_shapes', False))
+
+    def load_freehand_params_from_tool(self, tool):
+        try:
+            self.current_freehand_brush_mode = getattr(tool, 'brush_mode', 'simple')
+            self.current_freehand_advanced_style = getattr(tool, 'advanced_style', 'solid')
+            self.current_freehand_mouse_smoothing = getattr(tool, 'mouse_smoothing', 0.5)
+            self.current_freehand_tablet_smoothing = getattr(tool, 'tablet_smoothing', 0.2)
+            self.current_freehand_min_distance = getattr(tool, 'min_distance', 1.0)
+            self.current_freehand_tablet_min_distance = getattr(tool, 'tablet_min_distance', 0.3)
+            # Genel çizgi ayarlarını da arayüzle eşle
+            if hasattr(tool, 'current_width'):
+                self.current_width = int(getattr(tool, 'current_width', self.current_width))
+            if hasattr(tool, 'line_style'):
+                self.current_line_style = getattr(tool, 'line_style', self.current_line_style)
+            if hasattr(tool, 'current_color'):
+                self.current_color = getattr(tool, 'current_color')
+            # Gölge ayarlarını tool'dan yükle
+            self.current_stroke_shadow_enabled = bool(getattr(tool, 'has_shadow', False))
+            self.current_stroke_shadow_color = getattr(tool, 'shadow_color', self.current_stroke_shadow_color)
+            self.current_stroke_shadow_offset_x = getattr(tool, 'shadow_offset_x', self.current_stroke_shadow_offset_x)
+            self.current_stroke_shadow_offset_y = getattr(tool, 'shadow_offset_y', self.current_stroke_shadow_offset_y)
+            self.current_stroke_shadow_blur = getattr(tool, 'shadow_blur', self.current_stroke_shadow_blur)
+            self.current_stroke_shadow_size = getattr(tool, 'shadow_size', self.current_stroke_shadow_size)
+            self.current_stroke_shadow_opacity = getattr(tool, 'shadow_opacity', self.current_stroke_shadow_opacity)
+            self.current_stroke_inner_shadow = getattr(tool, 'inner_shadow', self.current_stroke_inner_shadow)
+            self.current_stroke_shadow_quality = getattr(tool, 'shadow_quality', self.current_stroke_shadow_quality)
+        except Exception:
+            pass
+        # UI'yi güncelle
+        # combolar
+        for i in range(self.freehand_mode_combo.count()):
+            if self.freehand_mode_combo.itemData(i) == self.current_freehand_brush_mode:
+                self.freehand_mode_combo.setCurrentIndex(i)
+                break
+        for i in range(self.freehand_adv_style_combo.count()):
+            if self.freehand_adv_style_combo.itemData(i) == self.current_freehand_advanced_style:
+                self.freehand_adv_style_combo.setCurrentIndex(i)
+                break
+        # sliders
+        ms = int(round(self.current_freehand_mouse_smoothing * 100))
+        ts = int(round(self.current_freehand_tablet_smoothing * 100))
+        self.freehand_mouse_smooth_slider.setValue(ms)
+        self.freehand_mouse_smooth_label.setText(f"{ms}%")
+        self.freehand_tablet_smooth_slider.setValue(ts)
+        self.freehand_tablet_smooth_label.setText(f"{ts}%")
+        # distances
+        self.freehand_min_distance.setValue(self.current_freehand_min_distance)
+        self.freehand_tablet_min_distance.setValue(self.current_freehand_tablet_min_distance)
+        # advanced style combo enable
+        self.freehand_adv_style_combo.setEnabled(self.current_freehand_brush_mode == 'advanced')
+        # Line group ile senkronize
+        if hasattr(self, 'width_spinbox'):
+            self.width_spinbox.setValue(self.current_width)
+        if hasattr(self, 'style_combo'):
+            for i in range(self.style_combo.count()):
+                if self.style_combo.itemData(i) == self.current_line_style:
+                    self.style_combo.setCurrentIndex(i)
+                    break
+        # Çizgi gölge kontrollerini de güncelle
+        try:
+            self.stroke_shadow_checkbox.setChecked(self.current_stroke_shadow_enabled)
+        except Exception:
+            pass
+
+    # -------- Genel Tool Modu (bspline/line/rectangle/circle) --------
+    def enter_generic_mode(self, tool_name: str, drawing_widget):
+        self.generic_mode_active = True
+        # Değerleri drawing_widget'tan al
+        try:
+            self.current_color = getattr(drawing_widget, 'current_color', self.current_color)
+            self.current_width = getattr(drawing_widget, 'current_width', self.current_width)
+            self.current_line_style = getattr(drawing_widget, 'line_style', self.current_line_style)
+            self.current_fill_enabled = getattr(drawing_widget, 'current_fill', self.current_fill_enabled)
+            self.current_fill_color = getattr(drawing_widget, 'fill_color', self.current_fill_color)
+        except Exception:
+            pass
+        # Grupları görünürlük
+        self.bspline_group.setVisible(tool_name == 'bspline')
+        self.fill_group.setVisible(tool_name in ['rectangle', 'circle'])
+        if hasattr(self, 'rectangle_group'):
+            self.rectangle_group.setVisible(tool_name == 'rectangle')
+        if hasattr(self, 'circle_group'):
+            self.circle_group.setVisible(tool_name == 'circle')
+        # Diğer gruplar (gölge vs.) çizgiler için gösterilebilir
+        if hasattr(self, 'stroke_shadow_group'):
+            self.stroke_shadow_group.setVisible(tool_name in ['line', 'bspline'])
+            # Line için gölge kontrollerini aktif et
+            self.current_stroke_shadow_enabled = True
+            try:
+                self.stroke_shadow_checkbox.setChecked(True)
+            except Exception:
+                pass
+        # Freehand grubu yalnızca freehand modunda
+        self.freehand_group.setVisible(False)
+        # Paneli aç ve değerleri UI'ye bas
+        self.update_ui_values()
+        self.setVisible(True)
+        self._apply_panel_width()
+
+    def exit_generic_mode(self):
+        self.generic_mode_active = False
+        # Seçim de yoksa paneli gizle
+        if not self.selected_strokes and not self.freehand_mode_active:
+            self.setVisible(False)
+
+    # -------- Serbest Çizim: Event handlers --------
+    def on_freehand_mode_changed(self, index):
+        self.current_freehand_brush_mode = self.freehand_mode_combo.itemData(index)
+        self.freehand_adv_style_combo.setEnabled(self.current_freehand_brush_mode == 'advanced')
+        self.freehandBrushModeChanged.emit(self.current_freehand_brush_mode)
+
+    def on_freehand_advanced_style_changed(self, index):
+        self.current_freehand_advanced_style = self.freehand_adv_style_combo.itemData(index)
+        self.freehandAdvancedStyleChanged.emit(self.current_freehand_advanced_style)
+
+    def on_freehand_mouse_smoothing_changed(self, value):
+        self.current_freehand_mouse_smoothing = value / 100.0
+        self.freehand_mouse_smooth_label.setText(f"{value}%")
+        self.freehandSmoothingChanged.emit(self.current_freehand_mouse_smoothing, self.current_freehand_tablet_smoothing)
+
+    def on_freehand_tablet_smoothing_changed(self, value):
+        self.current_freehand_tablet_smoothing = value / 100.0
+        self.freehand_tablet_smooth_label.setText(f"{value}%")
+        self.freehandSmoothingChanged.emit(self.current_freehand_mouse_smoothing, self.current_freehand_tablet_smoothing)
+
+    def on_freehand_min_distance_changed(self, value):
+        self.current_freehand_min_distance = float(value)
+        self.freehandMinDistanceChanged.emit(self.current_freehand_min_distance, self.current_freehand_tablet_min_distance)
+
+    def on_freehand_tablet_min_distance_changed(self, value):
+        self.current_freehand_tablet_min_distance = float(value)
+        self.freehandMinDistanceChanged.emit(self.current_freehand_min_distance, self.current_freehand_tablet_min_distance)
 
     def on_toggle_control_points(self):
         """Kontrol noktalarını göster/gizle"""

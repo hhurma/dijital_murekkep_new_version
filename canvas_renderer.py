@@ -75,15 +75,27 @@ class CanvasRenderer:
                 # LOD bazlı rendering ayarları
                 if use_lod and low_detail:
                     # Uzak zoom - minimal antialiasing, basit çizim
-                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
+                    painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+                    except Exception:
+                        pass
                     self.draw_stroke_simple(painter, stroke_data)
                 elif use_lod and medium_detail:
                     # Orta zoom - orta kalite
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+                    except Exception:
+                        pass
                     self.draw_stroke_medium(painter, stroke_data)
                 else:
                     # Yakın zoom veya LOD yok - full kalite
                     painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+                    try:
+                        painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+                    except Exception:
+                        pass
                     self.draw_stroke_full(painter, stroke_data)
 
         # Seçim vurgusunu çiz
@@ -102,6 +114,10 @@ class CanvasRenderer:
 
         # Aktif çizimi çiz
         painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+        except Exception:
+            pass
         if self.drawing_widget.active_tool == "bspline":
             self.drawing_widget.bspline_tool.draw_current_stroke(painter)
         elif self.drawing_widget.active_tool == "freehand":

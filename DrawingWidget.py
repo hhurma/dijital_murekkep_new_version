@@ -844,9 +844,8 @@ class DrawingWidget(QWidget):
                     self.main_window.shape_properties_dock.show()
             else:
                 # Seçim yok - dock'u gizle
+                # Panel kullanıcı kapatmadıkça görünür kalsın; sadece içeriği boş moda al
                 self.main_window.shape_properties_widget.set_no_selection()
-                if hasattr(self.main_window, 'shape_properties_dock'):
-                    self.main_window.shape_properties_dock.hide()
 
     def clear_all_strokes(self):
         """Tüm çizimleri temizle"""

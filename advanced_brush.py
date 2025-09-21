@@ -158,7 +158,7 @@ class SimpleBrush:
     
     @staticmethod
     def draw_simple_stroke(painter: QPainter, points: List[QPointF], color, width: float, tablet_mode=False, line_style=Qt.PenStyle.SolidLine):
-        """Ultra hızlı basit stroke çizimi"""
+        """Basit stroke çizimi (antialias + tek path ile pürüzsüz eklemler)"""
         if len(points) < 2:
             return
             
@@ -174,14 +174,62 @@ class SimpleBrush:
         
         painter.save()
         painter.setPen(pen)
-        
-        # Tablet yazımı için daha iyi anti-aliasing
-        if tablet_mode:
-            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-            painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
-        
-        # Direct line drawing - en hızlı
-        for i in range(len(points) - 1):
-            painter.drawLine(points[i], points[i + 1])
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+
+        # Her zaman antialiasing aç (yazı benzeri çizimler için kritik)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+        except Exception:
+            pass
+        painter.setRenderHint(QPainter.RenderHint.SmoothPixmapTransform, True)
+
+        # Tüm segmentleri tek bir path olarak çiz; Catmull–Rom'dan cubic Bézier'e dönüştürerek yumuşat
+        def _build_smooth_path(pts: List[QPointF]) -> QPainterPath:
+            n = len(pts)
+            if n < 3:
+                path_local = QPainterPath(pts[0])
+                path_local.lineTo(pts[-1])
+                return path_local
+            path_local = QPainterPath(pts[0])
+            for i in range(n - 1):
+                p0 = pts[i - 1] if i - 1 >= 0 else pts[i]
+                p1 = pts[i]
+                p2 = pts[i + 1]
+                p3 = pts[i + 2] if i + 2 < n else pts[i + 1]
+                # Catmull–Rom -> Bezier: c1 = p1 + (p2 - p0)/6, c2 = p2 - (p3 - p1)/6
+                c1 = QPointF(
+                    p1.x() + (p2.x() - p0.x()) / 6.0,
+                    p1.y() + (p2.y() - p0.y()) / 6.0,
+                )
+                c2 = QPointF(
+                    p2.x() - (p3.x() - p1.x()) / 6.0,
+                    p2.y() - (p3.y() - p1.y()) / 6.0,
+                )
+                path_local.cubicTo(c1, c2, p2)
+            return path_local
+
+        # İnce kalemde (<=2.5) daha güçlü yumuşatma uygula
+        if width <= 2.5:
+            # Küçük jitter'ları at: birbirine çok yakın noktaları filtrele
+            filtered: List[QPointF] = []
+            last = None
+            min_dist = max(0.6, width * 0.6)
+            for pt in points:
+                if last is None:
+                    filtered.append(pt)
+                    last = pt
+                else:
+                    dx = pt.x() - last.x()
+                    dy = pt.y() - last.y()
+                    if (dx * dx + dy * dy) >= (min_dist * min_dist):
+                        filtered.append(pt)
+                        last = pt
+            if len(filtered) < 2:
+                filtered = points
+            path = _build_smooth_path(filtered)
+        else:
+            path = _build_smooth_path(points)
+        painter.drawPath(path)
             
         painter.restore() 

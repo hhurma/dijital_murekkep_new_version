@@ -33,6 +33,9 @@ class FreehandTool:
         
         # Adaptive smoothing için
         self.velocity_threshold = 20.0  # Hızlı çizimde daha az smoothing
+        # Smoothing parametreleri (UI ile değiştirilebilir)
+        self.mouse_smoothing = 0.5  # 0..1 (önceki noktaya ağırlık)
+        self.tablet_smoothing = 0.2  # 0..1
 
         # Brush mode ayarları
         self.brush_mode = 'simple'  # 'simple', 'advanced'
@@ -96,10 +99,10 @@ class FreehandTool:
             # Tablet için minimal smoothing - sadece jitter azaltma
             if len(self.current_stroke['points']) > 0:
                 last_pos = self.current_stroke['points'][-1]
-                # Çok hafif smoothing (%20 eski, %80 yeni)
+                # Ayarlanabilir smoothing
                 smoothed_pos = QPointF(
-                    last_pos.x() * 0.2 + pos.x() * 0.8,
-                    last_pos.y() * 0.2 + pos.y() * 0.8
+                    last_pos.x() * self.tablet_smoothing + pos.x() * (1.0 - self.tablet_smoothing),
+                    last_pos.y() * self.tablet_smoothing + pos.y() * (1.0 - self.tablet_smoothing)
                 )
                 self.current_stroke['points'].append(smoothed_pos)
             else:
@@ -109,8 +112,8 @@ class FreehandTool:
             if len(self.current_stroke['points']) > 0:
                 last_pos = self.current_stroke['points'][-1]
                 smoothed_pos = QPointF(
-                    (last_pos.x() + pos.x()) * 0.5,
-                    (last_pos.y() + pos.y()) * 0.5
+                    last_pos.x() * self.mouse_smoothing + pos.x() * (1.0 - self.mouse_smoothing),
+                    last_pos.y() * self.mouse_smoothing + pos.y() * (1.0 - self.mouse_smoothing)
                 )
                 self.current_stroke['points'].append(smoothed_pos)
             else:
@@ -181,6 +184,12 @@ class FreehandTool:
             line_style = stroke_data.get('style', Qt.PenStyle.SolidLine)
             if isinstance(line_style, int):
                 line_style = Qt.PenStyle(line_style)
+            # Her durumda yüksek kalite antialias etkin olsun
+            painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+            try:
+                painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+            except Exception:
+                pass
             SimpleBrush.draw_simple_stroke(painter, qpoint_list, color, width, tablet_mode, line_style)
     
     def set_color(self, color):
@@ -218,6 +227,11 @@ class FreehandTool:
 
         # Aktif çizim için her zaman simple brush kullan (performans)
         tablet_mode = self.current_stroke.get('tablet_mode', False)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        try:
+            painter.setRenderHint(QPainter.RenderHint.HighQualityAntialiasing, True)
+        except Exception:
+            pass
         SimpleBrush.draw_simple_stroke(painter, points, self.current_color, self.current_width, tablet_mode, self.line_style)
     
     def set_width(self, width):
@@ -237,6 +251,44 @@ class FreehandTool:
         """Advanced brush style ayarla"""
         if style in ['solid', 'dashed', 'dotted', 'dashdot', 'zigzag', 'double']:
             self.advanced_style = style
+
+    def set_smoothing(self, value):
+        """0..1 arası smoothing ağırlığı (önceki noktaya ağırlık)"""
+        try:
+            v = float(value)
+        except Exception:
+            return
+        v = max(0.0, min(1.0, v))
+        self.mouse_smoothing = v
+        self.tablet_smoothing = min(self.tablet_smoothing, v) if self.tablet_smoothing > v else v
+
+    def set_mouse_smoothing(self, value):
+        try:
+            v = float(value)
+        except Exception:
+            return
+        self.mouse_smoothing = max(0.0, min(1.0, v))
+
+    def set_tablet_smoothing(self, value):
+        try:
+            v = float(value)
+        except Exception:
+            return
+        self.tablet_smoothing = max(0.0, min(1.0, v))
+
+    def set_min_distance(self, dist):
+        try:
+            d = float(dist)
+        except Exception:
+            return
+        self.min_distance = max(0.0, d)
+
+    def set_tablet_min_distance(self, dist):
+        try:
+            d = float(dist)
+        except Exception:
+            return
+        self.tablet_min_distance = max(0.0, d)
 
     def get_brush_mode(self):
         """Aktif brush mode'unu döndür"""
