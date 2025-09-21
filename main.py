@@ -657,8 +657,11 @@ class MainWindow(QMainWindow):
         
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.shape_library_dock)
         
-        # Varsayılan olarak gizli
-        self.shape_library_dock.hide()
+        # Görünürlüğü ayarlardan yükle
+        if self.settings.get_shape_library_dock_visible():
+            self.shape_library_dock.show()
+        else:
+            self.shape_library_dock.hide()
         
     def create_shape_properties_dock(self):
         """Şekil özellikleri dock widget'ı oluştur"""
@@ -761,8 +764,11 @@ class MainWindow(QMainWindow):
         
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.shape_properties_dock)
 
-        # Başlangıçta gizli, resim seçildiğinde görünür olacak
-        self.shape_properties_dock.setVisible(False)
+        # Görünürlüğü ayarlardan yükle
+        if self.settings.get_shape_properties_dock_visible():
+            self.shape_properties_dock.show()
+        else:
+            self.shape_properties_dock.hide()
 
     def create_layer_dock(self):
         """Katman yöneticisi dock widget'ını oluştur"""
@@ -775,27 +781,42 @@ class MainWindow(QMainWindow):
 
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.layer_dock)
         
+        # Görünürlüğü ayarlardan yükle
+        if self.settings.get_layer_dock_visible():
+            self.layer_dock.show()
+        else:
+            self.layer_dock.hide()
+
     def toggle_shape_properties_dock(self):
         """Şekil özellikleri dock widget'ını aç/kapat"""
         if self.shape_properties_dock.isVisible():
             self.shape_properties_dock.hide()
+            self.settings.set_shape_properties_dock_visible(False)
         else:
             self.shape_properties_dock.show()
+            self.settings.set_shape_properties_dock_visible(True)
+        self.settings.save_settings()
         
     def toggle_shape_library_dock(self):
         """Şekil havuzu dock widget'ını aç/kapat"""
         if self.shape_library_dock.isVisible():
             self.shape_library_dock.hide()
+            self.settings.set_shape_library_dock_visible(False)
         else:
             self.shape_library_dock.show()
+            self.settings.set_shape_library_dock_visible(True)
+        self.settings.save_settings()
     
     def toggle_layer_dock(self):
         """Katmanlar dock widget'ını aç/kapat"""
         if hasattr(self, 'layer_dock') and self.layer_dock is not None:
             if self.layer_dock.isVisible():
                 self.layer_dock.hide()
+                self.settings.set_layer_dock_visible(False)
             else:
                 self.layer_dock.show()
+                self.settings.set_layer_dock_visible(True)
+            self.settings.save_settings()
             
     def add_shape_to_canvas(self, strokes):
         """Şekil havuzundan seçilen şekli canvas'a ekle"""

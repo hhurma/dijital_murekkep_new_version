@@ -72,14 +72,31 @@ class BSplineTool:
             
             try:
                 # B-spline hesapla
-                s_factor = len(points_only) * 3.0
-                # Kapalı ise per=True (periodic) kullan
-                tck, u = splprep(points_only.T, s=s_factor, k=3, per=closed)
+                # Kapalı eğrilerde dikiş bölgesinde yinelenen son noktayı düşür
+                pts_for_edit = points_only
+                if closed and len(points_only) >= 2:
+                    dx = points_only[-1, 0] - points_only[0, 0]
+                    dy = points_only[-1, 1] - points_only[0, 1]
+                    if (dx*dx + dy*dy) ** 0.5 <= 12.0:
+                        pts_for_edit = points_only[:-1]
+                # Kapalı eğrilerde per=True ve İNTERPOLASYON (s=0) kullan
+                if closed:
+                    k = 3
+                    s_factor = 0.0
+                    # Not: Ek sarma yapma; per=True yeterli. Son-ilk aynıysa üstte düşürdük.
+                    tck, u = splprep(pts_for_edit.T, s=s_factor, k=k, per=True)
+                else:
+                    s_factor = 0.0
+                    k = min(3, max(1, len(points_only) - 1))
+                    tck, u = splprep(points_only.T, s=s_factor, k=k, per=False)
                 
                 # Stroke data oluştur
                 stroke_data = {
                     'type': 'bspline',  # Modüler sistem için 'type' anahtarı
-                    'control_points': np.array(tck[1]).T.tolist(),  # Liste olarak kaydet
+                    # Kontrol noktaları: DÜZENLEME için kullanıcı noktaları (interpolasyon düğümleri)
+                    'edit_points': points_only.tolist(),
+                    # Uyum katsayıları: eski uyumluluk için saklıyoruz
+                    'control_points': np.array(tck[1]).T.tolist(),
                     # JSON uyumu için numpy -> list
                     'knots': np.array(tck[0]).tolist(),
                     'degree': int(tck[2]),
@@ -105,7 +122,9 @@ class BSplineTool:
                     'inner_shadow': self.inner_shadow,
                     'shadow_quality': self.shadow_quality,
                     'cap_style': Qt.PenCapStyle.RoundCap,
-                    'join_style': Qt.PenJoinStyle.RoundJoin
+                    'join_style': Qt.PenJoinStyle.RoundJoin,
+                    # Düzenlenebilir düğümler (kapalıysa son-ilk çakışması düşürülmüş)
+                    'edit_points': pts_for_edit.tolist() if 'pts_for_edit' in locals() else points_only.tolist()
                 }
                 
                 self.current_stroke = []
@@ -144,7 +163,7 @@ class BSplineTool:
             if not stroke_data.get('show_control_points', False):
                 continue
                 
-            control_points = stroke_data['control_points']
+            control_points = stroke_data.get('edit_points', stroke_data['control_points'])
             for cp_index, cp in enumerate(control_points):
                 cp_point = QPointF(cp[0], cp[1])
                 if (pos_f - cp_point).manhattanLength() < tolerance:
@@ -165,7 +184,7 @@ class BSplineTool:
                 continue
             if not stroke_data.get('show_control_points', False):
                 continue
-            control_points = stroke_data['control_points']
+            control_points = stroke_data.get('edit_points', stroke_data['control_points'])
             for cp in control_points:
                 cp_point = QPointF(cp[0], cp[1])
                 if (pos_f - cp_point).manhattanLength() < tolerance:
@@ -187,7 +206,10 @@ class BSplineTool:
                 return False
                 
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
-                stroke_data['control_points'][cp_index] = [new_pos.x(), new_pos.y()]
+                if 'edit_points' in stroke_data:
+                    stroke_data['edit_points'][cp_index] = [new_pos.x(), new_pos.y()]
+                else:
+                    stroke_data['control_points'][cp_index] = [new_pos.x(), new_pos.y()]
                 return True
                 
         return False
@@ -242,10 +264,31 @@ class BSplineTool:
         if stroke_data.get('type') != 'bspline' and stroke_data.get('tool_type') != 'bspline':
             return
             
-        control_points = stroke_data['control_points']
-        knots = stroke_data['knots']
-        degree = stroke_data['degree']
-        u = stroke_data['u']
+        # Eğer edit_points varsa, her çizimde spline'ı yeniden kurarak edit sonrası
+        # interpolasyonlu ve pürüzsüz kapanış elde ederiz.
+        edit_points = stroke_data.get('edit_points')
+        if edit_points is not None:
+            pts = np.array(edit_points, dtype=float)
+            closed = bool(stroke_data.get('closed', False))
+            try:
+                if closed and len(pts) >= 4:
+                    k = 3
+                    wrapped = np.vstack([pts, pts[:k]])
+                    s_factor = max(0.0, len(pts) * 0.3)
+                    tck, u = splprep(wrapped.T, s=s_factor, k=k, per=True)
+                else:
+                    s_factor = len(pts) * 3.0
+                    tck, u = splprep(pts.T, s=s_factor, k=min(3, max(1, len(pts)-1)), per=False)
+            except Exception:
+                # Düştüğünde eski tck'yi kullan
+                tck = (np.array(stroke_data['knots']), np.array(stroke_data['control_points']).T, stroke_data['degree'])
+                u = np.array(stroke_data['u'])
+        else:
+            control_points = stroke_data['control_points']
+            knots = stroke_data['knots']
+            degree = stroke_data['degree']
+            u = stroke_data['u']
+            tck = (np.array(knots), np.array(control_points).T, degree)
         
         # B-spline eğrisini çiz
         painter.save()
@@ -264,31 +307,35 @@ class BSplineTool:
                   Qt.PenCapStyle.RoundCap, Qt.PenJoinStyle.RoundJoin)
         painter.setPen(pen)
         
-        # Control points'i numpy array'e çevir
-        if isinstance(control_points, list):
-            control_points = np.array(control_points)
-        # Knots ve u numpy array'e çevir (liste olabilir)
-        if isinstance(knots, list):
-            knots = np.array(knots, dtype=float)
+        # u dizisini numpy yap
         if isinstance(u, list):
             u = np.array(u, dtype=float)
         
-        tck = (knots, control_points.T, degree)
-        # Kapalı eğri için başlangıç ve bitiş noktalarının aynı olmasını garanti et
-        ts = np.linspace(0, u[-1], 201)
+        # Örnekleme: kapalı eğrilerde dikiş köşesini önlemek için endpoint=False ve daha yoğun örnekleme kullan
+        num_ctrl = int(np.array(tck[1]).T.shape[0])
+        # Örnek sayısını kontrol noktası sayısına bağlı, ancak sınırlı tut
+        base_samples = int(max(200, min(1000, num_ctrl * 40)))
+        is_closed = bool(stroke_data.get('closed', False))
+        # Kapalıda endpoint=False: son==ilk örneklemesini engelleyip tek hatlık çizim yap
+        ts = np.linspace(0, u[-1], base_samples, endpoint=False)
         x_fine, y_fine = splev(ts, tck)
         path = QPainterPath()
-        # Kapalı ise son noktayı ilk noktayla eşitle (sıfır uzunluklu kapanış)
-        if stroke_data.get('closed', False):
-            x_fine[-1] = x_fine[0]
-            y_fine[-1] = y_fine[0]
-        
         path.moveTo(QPointF(x_fine[0], y_fine[0]))
         for i in range(1, len(x_fine)):
             path.lineTo(QPointF(x_fine[i], y_fine[i]))
-        # Kapalıysa alt yolu kapat (son==ilk olduğundan düz çizgi oluşmaz)
-        if stroke_data.get('closed', False):
-            path.closeSubpath()
+        # Kapalı eğri: son noktadan ilk noktaya yumuşak (cubic) bağ kur
+        if is_closed and len(x_fine) >= 4:
+            p_last = QPointF(x_fine[-1], y_fine[-1])
+            p_prev1 = QPointF(x_fine[-2], y_fine[-2])
+            p_first = QPointF(x_fine[0], y_fine[0])
+            p_next1 = QPointF(x_fine[1], y_fine[1])
+            # Türev tahmini (tangent)
+            t_end = QPointF(p_last.x() - p_prev1.x(), p_last.y() - p_prev1.y())
+            t_start = QPointF(p_next1.x() - p_first.x(), p_next1.y() - p_first.y())
+            alpha = 0.35
+            c1 = QPointF(p_last.x() + t_end.x() * alpha, p_last.y() + t_end.y() * alpha)
+            c2 = QPointF(p_first.x() - t_start.x() * alpha, p_first.y() - t_start.y() * alpha)
+            path.cubicTo(c1, c2, p_first)
 
         ShadowRenderer.draw_shape_shadow(painter, 'path', path, stroke_data)
 
@@ -319,6 +366,14 @@ class BSplineTool:
         show_points = stroke_data.get('show_control_points', False)
         if show_points:
             painter.save()
+            # Hangi noktalar gösterilecek? Tercihen kullanıcı düğüm noktaları (edit_points)
+            if edit_points is not None:
+                control_points = edit_points
+            else:
+                try:
+                    control_points = np.array(tck[1]).T.tolist()
+                except Exception:
+                    control_points = stroke_data.get('control_points', [])
             # Normal noktalar için stil
             normal_pen = QPen(Qt.GlobalColor.red, 1, Qt.PenStyle.SolidLine)
             normal_brush = QBrush(Qt.GlobalColor.white)

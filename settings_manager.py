@@ -60,7 +60,10 @@ class SettingsManager:
         self.config['Window'] = {
             'width': '1200',
             'height': '800',
-            'background_dock_visible': 'False'
+            'background_dock_visible': 'False',
+            'shape_library_dock_visible': 'False',
+            'shape_properties_dock_visible': 'False',
+            'layer_dock_visible': 'True'
         }
         
         # PDF ayarları
@@ -423,6 +426,30 @@ class SettingsManager:
     def set_background_dock_visible(self, visible):
         """Arka plan dock'ının görünürlüğünü kaydet"""
         self.config.set('Window', 'background_dock_visible', str(visible))
+        
+    def get_shape_library_dock_visible(self):
+        """Şekil havuzu dock görünürlüğünü al"""
+        return self.config.getboolean('Window', 'shape_library_dock_visible', fallback=False)
+
+    def set_shape_library_dock_visible(self, visible):
+        """Şekil havuzu dock görünürlüğünü kaydet"""
+        self.config.set('Window', 'shape_library_dock_visible', str(visible))
+
+    def get_shape_properties_dock_visible(self):
+        """Şekil özellikleri dock görünürlüğünü al"""
+        return self.config.getboolean('Window', 'shape_properties_dock_visible', fallback=False)
+
+    def set_shape_properties_dock_visible(self, visible):
+        """Şekil özellikleri dock görünürlüğünü kaydet"""
+        self.config.set('Window', 'shape_properties_dock_visible', str(visible))
+
+    def get_layer_dock_visible(self):
+        """Katmanlar dock görünürlüğünü al"""
+        return self.config.getboolean('Window', 'layer_dock_visible', fallback=True)
+
+    def set_layer_dock_visible(self, visible):
+        """Katmanlar dock görünürlüğünü kaydet"""
+        self.config.set('Window', 'layer_dock_visible', str(visible))
         
     def get_all_settings(self):
         """Tüm ayarları dictionary olarak döndür"""
