@@ -65,6 +65,13 @@ class SettingsManager:
             'shape_properties_dock_visible': 'False',
             'layer_dock_visible': 'True'
         }
+
+        # Uygulama (ilk çalıştırma ve dizinler)
+        self.config['App'] = {
+            'first_run_completed': 'False',
+            'sessions_dir': '',
+            'shapes_dir': ''
+        }
         
         # PDF ayarları
         self.config['PDF'] = {
@@ -457,6 +464,31 @@ class SettingsManager:
         for section_name in self.config.sections():
             settings_dict[section_name] = dict(self.config[section_name])
         return settings_dict
+
+    # İlk çalıştırma ve dizinler
+    def get_first_run_completed(self) -> bool:
+        return self.config.getboolean('App', 'first_run_completed', fallback=False)
+
+    def set_first_run_completed(self, completed: bool):
+        if not self.config.has_section('App'):
+            self.config.add_section('App')
+        self.config.set('App', 'first_run_completed', str(bool(completed)))
+
+    def get_sessions_dir(self) -> str:
+        return self.config.get('App', 'sessions_dir', fallback='')
+
+    def set_sessions_dir(self, path: str):
+        if not self.config.has_section('App'):
+            self.config.add_section('App')
+        self.config.set('App', 'sessions_dir', str(path or ''))
+
+    def get_shapes_dir(self) -> str:
+        return self.config.get('App', 'shapes_dir', fallback='')
+
+    def set_shapes_dir(self, path: str):
+        if not self.config.has_section('App'):
+            self.config.add_section('App')
+        self.config.set('App', 'shapes_dir', str(path or ''))
         
     def load_from_dict(self, settings_dict):
         """Dictionary'den ayarları yükle"""

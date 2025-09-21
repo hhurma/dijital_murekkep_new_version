@@ -92,6 +92,23 @@ class MainWindow(QMainWindow):
         # Tab widget'ını layout'a ekle
         self.tab_widget = self.tab_manager.get_tab_widget()
         layout.addWidget(self.tab_widget)
+
+        # İlk çalıştırma sihirbazını kontrol et
+        try:
+            if not self.settings.get_first_run_completed():
+                self.run_first_run_wizard()
+            # Sihirbazdan gelen klasörleri çalışma zamanına uygula
+            try:
+                self.session_manager.set_sessions_directory(self.settings.get_sessions_dir())
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'shape_library_widget') and hasattr(self.shape_library_widget, 'library_manager'):
+                    self.shape_library_widget.library_manager.set_library_directory(self.settings.get_shapes_dir())
+            except Exception:
+                pass
+        except Exception:
+            pass
         
         # İlk tab'ı oluştur
         self.tab_manager.create_new_tab()
@@ -1070,6 +1087,90 @@ class MainWindow(QMainWindow):
         # Aktif aracı ayarlara kaydet
         self.settings.set_active_tool(tool_name)
         self.settings.save_settings()
+
+    def run_first_run_wizard(self):
+        """İlk açılışta çalışacak basit sihirbaz: oturum ve şekil havuzu dizinlerini sorar."""
+        from PyQt6.QtWidgets import QDialog, QVBoxLayout, QLabel, QLineEdit, QPushButton, QFileDialog, QHBoxLayout, QMessageBox
+        dlg = QDialog(self)
+        dlg.setWindowTitle("İlk Kurulum Sihirbazı")
+        lay = QVBoxLayout(dlg)
+        lay.addWidget(QLabel("Dijital Mürekkep'e hoş geldiniz!\nOturum ve Şekil Havuzu klasörlerini seçin."))
+
+        # Sessions dir
+        ses_layout = QHBoxLayout()
+        ses_edit = QLineEdit(self.settings.get_sessions_dir())
+        ses_btn = QPushButton("Gözat…")
+        def choose_sessions():
+            path = QFileDialog.getExistingDirectory(self, "Oturumlar klasörünü seçin")
+            if path:
+                ses_edit.setText(path)
+        ses_btn.clicked.connect(choose_sessions)
+        ses_layout.addWidget(QLabel("Oturumlar Klasörü:"))
+        ses_layout.addWidget(ses_edit)
+        ses_layout.addWidget(ses_btn)
+        lay.addLayout(ses_layout)
+
+        # Shapes dir
+        shp_layout = QHBoxLayout()
+        shp_edit = QLineEdit(self.settings.get_shapes_dir())
+        shp_btn = QPushButton("Gözat…")
+        def choose_shapes():
+            path = QFileDialog.getExistingDirectory(self, "Şekil Havuzu klasörünü seçin")
+            if path:
+                shp_edit.setText(path)
+        shp_btn.clicked.connect(choose_shapes)
+        shp_layout.addWidget(QLabel("Şekil Havuzu Klasörü:"))
+        shp_layout.addWidget(shp_edit)
+        shp_layout.addWidget(shp_btn)
+        lay.addLayout(shp_layout)
+
+        # Actions
+        btn_layout = QHBoxLayout()
+        ok_btn = QPushButton("Kaydet ve Başla")
+        cancel_btn = QPushButton("Varsayılanlarla Devam Et")
+        btn_layout.addWidget(ok_btn)
+        btn_layout.addWidget(cancel_btn)
+        lay.addLayout(btn_layout)
+
+        def on_ok():
+            ses = ses_edit.text().strip()
+            shp = shp_edit.text().strip()
+            if ses and not os.path.isdir(ses):
+                try:
+                    os.makedirs(ses, exist_ok=True)
+                except Exception as e:
+                    QMessageBox.warning(dlg, "Hata", f"Oturum klasörü oluşturulamadı:\n{e}")
+                    return
+            if shp and not os.path.isdir(shp):
+                try:
+                    os.makedirs(shp, exist_ok=True)
+                except Exception as e:
+                    QMessageBox.warning(dlg, "Hata", f"Şekil havuzu klasörü oluşturulamadı:\n{e}")
+                    return
+            self.settings.set_sessions_dir(ses)
+            self.settings.set_shapes_dir(shp)
+            self.settings.set_first_run_completed(True)
+            self.settings.save_settings()
+            # Klasörleri anında uygula
+            try:
+                self.session_manager.set_sessions_directory(self.settings.get_sessions_dir())
+            except Exception:
+                pass
+            try:
+                if hasattr(self, 'shape_library_widget') and hasattr(self.shape_library_widget, 'library_manager'):
+                    self.shape_library_widget.library_manager.set_library_directory(self.settings.get_shapes_dir())
+            except Exception:
+                pass
+            dlg.accept()
+
+        def on_cancel():
+            self.settings.set_first_run_completed(True)
+            self.settings.save_settings()
+            dlg.reject()
+
+        ok_btn.clicked.connect(on_ok)
+        cancel_btn.clicked.connect(on_cancel)
+        dlg.exec()
         
         # Status bar'ı güncelle
         self.update_tool_status(tool_name)

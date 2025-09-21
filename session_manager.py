@@ -18,6 +18,15 @@ class SessionManager:
         
     def get_sessions_directory(self):
         """Oturumlar için dizin yolunu al"""
+        # Ayarlarda özel dizin varsa onu kullan
+        try:
+            from settings_manager import SettingsManager
+            sm = SettingsManager()
+            custom = sm.get_sessions_dir()
+            if custom:
+                return custom
+        except Exception:
+            pass
         documents_path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
         return os.path.join(documents_path, "Dijital Mürekkep Oturumları")
         
@@ -25,6 +34,14 @@ class SessionManager:
         """Oturumlar dizininin var olduğundan emin ol"""
         if not os.path.exists(self.sessions_dir):
             os.makedirs(self.sessions_dir)
+
+    def set_sessions_directory(self, directory: str | None):
+        """Oturumlar dizinini çalışma zamanında değiştir ve garanti altına al"""
+        if directory and isinstance(directory, str) and directory.strip():
+            self.sessions_dir = directory.strip()
+        else:
+            self.sessions_dir = self.get_sessions_directory()
+        self.ensure_sessions_directory()
             
     def save_session(self, main_window, filename=None):
         """Mevcut oturumu kaydet"""

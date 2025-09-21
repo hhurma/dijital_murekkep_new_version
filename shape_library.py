@@ -21,6 +21,15 @@ class ShapeLibraryManager:
         
     def get_library_directory(self):
         """Şekil havuzu için dizin yolunu al"""
+        # Ayarlarda özel dizin varsa onu kullan
+        try:
+            from settings_manager import SettingsManager
+            sm = SettingsManager()
+            custom = sm.get_shapes_dir()
+            if custom:
+                return custom
+        except Exception:
+            pass
         documents_path = QStandardPaths.writableLocation(QStandardPaths.StandardLocation.DocumentsLocation)
         return os.path.join(documents_path, "Dijital Mürekkep Şekil Havuzu")
         
@@ -28,6 +37,15 @@ class ShapeLibraryManager:
         """Şekil havuzu dizininin var olduğundan emin ol"""
         if not os.path.exists(self.library_dir):
             os.makedirs(self.library_dir)
+
+    def set_library_directory(self, directory: str | None):
+        """Şekil havuzu dizinini çalışma zamanında değiştir ve garanti altına al"""
+        if directory and isinstance(directory, str) and directory.strip():
+            self.library_dir = directory.strip()
+        else:
+            self.library_dir = self.get_library_directory()
+        self.ensure_library_directory()
+        self.library_file = os.path.join(self.library_dir, "shape_library.json")
             
     def load_library(self):
         """Şekil havuzunu yükle"""
