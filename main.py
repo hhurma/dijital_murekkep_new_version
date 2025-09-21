@@ -284,6 +284,9 @@ class MainWindow(QMainWindow):
         self.clear_action.triggered.connect(self.clear_all)
         toolbar.addAction(self.clear_action)
         
+        # Tam ekran durumunda toolbar görünür kalacak; toggle için referansı sakla
+        self._main_toolbar = toolbar
+        
     def create_menu(self):
         """Menü çubuğunu oluştur"""
         menubar = self.menuBar()
@@ -362,13 +365,19 @@ class MainWindow(QMainWindow):
         file_menu.addAction(export_pdf_pages_action)
         
         file_menu.addSeparator()
-        
+
         # Son oturumlar
         recent_menu = file_menu.addMenu(qta.icon('fa5s.history', color='#FF9800'), "Son Oturumlar")
         self.update_recent_sessions_menu(recent_menu)
         
         # Görünüm menüsü
         view_menu = menubar.addMenu("Görünüm")
+        self.fullscreen_action = QAction(qta.icon('fa5s.expand', color='#607D8B'), "Tam Ekran (F12)", self)
+        self.fullscreen_action.setCheckable(True)
+        self.fullscreen_action.setShortcut("F12")
+        self.fullscreen_action.setToolTip("Araç çubuğu görünür kalarak tam ekran moduna geç")
+        self.fullscreen_action.toggled.connect(self.toggle_fullscreen)
+        view_menu.addAction(self.fullscreen_action)
         
         # Ayarlar
         settings_action = QAction("Ayarlar", self)
@@ -379,6 +388,28 @@ class MainWindow(QMainWindow):
         shape_library_action = QAction("Şekil Havuzu", self)
         shape_library_action.triggered.connect(self.toggle_shape_library_dock)
         view_menu.addAction(shape_library_action)
+        
+        # Sekme çubuğunu göster/gizle
+        self.toggle_tabbar_action = QAction("Sekme Çubuğunu Göster", self)
+        self.toggle_tabbar_action.setCheckable(True)
+        try:
+            current_tabbar_visible = self.tab_manager.tab_widget.tabBar().isVisible()
+        except Exception:
+            current_tabbar_visible = True
+        self.toggle_tabbar_action.setChecked(current_tabbar_visible)
+        self.toggle_tabbar_action.toggled.connect(self.toggle_tabbar_visibility)
+        view_menu.addAction(self.toggle_tabbar_action)
+        
+        # Durum çubuğunu göster/gizle
+        self.toggle_statusbar_action = QAction("Durum Çubuğunu Göster", self)
+        self.toggle_statusbar_action.setCheckable(True)
+        try:
+            current_statusbar_visible = self.statusBar().isVisible()
+        except Exception:
+            current_statusbar_visible = True
+        self.toggle_statusbar_action.setChecked(current_statusbar_visible)
+        self.toggle_statusbar_action.toggled.connect(self.toggle_statusbar_visibility)
+        view_menu.addAction(self.toggle_statusbar_action)
         
 
         
@@ -431,6 +462,21 @@ class MainWindow(QMainWindow):
         }
         display_name = tool_names.get(tool_name, tool_name)
         self.tool_status_label.setText(display_name)
+
+    def toggle_tabbar_visibility(self, visible):
+        """Sekme çubuğunu göster/gizle"""
+        try:
+            tabbar = self.tab_manager.tab_widget.tabBar()
+            tabbar.setVisible(bool(visible))
+        except Exception:
+            pass
+
+    def toggle_statusbar_visibility(self, visible):
+        """Durum çubuğunu göster/gizle"""
+        try:
+            self.statusBar().setVisible(bool(visible))
+        except Exception:
+            pass
 
     def update_pdf_controls_state(self):
         """PDF navigasyon ve durum kontrollerini güncelle"""
@@ -858,6 +904,9 @@ class MainWindow(QMainWindow):
         if hasattr(self, 'layer_manager_widget'):
             self.layer_manager_widget.set_drawing_widget(current_widget)
         self.update_pdf_controls_state()
+        
+        # F12 kısa yolunun ana pencerede çalışması için focus policy
+        self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
 
     def set_tool(self, tool_name):
         """Aktif aracı değiştir"""
@@ -902,6 +951,22 @@ class MainWindow(QMainWindow):
     def on_palette_changed(self):
         """Color palette değiştiğinde"""
         self.show_status_message("Renk paleti kaydedildi")
+
+    def toggle_fullscreen(self, enabled):
+        """F12 ile tam ekranı aç/kapat. Araç çubuğu görünür kalsın."""
+        try:
+            if enabled:
+                # Tam ekranı aç
+                self.showFullScreen()
+                # Toolbar görünmeye devam etsin
+                if hasattr(self, '_main_toolbar') and self._main_toolbar is not None:
+                    self._main_toolbar.setVisible(True)
+            else:
+                # Normal pencere moduna dön
+                self.showNormal()
+        except Exception:
+            # Güvenli fallback
+            self.showNormal()
             
     def on_width_changed(self, width):
         """Çizgi kalınlığı değiştiğinde aktif tab'a bildir"""
@@ -2872,6 +2937,20 @@ class MainWindow(QMainWindow):
         edit_menu.addAction(self.paste_action)
         edit_menu.addSeparator()
         edit_menu.addAction(self.delete_action)
+        
+        # Görünüm menüsü ve F12 toggle ekle (menu create_menu içinde de var; burada yoksa ekle)
+        view_menus = [m for m in menubar.findChildren(type(edit_menu)) if m.title() == "Görünüm"]
+        if not view_menus:
+            view_menu = menubar.addMenu("Görünüm")
+            try:
+                self.fullscreen_action
+            except AttributeError:
+                self.fullscreen_action = QAction(qta.icon('fa5s.expand', color='#607D8B'), "Tam Ekran (F12)", self)
+                self.fullscreen_action.setCheckable(True)
+                self.fullscreen_action.setShortcut("F12")
+                self.fullscreen_action.setToolTip("Araç çubuğu görünür kalarak tam ekran moduna geç")
+                self.fullscreen_action.toggled.connect(self.toggle_fullscreen)
+            view_menu.addAction(self.fullscreen_action)
         
     def copy_selected_strokes(self):
         """Seçili stroke'ları kopyala"""
