@@ -860,9 +860,9 @@ class DrawingWidget(QWidget):
             selected_strokes = self.selection_tool.selected_strokes
             
             if selected_strokes:
-                # Seçim var - dock'u göster ve güncelle
+                # Seçim var - içeriği güncelle; görünürlüğe kullanıcı kararı saygı duy
                 self.main_window.shape_properties_widget.set_selected_strokes(selected_strokes, self.strokes)
-                if hasattr(self.main_window, 'shape_properties_dock'):
+                if hasattr(self.main_window, 'shape_properties_dock') and self.main_window.settings.get_shape_properties_dock_visible():
                     self.main_window.shape_properties_dock.show()
             else:
                 # Seçim yok - dock'u gizle

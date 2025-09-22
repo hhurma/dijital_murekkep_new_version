@@ -7,6 +7,7 @@ class SettingsManager:
     """Uygulama ayarlarını yöneten sınıf"""
     
     def __init__(self, config_file="settings.ini"):
+        # İstenen: settings.ini kök dizinde kalsın
         self.config_file = config_file
         self.config = configparser.ConfigParser()
         self.load_settings()

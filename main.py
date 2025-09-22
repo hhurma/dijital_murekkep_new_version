@@ -26,6 +26,11 @@ class MainWindow(QMainWindow):
 
         # Settings manager'ı başlat
         self.settings = SettingsManager()
+        # Dock visibility sinyal engelleme
+        self._dock_visibility_updating = False
+        self._visibility_timer = QTimer()
+        self._visibility_timer.setSingleShot(True)
+        self._visibility_timer.timeout.connect(self._reset_dock_updating_flag)
 
         # PDF importer'ı başlat
         self.pdf_importer = PDFImporter()
@@ -265,26 +270,34 @@ class MainWindow(QMainWindow):
         toolbar.addSeparator()
         
         # Paneller: Ayarlar, Şekil Havuzu, Katmanlar
-        settings_panel_action_tb = QAction(qta.icon('fa5s.cog', color='#607D8B'), "Ayarlar Paneli", self)
-        settings_panel_action_tb.setToolTip("Ayarlar panelini göster/gizle")
-        settings_panel_action_tb.triggered.connect(self.toggle_background_dock)
-        toolbar.addAction(settings_panel_action_tb)
+        self.settings_panel_action_tb = QAction(qta.icon('fa5s.cog', color='#607D8B'), "Ayarlar Paneli", self)
+        self.settings_panel_action_tb.setToolTip("Ayarlar panelini göster/gizle")
+        self.settings_panel_action_tb.setCheckable(True)
+        self.settings_panel_action_tb.setChecked(self.settings.get_background_dock_visible())
+        self.settings_panel_action_tb.toggled.connect(self.toggle_background_dock)
+        toolbar.addAction(self.settings_panel_action_tb)
 
-        shape_library_toggle_tb = QAction(qta.icon('fa5s.shapes', color='#9C27B0'), "Şekil Havuzu", self)
-        shape_library_toggle_tb.setToolTip("Şekil Havuzu panelini göster/gizle")
-        shape_library_toggle_tb.triggered.connect(self.toggle_shape_library_dock)
-        toolbar.addAction(shape_library_toggle_tb)
+        self.shape_library_toggle_tb = QAction(qta.icon('fa5s.shapes', color='#9C27B0'), "Şekil Havuzu", self)
+        self.shape_library_toggle_tb.setToolTip("Şekil Havuzu panelini göster/gizle")
+        self.shape_library_toggle_tb.setCheckable(True)
+        self.shape_library_toggle_tb.setChecked(self.settings.get_shape_library_dock_visible())
+        self.shape_library_toggle_tb.toggled.connect(self.toggle_shape_library_dock)
+        toolbar.addAction(self.shape_library_toggle_tb)
 
-        layers_toggle_tb = QAction(qta.icon('fa5s.layer-group', color='#607D8B'), "Katmanlar", self)
-        layers_toggle_tb.setToolTip("Katmanlar panelini göster/gizle")
-        layers_toggle_tb.triggered.connect(self.toggle_layer_dock)
-        toolbar.addAction(layers_toggle_tb)
+        self.layers_toggle_tb = QAction(qta.icon('fa5s.layer-group', color='#607D8B'), "Katmanlar", self)
+        self.layers_toggle_tb.setToolTip("Katmanlar panelini göster/gizle")
+        self.layers_toggle_tb.setCheckable(True)
+        self.layers_toggle_tb.setChecked(self.settings.get_layer_dock_visible())
+        self.layers_toggle_tb.toggled.connect(self.toggle_layer_dock)
+        toolbar.addAction(self.layers_toggle_tb)
 
         # Şekil Özellikleri paneli toggle
-        shape_props_toggle_tb = QAction(qta.icon('fa5s.sliders-h', color='#455A64'), "Şekil Özellikleri", self)
-        shape_props_toggle_tb.setToolTip("Şekil Özellikleri panelini göster/gizle")
-        shape_props_toggle_tb.triggered.connect(self.toggle_shape_properties_dock)
-        toolbar.addAction(shape_props_toggle_tb)
+        self.shape_props_toggle_tb = QAction(qta.icon('fa5s.sliders-h', color='#455A64'), "Şekil Özellikleri", self)
+        self.shape_props_toggle_tb.setToolTip("Şekil Özellikleri panelini göster/gizle")
+        self.shape_props_toggle_tb.setCheckable(True)
+        self.shape_props_toggle_tb.setChecked(self.settings.get_shape_properties_dock_visible())
+        self.shape_props_toggle_tb.toggled.connect(self.toggle_shape_properties_dock)
+        toolbar.addAction(self.shape_props_toggle_tb)
 
         toolbar.addSeparator()
 
@@ -415,26 +428,34 @@ class MainWindow(QMainWindow):
         view_menu.addAction(self.fullscreen_action)
         
         # Ayarlar
-        settings_action = QAction("Ayarlar", self)
-        settings_action.triggered.connect(self.toggle_background_dock)
-        view_menu.addAction(settings_action)
+        self.settings_action = QAction("Ayarlar", self)
+        self.settings_action.setCheckable(True)
+        self.settings_action.setChecked(self.settings.get_background_dock_visible())
+        self.settings_action.toggled.connect(self.toggle_background_dock)
+        view_menu.addAction(self.settings_action)
         
         # Şekil havuzu
-        shape_library_action = QAction("Şekil Havuzu", self)
-        shape_library_action.triggered.connect(self.toggle_shape_library_dock)
-        view_menu.addAction(shape_library_action)
+        self.shape_library_action = QAction("Şekil Havuzu", self)
+        self.shape_library_action.setCheckable(True)
+        self.shape_library_action.setChecked(self.settings.get_shape_library_dock_visible())
+        self.shape_library_action.toggled.connect(self.toggle_shape_library_dock)
+        view_menu.addAction(self.shape_library_action)
 
         # Şekil Özellikleri paneli
-        shape_props_action = QAction("Şekil Özellikleri", self)
-        shape_props_action.setToolTip("Şekil Özellikleri panelini göster/gizle")
-        shape_props_action.triggered.connect(self.toggle_shape_properties_dock)
-        view_menu.addAction(shape_props_action)
+        self.shape_props_action = QAction("Şekil Özellikleri", self)
+        self.shape_props_action.setToolTip("Şekil Özellikleri panelini göster/gizle")
+        self.shape_props_action.setCheckable(True)
+        self.shape_props_action.setChecked(self.settings.get_shape_properties_dock_visible())
+        self.shape_props_action.toggled.connect(self.toggle_shape_properties_dock)
+        view_menu.addAction(self.shape_props_action)
 
         # Katmanlar paneli
-        layers_action = QAction("Katmanlar", self)
-        layers_action.setToolTip("Katmanlar panelini göster/gizle")
-        layers_action.triggered.connect(self.toggle_layer_dock)
-        view_menu.addAction(layers_action)
+        self.layers_action = QAction("Katmanlar", self)
+        self.layers_action.setToolTip("Katmanlar panelini göster/gizle")
+        self.layers_action.setCheckable(True)
+        self.layers_action.setChecked(self.settings.get_layer_dock_visible())
+        self.layers_action.toggled.connect(self.toggle_layer_dock)
+        view_menu.addAction(self.layers_action)
         
         # Sekme çubuğunu göster/gizle
         self.toggle_tabbar_action = QAction("Sekme Çubuğunu Göster", self)
@@ -643,19 +664,51 @@ class MainWindow(QMainWindow):
             self.settings_dock.show()
         else:
             self.settings_dock.hide()
+
+        # visibilityChanged sinyalini kullanmıyoruz - sorun çıkarıyor
+        # Sadece manuel toggle'larda ayarları kaydediyoruz
             
         # Şekil havuzu dock widget'ı oluştur
         self.create_shape_library_dock()
         
-    def toggle_background_dock(self):
-        """Ayarlar dock widget'ını aç/kapat"""
-        if self.settings_dock.isVisible():
-            self.settings_dock.hide()
-            self.settings.set_background_dock_visible(False)
+    def toggle_background_dock(self, checked=None):
+        """Ayarlar dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
+        print(f"DEBUG: toggle_background_dock called with checked={checked}")
+        self._dock_visibility_updating = True
+            
+        if checked is not None:
+            desired = bool(checked)
+            print(f"DEBUG: Background dock - desired: {desired}, current visible: {self.settings_dock.isVisible()}")
+            if desired != self.settings_dock.isVisible():
+                if desired:
+                    self.settings_dock.show()
+                    print("DEBUG: Background dock shown")
+                else:
+                    self.settings_dock.hide()
+                    print("DEBUG: Background dock hidden")
+            self.settings.set_background_dock_visible(desired)
+            self.settings.save_settings()
+            print(f"DEBUG: Background dock visibility saved as {desired}")
+            self._sync_panel_actions_checked_state()
         else:
-            self.settings_dock.show()
-            self.settings.set_background_dock_visible(True)
-        self.settings.save_settings()
+            if self.settings_dock.isVisible():
+                self.settings_dock.hide()
+                self.settings.set_background_dock_visible(False)
+                print("DEBUG: Background dock toggled off")
+            else:
+                self.settings_dock.show()
+                self.settings.set_background_dock_visible(True)
+                print("DEBUG: Background dock toggled on")
+            self.settings.save_settings()
+            self._sync_panel_actions_checked_state()
+        
+        # 500ms sonra flag'i reset et (Qt internal olaylarının tamamlanması için)
+        self._visibility_timer.start(500)
+        
+    def _reset_dock_updating_flag(self):
+        """Timer callback - dock updating flag'ini reset et"""
+        print("DEBUG: Resetting dock updating flag")
+        self._dock_visibility_updating = False
         
     def create_shape_library_dock(self):
         """Şekil havuzu dock widget'ı oluştur"""
@@ -679,6 +732,9 @@ class MainWindow(QMainWindow):
             self.shape_library_dock.show()
         else:
             self.shape_library_dock.hide()
+
+        # visibilityChanged sinyalini kullanmıyoruz - sorun çıkarıyor
+        # Sadece manuel toggle'larda ayarları kaydediyoruz
         
     def create_shape_properties_dock(self):
         """Şekil özellikleri dock widget'ı oluştur"""
@@ -787,6 +843,9 @@ class MainWindow(QMainWindow):
         else:
             self.shape_properties_dock.hide()
 
+        # visibilityChanged sinyalini kullanmıyoruz - sorun çıkarıyor
+        # Sadece manuel toggle'larda ayarları kaydediyoruz
+
     def create_layer_dock(self):
         """Katman yöneticisi dock widget'ını oluştur"""
         self.layer_dock = QDockWidget("Katmanlar", self)
@@ -804,8 +863,22 @@ class MainWindow(QMainWindow):
         else:
             self.layer_dock.hide()
 
-    def toggle_shape_properties_dock(self):
-        """Şekil özellikleri dock widget'ını aç/kapat"""
+        # visibilityChanged sinyalini kullanmıyoruz - sorun çıkarıyor
+        # Sadece manuel toggle'larda ayarları kaydediyoruz
+
+    def toggle_shape_properties_dock(self, checked=None):
+        """Şekil özellikleri dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
+        if checked is not None:
+            desired = bool(checked)
+            if desired != self.shape_properties_dock.isVisible():
+                if desired:
+                    self.shape_properties_dock.show()
+                else:
+                    self.shape_properties_dock.hide()
+            self.settings.set_shape_properties_dock_visible(desired)
+            self.settings.save_settings()
+            self._sync_panel_actions_checked_state()
+            return
         if self.shape_properties_dock.isVisible():
             self.shape_properties_dock.hide()
             self.settings.set_shape_properties_dock_visible(False)
@@ -813,20 +886,56 @@ class MainWindow(QMainWindow):
             self.shape_properties_dock.show()
             self.settings.set_shape_properties_dock_visible(True)
         self.settings.save_settings()
+        self._sync_panel_actions_checked_state()
         
-    def toggle_shape_library_dock(self):
-        """Şekil havuzu dock widget'ını aç/kapat"""
-        if self.shape_library_dock.isVisible():
-            self.shape_library_dock.hide()
-            self.settings.set_shape_library_dock_visible(False)
+    def toggle_shape_library_dock(self, checked=None):
+        """Şekil havuzu dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
+        print(f"DEBUG: toggle_shape_library_dock called with checked={checked}")
+        self._dock_visibility_updating = True
+            
+        if checked is not None:
+            desired = bool(checked)
+            print(f"DEBUG: Shape library dock - desired: {desired}, current visible: {self.shape_library_dock.isVisible()}")
+            if desired != self.shape_library_dock.isVisible():
+                if desired:
+                    self.shape_library_dock.show()
+                    print("DEBUG: Shape library dock shown")
+                else:
+                    self.shape_library_dock.hide()
+                    print("DEBUG: Shape library dock hidden")
+            self.settings.set_shape_library_dock_visible(desired)
+            self.settings.save_settings()
+            print(f"DEBUG: Shape library dock visibility saved as {desired}")
+            self._sync_panel_actions_checked_state()
         else:
-            self.shape_library_dock.show()
-            self.settings.set_shape_library_dock_visible(True)
-        self.settings.save_settings()
+            if self.shape_library_dock.isVisible():
+                self.shape_library_dock.hide()
+                self.settings.set_shape_library_dock_visible(False)
+                print("DEBUG: Shape library dock toggled off")
+            else:
+                self.shape_library_dock.show()
+                self.settings.set_shape_library_dock_visible(True)
+                print("DEBUG: Shape library dock toggled on")
+            self.settings.save_settings()
+            self._sync_panel_actions_checked_state()
+        
+        # 500ms sonra flag'i reset et (Qt internal olaylarının tamamlanması için)
+        self._visibility_timer.start(500)
     
-    def toggle_layer_dock(self):
-        """Katmanlar dock widget'ını aç/kapat"""
+    def toggle_layer_dock(self, checked=None):
+        """Katmanlar dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
         if hasattr(self, 'layer_dock') and self.layer_dock is not None:
+            if checked is not None:
+                desired = bool(checked)
+                if desired != self.layer_dock.isVisible():
+                    if desired:
+                        self.layer_dock.show()
+                    else:
+                        self.layer_dock.hide()
+                self.settings.set_layer_dock_visible(desired)
+                self.settings.save_settings()
+                self._sync_panel_actions_checked_state()
+                return
             if self.layer_dock.isVisible():
                 self.layer_dock.hide()
                 self.settings.set_layer_dock_visible(False)
@@ -834,6 +943,10 @@ class MainWindow(QMainWindow):
                 self.layer_dock.show()
                 self.settings.set_layer_dock_visible(True)
             self.settings.save_settings()
+        self._sync_panel_actions_checked_state()
+
+    # visibilityChanged handler'ları kaldırıldı - sorun çıkarıyordu
+    # Sadece manuel toggle ve closeEvent'te ayarları kaydediyoruz
             
     def add_shape_to_canvas(self, strokes):
         """Şekil havuzundan seçilen şekli canvas'a ekle"""
@@ -1072,7 +1185,8 @@ class MainWindow(QMainWindow):
                 if tool_name == "freehand":
                     try:
                         self.shape_properties_widget.enter_freehand_mode(current_widget.freehand_tool)
-                        self.shape_properties_dock.show()
+                        if self.settings.get_shape_properties_dock_visible():
+                            self.shape_properties_dock.show()
                     except Exception:
                         pass
                 else:
@@ -1080,7 +1194,8 @@ class MainWindow(QMainWindow):
                         # Önce genel moda geçir, sonra freehand modunu kapat
                         self.shape_properties_widget.enter_generic_mode(tool_name, current_widget)
                         self.shape_properties_widget.exit_freehand_mode()
-                        self.shape_properties_dock.show()
+                        if self.settings.get_shape_properties_dock_visible():
+                            self.shape_properties_dock.show()
                     except Exception:
                         pass
             
@@ -2155,8 +2270,19 @@ class MainWindow(QMainWindow):
         # Pencere boyutunu kaydet
         self.settings.set_window_size(self.width(), self.height())
         
-        # Settings dock görünürlüğünü kaydet
-        self.settings.set_background_dock_visible(self.settings_dock.isVisible())
+        # Tüm dock'ların görünürlüğünü kaydet
+        try:
+            self.settings.set_background_dock_visible(self.settings_dock.isVisible())
+            if hasattr(self, 'shape_library_dock') and self.shape_library_dock is not None:
+                self.settings.set_shape_library_dock_visible(self.shape_library_dock.isVisible())
+            if hasattr(self, 'shape_properties_dock') and self.shape_properties_dock is not None:
+                self.settings.set_shape_properties_dock_visible(self.shape_properties_dock.isVisible())
+            if hasattr(self, 'layer_dock') and self.layer_dock is not None:
+                self.settings.set_layer_dock_visible(self.layer_dock.isVisible())
+            print("DEBUG: closeEvent - All dock visibilities saved")
+        except Exception as e:
+            print(f"DEBUG: closeEvent error: {e}")
+            pass
         
         # Ayarları kaydet
         self.settings.save_settings()
@@ -3968,6 +4094,31 @@ class MainWindow(QMainWindow):
         current_widget.update()
         
         self.show_status_message(f"{deleted_count} öğe silindi")
+
+    def _sync_panel_actions_checked_state(self):
+        """Toolbar ve menüdeki panel toggle action'larının checked durumunu güncelle"""
+        try:
+            # Toolbar aksiyonları
+            if hasattr(self, 'settings_panel_action_tb'):
+                self.settings_panel_action_tb.setChecked(self.settings_dock.isVisible())
+            if hasattr(self, 'shape_library_toggle_tb'):
+                self.shape_library_toggle_tb.setChecked(self.shape_library_dock.isVisible())
+            if hasattr(self, 'layers_toggle_tb'):
+                self.layers_toggle_tb.setChecked(self.layer_dock.isVisible())
+            if hasattr(self, 'shape_props_toggle_tb'):
+                self.shape_props_toggle_tb.setChecked(self.shape_properties_dock.isVisible())
+            
+            # Menü aksiyonları
+            if hasattr(self, 'settings_action'):
+                self.settings_action.setChecked(self.settings_dock.isVisible())
+            if hasattr(self, 'shape_library_action'):
+                self.shape_library_action.setChecked(self.shape_library_dock.isVisible())
+            if hasattr(self, 'layers_action'):
+                self.layers_action.setChecked(self.layer_dock.isVisible())
+            if hasattr(self, 'shape_props_action'):
+                self.shape_props_action.setChecked(self.shape_properties_dock.isVisible())
+        except Exception:
+            pass
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)

@@ -59,6 +59,20 @@ class ShapeLibraryManager:
                 return data
             except Exception as e:
                 print(f"Şekil havuzu yüklenemedi: {e}")
+        else:
+            # Geri uyumluluk: eski ad "shape_pool.json" ise içeri aktar ve yeni dosya adına kaydet
+            try:
+                legacy_file = os.path.join(self.library_dir, "shape_pool.json")
+                if os.path.exists(legacy_file):
+                    with open(legacy_file, 'r', encoding='utf-8') as f:
+                        legacy_data = json.load(f)
+                    transformed = self.transform_legacy_data(legacy_data)
+                    # Dönüşüm sonrası migrate ve kalıcı kaydet
+                    self.migrate_old_shapes(transformed)
+                    self.save_library_data(transformed)
+                    return transformed
+            except Exception as e:
+                print(f"Eski şekil havuzu içe aktarılamadı: {e}")
                 
         # Varsayılan yapı
         return {
@@ -90,6 +104,87 @@ class ShapeLibraryManager:
         except Exception as e:
             print(f"Migration hatası: {e}")
             
+    def transform_legacy_data(self, legacy_data):
+        """Eski 'shape_pool.json' olası formatlarını yeni formata dönüştür"""
+        try:
+            # Eğer zaten beklenen yapıda ise doğrudan döndür
+            if isinstance(legacy_data, dict) and 'categories' in legacy_data:
+                return legacy_data
+
+            # Varsayılan temel yapı
+            new_data = {
+                'version': '1.0',
+                'categories': {
+                    'Genel': {
+                        'name': 'Genel',
+                        'description': 'Genel şekiller',
+                        'shapes': {}
+                    }
+                }
+            }
+
+            target_shapes = new_data['categories']['Genel']['shapes']
+
+            # Tek katmanlı { 'shapes': {...} } yapısı
+            if isinstance(legacy_data, dict) and 'shapes' in legacy_data and isinstance(legacy_data['shapes'], dict):
+                for shape_id, shape_info in legacy_data['shapes'].items():
+                    target_shapes[shape_id] = self._normalize_shape_info(shape_info)
+                return new_data
+
+            # Liste yapısı [ {...}, ... ]
+            if isinstance(legacy_data, list):
+                from datetime import datetime as _dt
+                for idx, item in enumerate(legacy_data):
+                    shape_id = f"Genel_Legacy_{idx}_{_dt.now().strftime('%Y%m%d_%H%M%S')}"
+                    target_shapes[shape_id] = self._normalize_shape_info(item)
+                return new_data
+
+            # Tanınmayan yapı -> boş varsayılan
+            return new_data
+        except Exception as e:
+            print(f"Legacy dönüşüm hatası: {e}")
+            return {
+                'version': '1.0',
+                'categories': {
+                    'Genel': {
+                        'name': 'Genel',
+                        'description': 'Genel şekiller',
+                        'shapes': {}
+                    }
+                }
+            }
+
+    def _normalize_shape_info(self, raw):
+        """Tekil şekil kaydını normalize et (eksik alanları tamamla)"""
+        from datetime import datetime as _dt
+        shape = {}
+        if isinstance(raw, dict):
+            # İsim alanı
+            shape['name'] = raw.get('name') or raw.get('title') or 'Şekil'
+            # Açıklama
+            shape['description'] = raw.get('description', '')
+            # Strokes alanı (ham veri ne ise aynen taşı, deserialize gerekmiyor)
+            shape['strokes'] = raw.get('strokes') or raw.get('data') or raw
+            # Oluşturulma
+            shape['created'] = raw.get('created') or _dt.now().isoformat()
+            # Thumbnail (varsa)
+            shape['thumbnail'] = raw.get('thumbnail')
+            # Favori / kullanım
+            shape['favorite'] = bool(raw.get('favorite', False))
+            shape['usage_count'] = int(raw.get('usage_count', 0))
+        else:
+            # Dict değilse tüm veriyi strokes olarak kabul et
+            shape = {
+                'name': 'Şekil',
+                'description': '',
+                'strokes': raw,
+                'created': _dt.now().isoformat(),
+                'thumbnail': None,
+                'favorite': False,
+                'usage_count': 0
+            }
+        return shape
+
     def save_library_data(self, data):
         """Veriyi doğrudan kaydet"""
         try:
