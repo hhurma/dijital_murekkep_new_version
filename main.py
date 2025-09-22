@@ -829,6 +829,12 @@ class MainWindow(QMainWindow):
         # B-spline kontrol noktaları sinyali
         self.shape_properties_widget.toggleControlPoints.connect(self.on_toggle_control_points)
         self.shape_properties_widget.editBSpline.connect(self.on_edit_bspline)
+
+        # Z-order sinyalleri
+        self.shape_properties_widget.sendBackward.connect(self.on_send_backward)
+        self.shape_properties_widget.sendToBack.connect(self.on_send_to_back)
+        self.shape_properties_widget.sendForward.connect(self.on_send_forward)
+        self.shape_properties_widget.sendToFront.connect(self.on_send_to_front)
         
         self.shape_properties_dock.setWidget(self.shape_properties_widget)
         self.shape_properties_dock.setFloating(False)
@@ -846,6 +852,34 @@ class MainWindow(QMainWindow):
         # visibilityChanged sinyalini kullanmıyoruz - sorun çıkarıyor
         # Sadece manuel toggle'larda ayarları kaydediyoruz
 
+    def on_send_backward(self):
+        """Seçili şekilleri bir alta gönder"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+        drawing_widget.send_selected_backward()
+
+    def on_send_to_back(self):
+        """Seçili şekilleri en alta gönder"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+        drawing_widget.send_selected_to_back()
+
+    def on_send_forward(self):
+        """Seçili şekilleri bir üste gönder"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+        drawing_widget.send_selected_forward()
+
+    def on_send_to_front(self):
+        """Seçili şekilleri en üste gönder"""
+        drawing_widget = self.get_current_drawing_widget()
+        if not drawing_widget:
+            return
+        drawing_widget.send_selected_to_front()
+
     def create_layer_dock(self):
         """Katman yöneticisi dock widget'ını oluştur"""
         self.layer_dock = QDockWidget("Katmanlar", self)
@@ -857,6 +891,13 @@ class MainWindow(QMainWindow):
 
         self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.layer_dock)
         
+        # Mevcut aktif çizim widget'ıyla hemen bağla (ilk açılışta liste görünsün)
+        try:
+            current_widget = self.get_current_drawing_widget()
+            self.layer_manager_widget.set_drawing_widget(current_widget)
+        except Exception:
+            pass
+
         # Görünürlüğü ayarlardan yükle
         if self.settings.get_layer_dock_visible():
             self.layer_dock.show()
@@ -2344,6 +2385,9 @@ class MainWindow(QMainWindow):
         
         current_widget.update()
         
+        # Katman panelini güncelle (grup ağacı için)
+        current_widget.layer_manager._emit_changes()
+        
         # Shape properties widget'ını güncelle (buton durumları için)
         current_widget.update_shape_properties()
         
@@ -2660,6 +2704,9 @@ class MainWindow(QMainWindow):
                         ungrouped_count += 1
         
         current_widget.update()
+        
+        # Katman panelini güncelle (grup ağacı için)
+        current_widget.layer_manager._emit_changes()
         
         # Shape properties widget'ını güncelle (buton durumları için)
         current_widget.update_shape_properties()

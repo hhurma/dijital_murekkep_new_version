@@ -95,6 +95,12 @@ class ShapePropertiesWidget(QWidget):
     # B-spline kontrol noktaları sinyali
     toggleControlPoints = pyqtSignal()  # B-spline kontrol noktalarını göster/gizle
     editBSpline = pyqtSignal()  # B-spline düzenleme modunu etkinleştir
+
+    # Sıralama (z-order) sinyalleri
+    sendBackward = pyqtSignal()  # Bir alta gönder
+    sendToBack = pyqtSignal()    # En alta gönder
+    sendForward = pyqtSignal()   # Bir üste gönder
+    sendToFront = pyqtSignal()   # En üste gönder
     
     LINE_STYLES = {
         Qt.PenStyle.SolidLine: 'Düz',
@@ -1067,6 +1073,33 @@ class ShapePropertiesWidget(QWidget):
         group_ops_layout.addLayout(group_buttons_layout)
         self.group_operations_group.setLayout(group_ops_layout)
         layout.addWidget(self.group_operations_group)
+
+        # Sıralama araçları (z-order)
+        self.zorder_group = QGroupBox("Sıralama")
+        z_layout = QHBoxLayout()
+
+        self.send_backward_btn = QPushButton("Bir alta")
+        self.send_backward_btn.setToolTip("Seçili şekilleri bir alta gönder")
+        self.send_backward_btn.clicked.connect(self.on_send_backward)
+        z_layout.addWidget(self.send_backward_btn)
+
+        self.send_to_back_btn = QPushButton("En alta")
+        self.send_to_back_btn.setToolTip("Seçili şekilleri en alta gönder")
+        self.send_to_back_btn.clicked.connect(self.on_send_to_back)
+        z_layout.addWidget(self.send_to_back_btn)
+
+        self.send_forward_btn = QPushButton("Bir üste")
+        self.send_forward_btn.setToolTip("Seçili şekilleri bir üste gönder")
+        self.send_forward_btn.clicked.connect(self.on_send_forward)
+        z_layout.addWidget(self.send_forward_btn)
+
+        self.send_to_front_btn = QPushButton("En üste")
+        self.send_to_front_btn.setToolTip("Seçili şekilleri en üste gönder")
+        self.send_to_front_btn.clicked.connect(self.on_send_to_front)
+        z_layout.addWidget(self.send_to_front_btn)
+
+        self.zorder_group.setLayout(z_layout)
+        layout.addWidget(self.zorder_group)
         
         # Hizalama araçları grubu (çoklu seçim için)
         self.alignment_group = QGroupBox("Hizalama")
@@ -2739,6 +2772,32 @@ class ShapePropertiesWidget(QWidget):
         # Grupları görünürlük
         self.bspline_group.setVisible(tool_name == 'bspline')
         self.fill_group.setVisible(tool_name in ['rectangle', 'circle'])
+
+        # Z-order grubu: en az bir seçim olduğunda göster
+        has_selection = stroke_count >= 1
+        self.zorder_group.setVisible(True)
+        # Enable durumları
+        self.send_backward_btn.setEnabled(has_selection)
+        self.send_to_back_btn.setEnabled(has_selection)
+        self.send_forward_btn.setEnabled(has_selection)
+        self.send_to_front_btn.setEnabled(has_selection)
+
+    # Sıralama (z-order) event handler'ları
+    def on_send_backward(self):
+        if self.selected_strokes:
+            self.sendBackward.emit()
+
+    def on_send_to_back(self):
+        if self.selected_strokes:
+            self.sendToBack.emit()
+
+    def on_send_forward(self):
+        if self.selected_strokes:
+            self.sendForward.emit()
+
+    def on_send_to_front(self):
+        if self.selected_strokes:
+            self.sendToFront.emit()
         if hasattr(self, 'rectangle_group'):
             self.rectangle_group.setVisible(tool_name == 'rectangle')
         if hasattr(self, 'circle_group'):

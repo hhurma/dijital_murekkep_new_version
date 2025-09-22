@@ -336,6 +336,8 @@ class DrawingWidget(QWidget):
     def strokes(self, value):
         self.layer_manager.set_active_strokes(value)
         self.update()
+        # Katman listesini güncelle
+        self.layer_manager._emit_changes()
 
     def get_layer_overview(self):
         return list(self.layer_manager.iter_layers())
@@ -868,6 +870,147 @@ class DrawingWidget(QWidget):
                 # Seçim yok - dock'u gizle
                 # Panel kullanıcı kapatmadıkça görünür kalsın; sadece içeriği boş moda al
                 self.main_window.shape_properties_widget.set_no_selection()
+        
+        # Katman panelini de güncelle
+        if self.main_window and hasattr(self.main_window, 'layer_manager_widget'):
+            try:
+                self.main_window.layer_manager_widget._on_canvas_selection_changed()
+            except Exception:
+                pass
+
+    def send_selected_backward(self):
+        """Seçili şekilleri bir basamak alta gönder (aynı katman içinde)."""
+        if not self.ensure_layer_editable():
+            return
+        if not self.selection_tool.selected_strokes:
+            return
+
+        strokes_list = list(self.strokes)
+        total = len(strokes_list)
+        if total <= 1:
+            return
+
+        # Undo
+        self.save_current_state("Send backward")
+
+        # Seçili index'leri işaretle
+        selected_flags = [False] * total
+        for idx in self.selection_tool.selected_strokes:
+            if 0 <= idx < total:
+                selected_flags[idx] = True
+
+        # Tek geçişte bir basamak geri taşı (bubble pass)
+        for i in range(1, total):
+            if selected_flags[i] and not selected_flags[i - 1]:
+                strokes_list[i - 1], strokes_list[i] = strokes_list[i], strokes_list[i - 1]
+                selected_flags[i - 1], selected_flags[i] = selected_flags[i], selected_flags[i - 1]
+
+        # Yeni seçim index'leri
+        new_selected = [i for i, flag in enumerate(selected_flags) if flag]
+
+        # Uygula
+        self.strokes = strokes_list
+        self.selection_tool.selected_strokes = new_selected
+        self.update_shape_properties()
+        self.update()
+
+    def send_selected_to_back(self):
+        """Seçili şekilleri en alta gönder (aynı katman içinde)."""
+        if not self.ensure_layer_editable():
+            return
+        if not self.selection_tool.selected_strokes:
+            return
+
+        strokes_list = list(self.strokes)
+        total = len(strokes_list)
+        if total <= 1:
+            return
+
+        # Undo
+        self.save_current_state("Send to back")
+
+        selected_set = set(i for i in self.selection_tool.selected_strokes if 0 <= i < total)
+        if not selected_set:
+            return
+
+        # Sıra korumalı yeniden dizilim
+        selected_items = [strokes_list[i] for i in range(total) if i in selected_set]
+        non_selected_items = [strokes_list[i] for i in range(total) if i not in selected_set]
+        new_order = selected_items + non_selected_items
+
+        # Yeni seçim index'leri: 0..len(selected)-1
+        new_selected = list(range(len(selected_items)))
+
+        # Uygula
+        self.strokes = new_order
+        self.selection_tool.selected_strokes = new_selected
+        self.update_shape_properties()
+        self.update()
+
+    def send_selected_forward(self):
+        """Seçili şekilleri bir basamak üste gönder (aynı katman içinde)."""
+        if not self.ensure_layer_editable():
+            return
+        if not self.selection_tool.selected_strokes:
+            return
+
+        strokes_list = list(self.strokes)
+        total = len(strokes_list)
+        if total <= 1:
+            return
+
+        # Undo
+        self.save_current_state("Send forward")
+
+        selected_flags = [False] * total
+        for idx in self.selection_tool.selected_strokes:
+            if 0 <= idx < total:
+                selected_flags[idx] = True
+
+        # Tersten geçişte bir basamak ileri taşı (üst)
+        for i in range(total - 2, -1, -1):
+            if selected_flags[i] and not selected_flags[i + 1]:
+                strokes_list[i + 1], strokes_list[i] = strokes_list[i], strokes_list[i + 1]
+                selected_flags[i + 1], selected_flags[i] = selected_flags[i], selected_flags[i + 1]
+
+        new_selected = [i for i, flag in enumerate(selected_flags) if flag]
+
+        self.strokes = strokes_list
+        self.selection_tool.selected_strokes = new_selected
+        self.update_shape_properties()
+        self.update()
+
+    def send_selected_to_front(self):
+        """Seçili şekilleri en üste gönder (aynı katman içinde)."""
+        if not self.ensure_layer_editable():
+            return
+        if not self.selection_tool.selected_strokes:
+            return
+
+        strokes_list = list(self.strokes)
+        total = len(strokes_list)
+        if total <= 1:
+            return
+
+        # Undo
+        self.save_current_state("Send to front")
+
+        selected_set = set(i for i in self.selection_tool.selected_strokes if 0 <= i < total)
+        if not selected_set:
+            return
+
+        selected_items = [strokes_list[i] for i in range(total) if i in selected_set]
+        non_selected_items = [strokes_list[i] for i in range(total) if i not in selected_set]
+        new_order = non_selected_items + selected_items
+
+        # Yeni seçim index'leri: son N
+        start = len(non_selected_items)
+        new_selected = list(range(start, start + len(selected_items)))
+
+        self.strokes = new_order
+        self.selection_tool.selected_strokes = new_selected
+        self.update_shape_properties()
+        self.update()
 
     def clear_all_strokes(self):
         """Tüm çizimleri temizle"""

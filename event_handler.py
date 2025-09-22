@@ -259,37 +259,26 @@ class EventHandler:
             elif self.drawing_widget.bspline_tool.is_drawing:
                 stroke_data = self.drawing_widget.bspline_tool.finish_stroke()
                 if stroke_data is not None:
-                    self.drawing_widget.strokes.append(stroke_data)
+                    current_strokes = list(self.drawing_widget.strokes)
+                    current_strokes.append(stroke_data)
+                    self.drawing_widget.strokes = current_strokes
                     self.drawing_widget.save_current_state("Add B-spline")
                 self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "freehand":
             if self.drawing_widget.freehand_tool.is_drawing:
                 stroke_data = self.drawing_widget.freehand_tool.finish_stroke()
                 if stroke_data is not None:
-                    self.drawing_widget.strokes.append(stroke_data)
+                    current_strokes = list(self.drawing_widget.strokes)
+                    current_strokes.append(stroke_data)
+                    self.drawing_widget.strokes = current_strokes
                     self.drawing_widget.save_current_state("Add freehand")
                 self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "line":
-            if self.drawing_widget.line_tool.is_drawing:
-                stroke_data = self.drawing_widget.line_tool.finish_stroke()
-                if stroke_data is not None:
-                    self.drawing_widget.strokes.append(stroke_data)
-                    self.drawing_widget.save_current_state("Add line")
-                self.drawing_widget.update()
+            self.handle_line_release(event)
         elif self.drawing_widget.active_tool == "rectangle":
-            if self.drawing_widget.rectangle_tool.is_drawing:
-                stroke_data = self.drawing_widget.rectangle_tool.finish_stroke()
-                if stroke_data is not None:
-                    self.drawing_widget.strokes.append(stroke_data)
-                    self.drawing_widget.save_current_state("Add rectangle")
-                self.drawing_widget.update()
+            self.handle_rectangle_release(event)
         elif self.drawing_widget.active_tool == "circle":
-            if self.drawing_widget.circle_tool.is_drawing:
-                stroke_data = self.drawing_widget.circle_tool.finish_stroke()
-                if stroke_data is not None:
-                    self.drawing_widget.strokes.append(stroke_data)
-                    self.drawing_widget.save_current_state("Add circle")
-                self.drawing_widget.update()
+            self.handle_circle_release(event)
         elif self.drawing_widget.active_tool == "select":
             self.handle_select_release(pos)
         elif self.drawing_widget.active_tool == "move":
@@ -447,7 +436,9 @@ class EventHandler:
         elif self.drawing_widget.bspline_tool.is_drawing:
             stroke_data = self.drawing_widget.bspline_tool.finish_stroke()
             if stroke_data is not None:
-                self.drawing_widget.strokes.append(stroke_data)
+                current_strokes = list(self.drawing_widget.strokes)
+                current_strokes.append(stroke_data)
+                self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add B-spline")
             self.drawing_widget.update()
 
@@ -480,7 +471,9 @@ class EventHandler:
         if self.drawing_widget.freehand_tool.is_drawing:
             stroke_data = self.drawing_widget.freehand_tool.finish_stroke()
             if stroke_data is not None:
-                self.drawing_widget.strokes.append(stroke_data)
+                current_strokes = list(self.drawing_widget.strokes)
+                current_strokes.append(stroke_data)
+                self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add freehand")
             self.drawing_widget.update()
 
@@ -514,7 +507,9 @@ class EventHandler:
         if self.drawing_widget.line_tool.is_drawing:
             stroke_data = self.drawing_widget.line_tool.finish_stroke()
             if stroke_data is not None:
-                self.drawing_widget.strokes.append(stroke_data)
+                current_strokes = list(self.drawing_widget.strokes)
+                current_strokes.append(stroke_data)
+                self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add line")
             self.drawing_widget.update()
 
@@ -546,7 +541,9 @@ class EventHandler:
         if self.drawing_widget.rectangle_tool.is_drawing:
             stroke_data = self.drawing_widget.rectangle_tool.finish_stroke()
             if stroke_data is not None:
-                self.drawing_widget.strokes.append(stroke_data)
+                current_strokes = list(self.drawing_widget.strokes)
+                current_strokes.append(stroke_data)
+                self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add rectangle")
             self.drawing_widget.update()
 
@@ -578,7 +575,9 @@ class EventHandler:
         if self.drawing_widget.circle_tool.is_drawing:
             stroke_data = self.drawing_widget.circle_tool.finish_stroke()
             if stroke_data is not None:
-                self.drawing_widget.strokes.append(stroke_data)
+                current_strokes = list(self.drawing_widget.strokes)
+                current_strokes.append(stroke_data)
+                self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add circle")
             self.drawing_widget.update()
 
