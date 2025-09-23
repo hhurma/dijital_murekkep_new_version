@@ -88,6 +88,9 @@ class MainWindow(QMainWindow):
         # Background dock widget oluştur
         self.create_background_dock()
         
+        # Grid settings dock widget oluştur
+        self.create_grid_dock()
+        
         # Shape properties dock widget oluştur
         self.create_shape_properties_dock()
 
@@ -120,6 +123,9 @@ class MainWindow(QMainWindow):
         
         # Toolbar ile aktif tab arasında bağlantı kur
         self.connect_toolbar_to_active_tab()
+        
+        # Ayarlardan değerleri yükle
+        self.load_initial_settings()
 
         # Clipboard için
         self.clipboard_strokes = []  # Kopyalanan/kesilen stroke'lar
@@ -130,6 +136,40 @@ class MainWindow(QMainWindow):
         
         # Menü çubuğunu oluştur
         self.setup_menubar()
+        
+    def load_initial_settings(self):
+        """Ayarlardan başlangıç değerlerini yükle"""
+        # Renk paletini ayarlardan yükle
+        if hasattr(self, 'color_palette'):
+            try:
+                self.color_palette.load_from_settings()
+            except Exception:
+                pass
+                
+        # Çizgi kalınlığını ayarlardan yükle
+        if hasattr(self, 'line_width_widget'):
+            try:
+                width = self.settings.get_line_width()
+                self.line_width_widget.set_width(width)
+            except Exception:
+                pass
+                
+        # Shape properties widget'a başlangıç değerlerini set et
+        if hasattr(self, 'shape_properties_widget'):
+            try:
+                color = self.settings.get_drawing_color()
+                width = self.settings.get_line_width()
+                line_style = self.settings.get_line_style()
+                
+                self.shape_properties_widget.update_color_from_external(color)
+                self.shape_properties_widget.update_width_from_external(width)
+                
+                # Çizgi stilini de güncelleyebiliriz
+                if hasattr(self.shape_properties_widget, 'current_line_style'):
+                    self.shape_properties_widget.current_line_style = line_style
+                    self.shape_properties_widget.update_ui_values()
+            except Exception:
+                pass
 
         # Otomatik kayıt varsa kullanıcıya sor
         QTimer.singleShot(0, self._prompt_auto_save_restore)
@@ -671,6 +711,69 @@ class MainWindow(QMainWindow):
         # Şekil havuzu dock widget'ı oluştur
         self.create_shape_library_dock()
         
+    def create_grid_dock(self):
+        """Grid ayarları dock widget'ı oluştur"""
+        from grid_settings_widget import GridSettingsWidget
+        
+        self.grid_dock = QDockWidget("Grid Ayarları", self)
+        self.grid_widget = GridSettingsWidget()
+        
+        # Sinyalleri bağla
+        self.grid_widget.gridSettingsChanged.connect(self.on_grid_settings_changed)
+        
+        self.grid_dock.setWidget(self.grid_widget)
+        self.grid_dock.setFloating(False)
+        self.grid_dock.setFeatures(QDockWidget.DockWidgetFeature.DockWidgetMovable | 
+                                  QDockWidget.DockWidgetFeature.DockWidgetClosable)
+        
+        self.addDockWidget(Qt.DockWidgetArea.RightDockWidgetArea, self.grid_dock)
+        
+        # Dock görünürlüğünü ayarlardan yükle
+        if self.settings.get_grid_dock_visible():
+            self.grid_dock.show()
+        else:
+            self.grid_dock.hide()
+            
+        # Visibility tracking
+        self.grid_dock.visibilityChanged.connect(self.on_grid_dock_visibility_changed)
+        
+    def on_grid_dock_visibility_changed(self, visible):
+        """Grid dock görünürlüğü değiştiğinde"""
+        if not getattr(self, '_dock_visibility_updating', False):
+            self.settings.set_grid_dock_visible(visible)
+            self.settings.save_settings()
+        
+    def toggle_grid_dock(self, checked=None):
+        """Grid dock widget'ını aç/kapat"""
+        self._dock_visibility_updating = True
+            
+        if checked is not None:
+            desired = bool(checked)
+            if desired != self.grid_dock.isVisible():
+                if desired:
+                    self.grid_dock.show()
+                else:
+                    self.grid_dock.hide()
+            self.settings.set_grid_dock_visible(desired)
+            self.settings.save_settings()
+        else:
+            if self.grid_dock.isVisible():
+                self.grid_dock.hide()
+                self.settings.set_grid_dock_visible(False)
+            else:
+                self.grid_dock.show()
+                self.settings.set_grid_dock_visible(True)
+            self.settings.save_settings()
+        
+        QTimer.singleShot(500, lambda: setattr(self, '_dock_visibility_updating', False))
+        
+    def on_grid_settings_changed(self, settings):
+        """Grid ayarları değiştiğinde"""
+        # Aktif sekmede grid ayarlarını güncelle
+        active_widget = self.tab_manager.get_current_drawing_widget()
+        if active_widget:
+            active_widget.set_grid_settings(settings)
+        
     def toggle_background_dock(self, checked=None):
         """Ayarlar dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
         print(f"DEBUG: toggle_background_dock called with checked={checked}")
@@ -1195,6 +1298,24 @@ class MainWindow(QMainWindow):
                 self.settings_widget.set_background_settings(current_widget.background_settings)
         except Exception:
             pass
+            
+        # Shape properties'i aktif sekmenin değerleri ile senkronize et
+        try:
+            if hasattr(self, 'shape_properties_widget') and current_widget:
+                self.shape_properties_widget.update_color_from_external(current_widget.current_color)
+                self.shape_properties_widget.update_width_from_external(current_widget.current_width)
+        except Exception:
+            pass
+            
+        # Toolbar widget'larını da senkronize et
+        try:
+            if hasattr(self, 'line_width_widget') and current_widget:
+                self.line_width_widget.blockSignals(True)
+                self.line_width_widget.current_width = current_widget.current_width
+                self.line_width_widget.update_main_button()
+                self.line_width_widget.blockSignals(False)
+        except Exception:
+            pass
         
         # F12 kısa yolunun ana pencerede çalışması için focus policy
         self.setFocusPolicy(Qt.FocusPolicy.StrongFocus)
@@ -1337,6 +1458,10 @@ class MainWindow(QMainWindow):
         if current_widget:
             current_widget.set_current_color(color)
             
+        # Shape properties widget'a da bildir
+        if hasattr(self, 'shape_properties_widget'):
+            self.shape_properties_widget.update_color_from_external(color)
+            
         # Rengi ayarlara kaydet
         self.settings.set_drawing_color(color)
         self.settings.save_settings()
@@ -1366,6 +1491,10 @@ class MainWindow(QMainWindow):
         current_widget = self.get_current_drawing_widget()
         if current_widget:
             current_widget.set_current_width(width)
+            
+        # Shape properties widget'a da bildir
+        if hasattr(self, 'shape_properties_widget'):
+            self.shape_properties_widget.update_width_from_external(width)
         
         # Kalınlığı ayarlara kaydet
         self.settings.set_line_width(width)
@@ -1449,6 +1578,22 @@ class MainWindow(QMainWindow):
     def on_shape_width_changed(self, width):
         """Seçilen şekillerin kalınlığını değiştir"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Toolbar'daki line width widget'ı da güncelle
+        if hasattr(self, 'line_width_widget'):
+            self.line_width_widget.blockSignals(True)
+            self.line_width_widget.current_width = width
+            self.line_width_widget.update_main_button()
+            self.line_width_widget.blockSignals(False)
+            
+        # Aktif araçlara da width'i bildir
+        if current_widget:
+            current_widget.set_current_width(width)
+            
+        # Ayarlara kaydet
+        self.settings.set_line_width(width)
+        self.settings.save_settings()
+        
         if current_widget and current_widget.selection_tool.selected_strokes:
             # Undo için state kaydet
             current_widget.save_current_state("Change shape width")
@@ -1584,6 +1729,15 @@ class MainWindow(QMainWindow):
     def on_shape_fill_enabled_changed(self, enabled):
         """Seçilen şekillerin dolgu durumunu değiştir"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da fill durumunu bildir
+        if current_widget:
+            current_widget.set_current_fill(enabled)
+            
+        # Ayarlara kaydet
+        self.settings.set_fill_defaults({'enabled': enabled})
+        self.settings.save_settings()
+        
         if current_widget and current_widget.selection_tool.selected_strokes:
             # Undo için state kaydet
             current_widget.save_current_state("Change shape fill enabled")
@@ -1608,6 +1762,11 @@ class MainWindow(QMainWindow):
     def on_shape_fill_opacity_changed(self, opacity):
         """Seçilen şekillerin dolgu şeffaflığını değiştir"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da fill opacity'yi bildir
+        if current_widget:
+            current_widget.set_fill_opacity(opacity)
+        
         if current_widget and current_widget.selection_tool.selected_strokes:
             # Undo için state kaydet
             current_widget.save_current_state("Change shape fill opacity")

@@ -279,6 +279,19 @@ class DrawingWidget(QWidget):
             'grid_opacity': 1.0,
             'snap_to_grid': False
         }
+        
+        # Ayrı grid ayarları (snap grid için)
+        self.grid_settings = {
+            'enabled': False,
+            'snap_grid_color': QColor(100, 100, 255),
+            'snap_major_grid_color': QColor(50, 50, 200),
+            'snap_grid_size': 20,
+            'snap_grid_width': 1,
+            'snap_major_grid_width': 2,
+            'snap_major_grid_interval': 5,
+            'snap_grid_opacity': 0.5,
+            'snap_to_grid': False
+        }
 
         # Araç örnekleri
         self.selection_tool = SelectionTool()
@@ -521,6 +534,20 @@ class DrawingWidget(QWidget):
         except Exception:
             pass
             
+    def set_fill_opacity(self, opacity):
+        """Fill opacity'yi ayarla ve araçlara bildir"""
+        # Şekil araçlarına fill opacity bildir
+        if hasattr(self.rectangle_tool, 'set_fill_opacity'):
+            self.rectangle_tool.set_fill_opacity(opacity)
+        if hasattr(self.circle_tool, 'set_fill_opacity'):
+            self.circle_tool.set_fill_opacity(opacity)
+        # Varsayılan dolgu opacity'ye yaz
+        try:
+            if self.main_window and hasattr(self.main_window, 'settings'):
+                self.main_window.settings.set_fill_defaults({'opacity': opacity})
+        except Exception:
+            pass
+            
     def set_fill_color(self, color):
         """Dolgu rengini ayarla ve araçlara bildir"""
         from PyQt6.QtGui import QColor
@@ -572,6 +599,28 @@ class DrawingWidget(QWidget):
             self.scale_tool.set_background_settings(settings)
         if hasattr(self.move_tool, 'set_background_settings'):
             self.move_tool.set_background_settings(settings)
+
+        self.update()  # Yeniden çiz
+        
+    def set_grid_settings(self, settings):
+        """Grid ayarlarını güncelle"""
+        self.grid_settings = settings
+
+        # Snap-destekli araçlara grid ayarlarını bildir
+        if hasattr(self.line_tool, 'grid_settings'):
+            self.line_tool.grid_settings = settings
+        if hasattr(self.rectangle_tool, 'grid_settings'):
+            self.rectangle_tool.grid_settings = settings
+        if hasattr(self.circle_tool, 'grid_settings'):
+            self.circle_tool.grid_settings = settings
+        
+        # Dönüştürme araçlarına da grid ayarlarını bildir
+        if hasattr(self.rotate_tool, 'grid_settings'):
+            self.rotate_tool.grid_settings = settings
+        if hasattr(self.scale_tool, 'grid_settings'):
+            self.scale_tool.grid_settings = settings
+        if hasattr(self.move_tool, 'grid_settings'):
+            self.move_tool.grid_settings = settings
 
         self.update()  # Yeniden çiz
 

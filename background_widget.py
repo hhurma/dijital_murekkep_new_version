@@ -168,14 +168,10 @@ class BackgroundWidget(QWidget):
         
         grid_layout.addLayout(opacity_layout)
         
-        # Snap to grid seçeneği
-        self.snap_checkbox = QCheckBox("Grid'e Yapıştır (Snap to Grid)")
-        self.snap_checkbox.setChecked(self.snap_to_grid)
-        self.snap_checkbox.toggled.connect(self.on_snap_changed)
-        grid_layout.addWidget(self.snap_checkbox)
+        # Snap to grid seçeneği kaldırıldı - artık ayrı Grid Ayarları panelinde
         
         self.grid_group.setLayout(grid_layout)
-        self.grid_group.setEnabled(True)  # Başlangıçta aktif (snap için)
+        self.grid_group.setEnabled(True)  # Her zaman aktif
         layout.addWidget(self.grid_group)
         
         layout.addStretch()
@@ -270,10 +266,7 @@ class BackgroundWidget(QWidget):
         self.major_grid_interval = value
         self.emit_background_changed()
         
-    def on_snap_changed(self, checked):
-        """Snap to grid durumu değiştiğinde"""
-        self.snap_to_grid = checked
-        self.emit_background_changed()
+    # on_snap_changed kaldırıldı - artık grid ayarları panelinde
         
     def on_grid_opacity_changed(self, value):
         """Grid şeffaflığı değiştiğinde"""
@@ -340,5 +333,5 @@ class BackgroundWidget(QWidget):
         self.interval_spinbox.setValue(self.major_grid_interval)
         self.opacity_slider.setValue(int(self.grid_opacity * 100))
         self.opacity_label.setText(f"{int(self.grid_opacity * 100)}%")
-        self.snap_checkbox.setChecked(self.snap_to_grid)
+        # snap_checkbox kaldırıldı
         self.grid_group.setEnabled(self.background_type in ['grid', 'dots']) 

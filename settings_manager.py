@@ -450,6 +450,14 @@ class SettingsManager:
     def set_shape_properties_dock_visible(self, visible):
         """Şekil özellikleri dock görünürlüğünü kaydet"""
         self.config.set('Window', 'shape_properties_dock_visible', str(visible))
+        
+    def get_grid_dock_visible(self):
+        """Grid dock'ının görünürlüğünü al"""
+        return self.config.getboolean('Window', 'grid_dock_visible', fallback=True)
+        
+    def set_grid_dock_visible(self, visible):
+        """Grid dock'ının görünürlüğünü kaydet"""
+        self.config.set('Window', 'grid_dock_visible', str(visible))
 
     def get_layer_dock_visible(self):
         """Katmanlar dock görünürlüğünü al"""

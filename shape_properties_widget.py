@@ -1436,12 +1436,12 @@ class ShapePropertiesWidget(QWidget):
         
     def apply_color_change(self):
         """Renk değişikliğini uygula"""
-        if self.selected_strokes or self.freehand_mode_active:
+        if self.selected_strokes or self.freehand_mode_active or self.generic_mode_active:
             self.colorChanged.emit(self.current_color)
     
     def apply_width_change(self):
         """Kalınlık değişikliğini uygula"""
-        if self.selected_strokes or self.freehand_mode_active:
+        if self.selected_strokes or self.freehand_mode_active or self.generic_mode_active:
             self.widthChanged.emit(self.current_width)
     
     def apply_style_change(self):
@@ -1451,17 +1451,30 @@ class ShapePropertiesWidget(QWidget):
     
     def apply_fill_color_change(self):
         """Dolgu rengi değişikliğini uygula"""
-        if self.selected_strokes and self.has_fillable_shapes:
+        if (self.selected_strokes and self.has_fillable_shapes) or self.generic_mode_active:
             self.fillColorChanged.emit(self.current_fill_color)
     
     def apply_fill_enabled_change(self):
         """Dolgu etkin/pasif değişikliğini uygula"""
-        if self.selected_strokes and self.has_fillable_shapes:
+        if (self.selected_strokes and self.has_fillable_shapes) or self.generic_mode_active:
             self.fillEnabledChanged.emit(self.current_fill_enabled)
+            
+    def update_color_from_external(self, color):
+        """Dışarıdan (toolbar) renk güncellemesi"""
+        self.current_color = QColor(color)
+        self.update_color_button()
+        
+    def update_width_from_external(self, width):
+        """Dışarıdan (toolbar) kalınlık güncellemesi"""
+        self.current_width = width
+        if hasattr(self, 'width_spinbox'):
+            self.width_spinbox.blockSignals(True)
+            self.width_spinbox.setValue(width)
+            self.width_spinbox.blockSignals(False)
     
     def apply_fill_opacity_change(self):
         """Dolgu şeffaflığı değişikliğini uygula"""
-        if self.selected_strokes and self.has_fillable_shapes:
+        if (self.selected_strokes and self.has_fillable_shapes) or self.generic_mode_active:
             self.fillOpacityChanged.emit(self.current_fill_opacity)
             
     def apply_image_opacity_change(self):
@@ -2760,6 +2773,8 @@ class ShapePropertiesWidget(QWidget):
     # -------- Genel Tool Modu (bspline/line/rectangle/circle) --------
     def enter_generic_mode(self, tool_name: str, drawing_widget):
         self.generic_mode_active = True
+        self.freehand_mode_active = False
+        
         # Değerleri drawing_widget'tan al
         try:
             self.current_color = getattr(drawing_widget, 'current_color', self.current_color)
@@ -2769,18 +2784,52 @@ class ShapePropertiesWidget(QWidget):
             self.current_fill_color = getattr(drawing_widget, 'fill_color', self.current_fill_color)
         except Exception:
             pass
+            
+        # Araçtan gölge ayarlarını yükle
+        try:
+            tool = getattr(drawing_widget, f'{tool_name}_tool', None)
+            if tool and hasattr(tool, 'has_shadow'):
+                if tool_name == 'rectangle':
+                    self.current_rect_shadow_enabled = getattr(tool, 'has_shadow', False)
+                    self.current_rect_shadow_color = getattr(tool, 'shadow_color', self.current_rect_shadow_color)
+                    self.current_rect_shadow_offset_x = getattr(tool, 'shadow_offset_x', 5)
+                    self.current_rect_shadow_offset_y = getattr(tool, 'shadow_offset_y', 5)
+                    self.current_rect_shadow_blur = getattr(tool, 'shadow_blur', 10)
+                elif tool_name == 'circle':
+                    self.current_circle_shadow_enabled = getattr(tool, 'has_shadow', False)
+                    self.current_circle_shadow_color = getattr(tool, 'shadow_color', self.current_circle_shadow_color)
+                    self.current_circle_shadow_offset_x = getattr(tool, 'shadow_offset_x', 5)
+                    self.current_circle_shadow_offset_y = getattr(tool, 'shadow_offset_y', 5)
+                    self.current_circle_shadow_blur = getattr(tool, 'shadow_blur', 10)
+                elif tool_name in ['line', 'bspline']:
+                    self.current_stroke_shadow_enabled = getattr(tool, 'has_shadow', False)
+                    self.current_stroke_shadow_color = getattr(tool, 'shadow_color', self.current_stroke_shadow_color)
+                    self.current_stroke_shadow_offset_x = getattr(tool, 'shadow_offset_x', 5)
+                    self.current_stroke_shadow_offset_y = getattr(tool, 'shadow_offset_y', 5)
+                    self.current_stroke_shadow_blur = getattr(tool, 'shadow_blur', 10)
+        except Exception:
+            pass
+            
         # Grupları görünürlük
         self.bspline_group.setVisible(tool_name == 'bspline')
         self.fill_group.setVisible(tool_name in ['rectangle', 'circle'])
+        
+        # Gölge gruplarını göster
+        if hasattr(self, 'rectangle_group'):
+            self.rectangle_group.setVisible(tool_name == 'rectangle')
+        if hasattr(self, 'circle_group'):
+            self.circle_group.setVisible(tool_name == 'circle')
+        if hasattr(self, 'stroke_shadow_group'):
+            self.stroke_shadow_group.setVisible(tool_name in ['line', 'bspline'])
 
-        # Z-order grubu: en az bir seçim olduğunda göster
-        has_selection = stroke_count >= 1
-        self.zorder_group.setVisible(True)
-        # Enable durumları
-        self.send_backward_btn.setEnabled(has_selection)
-        self.send_to_back_btn.setEnabled(has_selection)
-        self.send_forward_btn.setEnabled(has_selection)
-        self.send_to_front_btn.setEnabled(has_selection)
+        # Z-order grubu: Generic mode'da gizle (sadece seçili stroke'lar için)
+        if hasattr(self, 'zorder_group'):
+            self.zorder_group.setVisible(False)
+            
+        # UI'yi güncelle
+        self.update_ui_values()
+        self.setVisible(True)
+        self._apply_panel_width()
 
     # Sıralama (z-order) event handler'ları
     def on_send_backward(self):

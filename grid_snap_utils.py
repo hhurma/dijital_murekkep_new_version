@@ -5,6 +5,13 @@ class GridSnapUtils:
     """Grid'e yapıştırma yardımcı fonksiyonları"""
     
     @staticmethod
+    def _get_snap_step(grid_settings):
+        """Snap grid aralığını döndür"""
+        if not grid_settings:
+            return 20.0
+        return float(grid_settings.get('snap_grid_size', 20))
+    
+    @staticmethod
     def _get_minor_step(background_settings):
         """Grid aralığı için etkili ince adımı döndür (grid_size * minor_grid_interval)."""
         if not background_settings:
@@ -16,12 +23,12 @@ class GridSnapUtils:
         return max(1.0, step)
 
     @staticmethod
-    def snap_point_to_grid(point, background_settings):
-        """Bir noktayı grid'e yapıştır"""
-        if not background_settings or not background_settings.get('snap_to_grid', False):
+    def snap_point_to_grid(point, grid_settings):
+        """Bir noktayı snap grid'e yapıştır"""
+        if not grid_settings or not grid_settings.get('snap_to_grid', False):
             return point
             
-        step = GridSnapUtils._get_minor_step(background_settings)
+        step = GridSnapUtils._get_snap_step(grid_settings)
         if step <= 0:
             return point
             
@@ -32,12 +39,12 @@ class GridSnapUtils:
         return QPointF(float(x), float(y))
     
     @staticmethod
-    def snap_point_to_grid_precise(point, background_settings, force_snap=True):
-        """Bir noktayı grid'e kesin olarak yapıştır"""
-        if not background_settings or (not background_settings.get('snap_to_grid', False) and not force_snap):
+    def snap_point_to_grid_precise(point, grid_settings, force_snap=True):
+        """Bir noktayı snap grid'e kesin olarak yapıştır"""
+        if not grid_settings or (not grid_settings.get('snap_to_grid', False) and not force_snap):
             return point
             
-        step = GridSnapUtils._get_minor_step(background_settings)
+        step = GridSnapUtils._get_snap_step(grid_settings)
         if step <= 0:
             return point
             

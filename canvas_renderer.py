@@ -264,9 +264,9 @@ class CanvasRenderer:
         elif self.drawing_widget.background_settings['type'] == 'dots':
             self.draw_dots_background(painter)
         
-        # Beyaz arka planda da grid göster (snap aktifse)
-        if (self.drawing_widget.background_settings['type'] == 'solid' and 
-            self.drawing_widget.background_settings.get('snap_to_grid', False)):
+        # Snap grid'i her arka plan tipinde göster (grid ayarları etkinse)
+        if (hasattr(self.drawing_widget, 'grid_settings') and 
+            self.drawing_widget.grid_settings.get('enabled', False)):
             self.draw_snap_grid(painter)
             
     def draw_grid_background(self, painter):
@@ -305,17 +305,16 @@ class CanvasRenderer:
             y += minor_step
              
     def draw_snap_grid(self, painter):
-        """Beyaz arka planda snap için hafif grid çiz - Major/Minor sistem"""
-        # Minor grid ayarları
-        minor_color = QColor(self.drawing_widget.background_settings.get('grid_color', QColor(200, 200, 200)))
-        major_color = QColor(self.drawing_widget.background_settings.get('major_grid_color', QColor(150, 150, 150)))
-        grid_size = self.drawing_widget.background_settings.get('grid_size', 20)
-        minor_width = max(1, int(self.drawing_widget.background_settings.get('grid_width', 1)) - 1)  # Biraz daha ince
-        major_width = max(1, int(self.drawing_widget.background_settings.get('major_grid_width', 2)) - 1)  # Biraz daha ince
-        minor_interval_val = float(self.drawing_widget.background_settings.get('minor_grid_interval', 1.0))
-        minor_interval_val = max(0.1, minor_interval_val)
-        major_interval = self.drawing_widget.background_settings.get('major_grid_interval', 5)
-        grid_opacity = self.drawing_widget.background_settings.get('grid_opacity', 1.0) * 0.3  # Daha şeffaf
+        """Snap grid çiz - tüm arka plan tiplerinde görünür"""
+        # Ayrı grid ayarlarını kullan
+        grid_settings = getattr(self.drawing_widget, 'grid_settings', {})
+        minor_color = QColor(grid_settings.get('snap_grid_color', QColor(100, 100, 255)))
+        major_color = QColor(grid_settings.get('snap_major_grid_color', QColor(50, 50, 200)))
+        grid_size = grid_settings.get('snap_grid_size', 20)
+        minor_width = grid_settings.get('snap_grid_width', 1)
+        major_width = grid_settings.get('snap_major_grid_width', 2)
+        major_interval = grid_settings.get('snap_major_grid_interval', 5)
+        grid_opacity = grid_settings.get('snap_grid_opacity', 0.5)
         
         # Şeffaflık uygula
         minor_color.setAlphaF(grid_opacity)
@@ -326,28 +325,28 @@ class CanvasRenderer:
         height = rect.height()
         
         # Dikey çizgiler
-        minor_step = max(1.0, grid_size * minor_interval_val)
         x = 0.0
+        line_count = 0
         while x <= width:
-            idx = int(round(x / grid_size)) if grid_size > 0 else 0
-            if idx % int(max(1, round(major_interval))) == 0:
+            if line_count % major_interval == 0:
                 painter.setPen(QPen(major_color, major_width, Qt.PenStyle.DotLine))
             else:
                 painter.setPen(QPen(minor_color, minor_width, Qt.PenStyle.DotLine))
             painter.drawLine(int(round(x)), 0, int(round(x)), height)
-            x += minor_step
+            x += grid_size
+            line_count += 1
             
         # Yatay çizgiler
-        minor_step = max(1.0, grid_size * minor_interval_val)
         y = 0.0
+        line_count = 0
         while y <= height:
-            idx = int(round(y / grid_size)) if grid_size > 0 else 0
-            if idx % int(max(1, round(major_interval))) == 0:
+            if line_count % major_interval == 0:
                 painter.setPen(QPen(major_color, major_width, Qt.PenStyle.DotLine))
             else:
                 painter.setPen(QPen(minor_color, minor_width, Qt.PenStyle.DotLine))
             painter.drawLine(0, int(round(y)), width, int(round(y)))
-            y += minor_step
+            y += grid_size
+            line_count += 1
             
     def draw_dots_background(self, painter):
         """Kareli arka plan çiz (hem yatay hem dikey çizgiler) - Major/Minor sistem"""
