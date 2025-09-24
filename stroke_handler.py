@@ -94,10 +94,17 @@ class StrokeHandler:
     def move_stroke(stroke_data, delta_x, delta_y):
         """Stroke'u belirtilen miktarda taşı"""
         if stroke_data['type'] == 'bspline':
-            control_points = stroke_data['control_points']
-            for i in range(len(control_points)):
-                control_points[i][0] += delta_x
-                control_points[i][1] += delta_y
+            # B-spline için hem edit_points hem control_points taşınmalı
+            if 'edit_points' in stroke_data:
+                edit_points = stroke_data['edit_points']
+                for i in range(len(edit_points)):
+                    edit_points[i][0] += delta_x
+                    edit_points[i][1] += delta_y
+            if 'control_points' in stroke_data:
+                control_points = stroke_data['control_points']
+                for i in range(len(control_points)):
+                    control_points[i][0] += delta_x
+                    control_points[i][1] += delta_y
                 
         elif stroke_data['type'] == 'freehand':
             points = stroke_data['points']

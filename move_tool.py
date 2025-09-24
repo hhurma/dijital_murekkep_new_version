@@ -169,6 +169,11 @@ class MoveTool:
                         stroke['points'][i] = new_point
         
         elif stroke_type == 'bspline':
+            # B-spline için hem edit_points hem control_points taşınmalı
+            if 'edit_points' in stroke:
+                for ep in stroke['edit_points']:
+                    ep[0] += delta.x()
+                    ep[1] += delta.y()
             if 'control_points' in stroke:
                 for cp in stroke['control_points']:
                     cp[0] += delta.x()

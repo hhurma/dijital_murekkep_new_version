@@ -16,6 +16,7 @@ class BSplineTool:
         self.current_width = 2
         self.line_style = Qt.PenStyle.SolidLine
         self.show_control_points = False  # Kontrol noktalarının görünürlüğünü kontrol eden bayrak
+        self.min_distance = 3.0  # Minimum nokta mesafesi (piksel)
 
         # Gölge ayarları
         self.has_shadow = False
@@ -37,6 +38,16 @@ class BSplineTool:
     def add_point(self, pos, pressure=1.0):
         """Aktif çizime nokta ekle"""
         if self.is_drawing:
+            # Minimum mesafe kontrolü - son nokta ile mesafe çok yakınsa ekleme
+            if len(self.current_stroke) > 0:
+                last_pos = self.current_stroke[-1][0]
+                dx = pos.x() - last_pos.x()
+                dy = pos.y() - last_pos.y()
+                distance = (dx * dx + dy * dy) ** 0.5
+                
+                if distance < self.min_distance:
+                    return  # Çok yakın, nokta ekleme
+            
             self.current_stroke.append((pos, pressure))
             
     def finish_stroke(self):
@@ -53,8 +64,18 @@ class BSplineTool:
                 unique_points_with_pressure.append(self.current_stroke[i])
         
         if len(unique_points_with_pressure) > 3:
-            # Noktaları downsample et
-            downsampled_points_with_pressure = unique_points_with_pressure[::5]
+            # Adaptive downsampling - stroke uzunluğuna göre
+            stroke_length = len(unique_points_with_pressure)
+            if stroke_length > 200:
+                downsample_factor = 12  # Çok uzun stroke'lar için agresif
+            elif stroke_length > 100:
+                downsample_factor = 8   # Orta uzun stroke'lar için
+            elif stroke_length > 50:
+                downsample_factor = 6   # Kısa stroke'lar için
+            else:
+                downsample_factor = 4   # Çok kısa stroke'lar için
+                
+            downsampled_points_with_pressure = unique_points_with_pressure[::downsample_factor]
             if len(downsampled_points_with_pressure) < 4:
                 downsampled_points_with_pressure = unique_points_with_pressure
                 
@@ -207,16 +228,86 @@ class BSplineTool:
                 
             if stroke_data.get('type') == 'bspline' or stroke_data.get('tool_type') == 'bspline':
                 if 'edit_points' in stroke_data:
+                    # Edit point'i güncelle
                     stroke_data['edit_points'][cp_index] = [new_pos.x(), new_pos.y()]
+                    
+                    # B-spline'ı yeniden hesapla
+                    self._recalculate_bspline(stroke_data, moved_index=cp_index)
+                    return True
                 else:
                     stroke_data['control_points'][cp_index] = [new_pos.x(), new_pos.y()]
-                return True
+                    return True
                 
         return False
         
     def clear_selection(self):
         """Kontrol noktası seçimini temizle"""
         self.selected_control_point = None
+        
+    def _recalculate_bspline(self, stroke_data, moved_index=None):
+        """Edit points'ten B-spline katsayılarını yeniden hesapla"""
+        try:
+            edit_points = stroke_data.get('edit_points', [])
+            if len(edit_points) < 4:
+                return  # Yeterli nokta yok
+                
+            points_array = np.array(edit_points)
+            
+            # Kapalı eğri kontrolü (eski mantığı koru)
+            closed = False
+            if len(edit_points) >= 2:
+                dx = edit_points[-1][0] - edit_points[0][0]
+                dy = edit_points[-1][1] - edit_points[0][1]
+                closed = (dx*dx + dy*dy) ** 0.5 <= 12.0
+            
+            # Ağırlıklar: uzak noktaları daha güçlü sabitle, hareket eden noktayı da yüksek ağırlıkla takip et
+            n = len(edit_points)
+            weights = np.ones(n, dtype=float)
+            if moved_index is not None:
+                for i in range(n):
+                    d = abs(i - moved_index)
+                    if d <= 2:
+                        weights[i] = 3.5   # yakın komşular daha esnek ama yine de güçlü
+                    elif d <= 5:
+                        weights[i] = 4.5   # orta uzaklık daha sabit
+                    else:
+                        weights[i] = 6.0   # uzak noktalar çok sabit
+                # Hareket eden noktayı en yüksek ağırlıkla takip et
+                weights[moved_index] = 7.0
+            
+            # B-spline hesapla
+            pts_for_calc = points_array
+            if closed and len(points_array) >= 2:
+                dx = points_array[-1, 0] - points_array[0, 0]
+                dy = points_array[-1, 1] - points_array[0, 1]
+                if (dx*dx + dy*dy) ** 0.5 <= 12.0:
+                    pts_for_calc = points_array[:-1]
+                    if moved_index is not None and moved_index == n - 1:
+                        moved_index = n - 2
+                    if moved_index is not None:
+                        weights = weights[:-1]
+                        n = len(weights)
+            
+            if closed:
+                k = 3
+                # Daha kontrollü davranış için düşük adaptif smoothing
+                s_factor = max(0.0, 0.02 * n)
+                tck, u = splprep(pts_for_calc.T, s=s_factor, k=k, per=True, w=weights)
+            else:
+                # Daha kontrollü davranış için düşük adaptif smoothing
+                s_factor = max(0.0, 0.02 * n)
+                k = min(3, max(1, len(points_array) - 1))
+                tck, u = splprep(points_array.T, s=s_factor, k=k, per=False, w=weights)
+            
+            # Stroke data'yı güncelle
+            stroke_data['control_points'] = np.array(tck[1]).T.tolist()
+            stroke_data['knots'] = np.array(tck[0]).tolist()
+            stroke_data['degree'] = int(tck[2])
+            stroke_data['u'] = np.array(u).tolist()
+            
+        except Exception as e:
+            # Hata durumunda sessizce devam et
+            pass
         
     def draw_current_stroke(self, painter):
         """Aktif çizimi çiz (basınç ile)"""
@@ -407,6 +498,10 @@ class BSplineTool:
     def set_line_style(self, style):
         """Çizgi stilini ayarla"""
         self.line_style = style
+        
+    def set_min_distance(self, distance):
+        """Minimum nokta mesafesini ayarla"""
+        self.min_distance = max(1.0, float(distance))
 
     def set_shadow_enabled(self, enabled):
         """Gölge durumunu ayarla"""
