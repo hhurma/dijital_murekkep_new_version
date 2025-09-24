@@ -1,4 +1,4 @@
-from PyQt6.QtCore import QPointF
+from PyQt6.QtCore import QPointF, QRectF
 from stroke_handler import StrokeHandler
 from grid_snap_utils import GridSnapUtils
 import numpy as np
@@ -9,43 +9,80 @@ class MoveTool:
         self.last_pos = None
         self.start_pos = None
         self.background_settings = None  # Grid snap için
+        self._selection_bounds_start = None  # Başlangıçta seçimin bounding rect'i
+        self._click_offset_from_topleft = None  # Tıklama noktasının bounding rect sol-üst'ünden ofseti
         
-    def start_move(self, pos):
+    def start_move(self, pos, strokes=None, selected_strokes=None):
         """Taşıma işlemini başlat"""
         self.is_moving = True
-        self.last_pos = pos
-        self.start_pos = pos
+        self.last_pos = QPointF(pos)
+        self.start_pos = QPointF(pos)
+        
+        # Seçimin bounding rect'ini hesapla ve tıklama ofsetini kaydet
+        if strokes is not None and selected_strokes:
+            bounds = self._get_selection_bounding_rect(strokes, selected_strokes)
+            if bounds is not None:
+                self._selection_bounds_start = bounds
+                # Tıklama noktasının bounding rect sol-üst köşesinden ofseti (grup alanına KENETLE)
+                raw_off_x = pos.x() - bounds.left()
+                raw_off_y = pos.y() - bounds.top()
+                off_x = min(max(0.0, raw_off_x), bounds.width())
+                off_y = min(max(0.0, raw_off_y), bounds.height())
+                self._click_offset_from_topleft = QPointF(off_x, off_y)
+            else:
+                self._selection_bounds_start = None
+                self._click_offset_from_topleft = None
+        else:
+            self._selection_bounds_start = None
+            self._click_offset_from_topleft = None
         
     def update_move(self, pos, strokes, selected_strokes):
         """Seçilen stroke'ları taşı"""
         if not self.is_moving or not selected_strokes:
             return False
             
-        # Grid snap uygula - daha hassas snap kullan
-        snapped_pos = pos
-        if (self.background_settings and 
-            self.background_settings.get('snap_to_grid', False)):
-            snapped_pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings)
+        # Bounding rect tabanlı taşıma: click offset'i korunarak yeni sol-üst hesapla
+        if self._click_offset_from_topleft is None:
+            # Fallback: basit delta
+            delta = pos - self.last_pos
+            self.last_pos = QPointF(pos)
+        else:
+            # Yeni sol-üst pozisyonu = mouse - click_offset
+            new_top_left = QPointF(
+                pos.x() - self._click_offset_from_topleft.x(),
+                pos.y() - self._click_offset_from_topleft.y()
+            )
             
-        # Hareket vektörü - snapped pozisyondan hesapla
-        delta = snapped_pos - self.last_pos
+            # Snap uygula (kenetli top-left için)
+            snap_enabled = (
+                self.background_settings and 
+                self.background_settings.get('snap_to_grid', False) and 
+                self.background_settings.get('snap_move', False)
+            )
+            if snap_enabled:
+                new_top_left = GridSnapUtils.snap_point_to_grid_precise(new_top_left, self.background_settings)
+            
+            # Delta = yeni sol-üst - başlangıç sol-üst
+            delta = QPointF(
+                new_top_left.x() - self._selection_bounds_start.left(),
+                new_top_left.y() - self._selection_bounds_start.top()
+            )
+            
+            # 0,0 dışındaki çok küçük jitter'ları yok say
+            if abs(delta.x()) < 0.25:
+                delta.setX(0.0)
+            if abs(delta.y()) < 0.25:
+                delta.setY(0.0)
+
+            # Başlangıç bounds'unu güncelle (bir sonraki delta için)
+            self._selection_bounds_start = QRectF(
+                new_top_left.x(), new_top_left.y(),
+                self._selection_bounds_start.width(), self._selection_bounds_start.height()
+            )
+            self.last_pos = QPointF(pos)
         
-        # Grid snap aktifse minimum hareket kontrolü
-        if (self.background_settings and 
-            self.background_settings.get('snap_to_grid', False)):
-            # Çok küçük hareketleri atla
-            if abs(delta.x()) < 1.0 and abs(delta.y()) < 1.0:
-                return False
-            
-            # Delta'yı etkin küçük adım (minor interval) üzerinden kuantize et
-            step = GridSnapUtils._get_minor_step(self.background_settings)
-            delta_x = round(delta.x() / step) * step
-            delta_y = round(delta.y() / step) * step
-            delta = QPointF(delta_x, delta_y)
-            
-            # Sıfır hareket varsa çık
-            if delta.x() == 0 and delta.y() == 0:
-                return False
+        if abs(delta.x()) < 0.001 and abs(delta.y()) < 0.001:
+            return False
             
         # Tüm seçili stroke'ları taşı
         for selected_stroke in selected_strokes:
@@ -67,7 +104,6 @@ class MoveTool:
                     # Yeni hassas move_stroke fonksiyonunu kullan
                     self.move_stroke_precise(stroke_data, delta)
             
-        self.last_pos = snapped_pos  # Snapped pozisyonu kaydet
         return True
         
     def finish_move(self):
@@ -75,6 +111,8 @@ class MoveTool:
         self.is_moving = False
         self.last_pos = None
         self.start_pos = None
+        self._selection_bounds_start = None
+        self._click_offset_from_topleft = None
         
     def cancel_move(self, strokes, selected_strokes):
         """Taşıma işlemini iptal et - başlangıç pozisyonuna geri dön"""
@@ -173,4 +211,54 @@ class MoveTool:
                 center = list(stroke['center'])
                 center[0] += delta.x()
                 center[1] += delta.y()
-                stroke['center'] = tuple(center) 
+                stroke['center'] = tuple(center)
+
+    def _get_selection_bounding_rect(self, strokes, selected_strokes):
+        """Seçilen stroke'ların gerçek bounding rect'ini hesapla (padding yok)"""
+        if not selected_strokes:
+            return None
+            
+        min_x = None
+        max_x = None
+        min_y = None
+        max_y = None
+        
+        for stroke_index in selected_strokes:
+            if stroke_index < len(strokes):
+                stroke_data = strokes[stroke_index]
+                
+                # Image stroke kontrolü
+                if hasattr(stroke_data, 'stroke_type') and stroke_data.stroke_type == 'image':
+                    bounds = stroke_data.get_bounds()
+                    if min_x is None:
+                        min_x = bounds.left()
+                        max_x = bounds.right()
+                        min_y = bounds.top()
+                        max_y = bounds.bottom()
+                    else:
+                        min_x = min(min_x, bounds.left())
+                        max_x = max(max_x, bounds.right())
+                        min_y = min(min_y, bounds.top())
+                        max_y = max(max_y, bounds.bottom())
+                    continue
+                
+                # Güvenlik kontrolü - eski stroke'lar için
+                if 'type' not in stroke_data:
+                    continue
+                    
+                points = StrokeHandler.get_stroke_points(stroke_data)
+                for point in points:
+                    x, y = point[0], point[1]
+                    if min_x is None:
+                        min_x = max_x = x
+                        min_y = max_y = y
+                    else:
+                        min_x = min(min_x, x)
+                        max_x = max(max_x, x)
+                        min_y = min(min_y, y)
+                        max_y = max(max_y, y)
+                
+        if min_x is None:
+            return None
+            
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)

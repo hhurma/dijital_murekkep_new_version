@@ -127,6 +127,15 @@ class SelectionTool:
             # Modüler yakınlık kontrolü
             if StrokeHandler.is_point_near_stroke(stroke_data, pos, tolerance):
                 return stroke_index
+            
+            # Yakınlık başarısızsa, bounding box içinde mi kontrol et (özellikle dolgu şekilleri için)
+            try:
+                from stroke_handler import StrokeHandler as _SH
+                bounds = _SH.get_stroke_bounds(stroke_data)
+                if bounds and bounds.contains(pos):
+                    return stroke_index
+            except Exception:
+                pass
                 
         return None
 
@@ -358,9 +367,8 @@ class SelectionTool:
         min_y = min(cp[1] for cp in all_points)
         max_y = max(cp[1] for cp in all_points)
         
-        padding = 15
-        return QRectF(min_x - padding, min_y - padding, 
-                     max_x - min_x + 2*padding, max_y - min_y + 2*padding)
+        # Padding kaldırıldı - sadece gerçek şekil alanı
+        return QRectF(min_x, min_y, max_x - min_x, max_y - min_y)
         
     def draw_selection(self, painter):
         """Seçim göstergelerini çiz"""
@@ -468,6 +476,7 @@ class SelectionTool:
                 min_y = min(cp[1] for cp in all_points)
                 max_y = max(cp[1] for cp in all_points)
                 
+                # Görsel için padding
                 padding = 15
                 bounding_rect = QRectF(min_x - padding, min_y - padding, 
                                      max_x - min_x + 2*padding, max_y - min_y + 2*padding)

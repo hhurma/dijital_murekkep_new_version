@@ -27,9 +27,11 @@ class EventHandler:
                 self.drawing_widget.setCursor(Qt.CursorShape.ClosedHandCursor)
                 return
             
-            # Ctrl tuşu durumunu güncelle
-            self.drawing_widget.selection_tool.set_ctrl_pressed(event.modifiers() & Qt.KeyboardModifier.ControlModifier)
+        # Ctrl tuşu durumunu güncelle (bool'a döndür)
+        self.drawing_widget.selection_tool.set_ctrl_pressed(bool(event.modifiers() & Qt.KeyboardModifier.ControlModifier))
 
+        # Sadece sol tıkta araçlara yönlendir
+        if event.button() == Qt.MouseButton.LeftButton:
             if self.drawing_widget.active_tool in {"bspline", "freehand", "line", "rectangle", "circle", "select", "move", "rotate", "scale"}:
                 if not self.drawing_widget.ensure_layer_editable():
                     return
@@ -107,6 +109,23 @@ class EventHandler:
             if event.buttons() == Qt.MouseButton.LeftButton:
                 transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
                 self.handle_move_move(transformed_pos)
+            else:
+                # İmleç geri bildirimini iyileştir: seçim bounding rect içinde ise OpenHand
+                transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
+                if self.drawing_widget.selection_tool.selected_strokes:
+                    # Önce doğrudan stroke isabetini kontrol et
+                    selected_clicked = any(self.drawing_widget.selection_tool.get_stroke_at_point(
+                        transformed_pos, [self.drawing_widget.strokes[i]], tolerance=20) is not None 
+                        for i in self.drawing_widget.selection_tool.selected_strokes)
+                    if not selected_clicked:
+                        # Bounding rect içinde mi?
+                        bounding_rect = self.drawing_widget.selection_tool.get_selection_bounding_rect(self.drawing_widget.strokes)
+                        if bounding_rect and bounding_rect.contains(transformed_pos):
+                            selected_clicked = True
+                    if selected_clicked:
+                        self.drawing_widget.setCursor(Qt.CursorShape.OpenHandCursor)
+                    else:
+                        self.drawing_widget.setCursor(Qt.CursorShape.ArrowCursor)
         elif self.drawing_widget.active_tool == "rotate":
             # Her zaman mouse pozisyonunu güncelle (görsel feedback için)
             transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
@@ -274,11 +293,32 @@ class EventHandler:
                     self.drawing_widget.save_current_state("Add freehand")
                 self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "line":
-            self.handle_line_release(event)
+            if self.drawing_widget.line_tool.is_drawing:
+                stroke_data = self.drawing_widget.line_tool.finish_stroke()
+                if stroke_data is not None:
+                    current_strokes = list(self.drawing_widget.strokes)
+                    current_strokes.append(stroke_data)
+                    self.drawing_widget.strokes = current_strokes
+                    self.drawing_widget.save_current_state("Add line")
+                self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "rectangle":
-            self.handle_rectangle_release(event)
+            if self.drawing_widget.rectangle_tool.is_drawing:
+                stroke_data = self.drawing_widget.rectangle_tool.finish_stroke()
+                if stroke_data is not None:
+                    current_strokes = list(self.drawing_widget.strokes)
+                    current_strokes.append(stroke_data)
+                    self.drawing_widget.strokes = current_strokes
+                    self.drawing_widget.save_current_state("Add rectangle")
+                self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "circle":
-            self.handle_circle_release(event)
+            if self.drawing_widget.circle_tool.is_drawing:
+                stroke_data = self.drawing_widget.circle_tool.finish_stroke()
+                if stroke_data is not None:
+                    current_strokes = list(self.drawing_widget.strokes)
+                    current_strokes.append(stroke_data)
+                    self.drawing_widget.strokes = current_strokes
+                    self.drawing_widget.save_current_state("Add circle")
+                self.drawing_widget.update()
         elif self.drawing_widget.active_tool == "select":
             self.handle_select_release(pos)
         elif self.drawing_widget.active_tool == "move":
@@ -625,22 +665,43 @@ class EventHandler:
         clicked_stroke = self.drawing_widget.selection_tool.get_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
         
         if clicked_stroke is not None:
-            # Tıklanan yerde nesne var - seç ve taşımayı başlat
+            # Eğer mevcut bir çoklu seçim varsa ve tıklanan stroke bu seçimin içindeyse
+            # veya tıklama mevcut seçimin bounding rect'i içindeyse: seçimi BOZMADAN taşı.
+            selected_list = list(self.drawing_widget.selection_tool.selected_strokes or [])
+            if selected_list:
+                if clicked_stroke in selected_list:
+                    self.drawing_widget._move_state_saved = True
+                    self.drawing_widget.move_tool.start_move(pos, self.drawing_widget.strokes, selected_list)
+                    self.drawing_widget.update()
+                    return
+                else:
+                    bounding_rect = self.drawing_widget.selection_tool.get_selection_bounding_rect(self.drawing_widget.strokes)
+                    if bounding_rect and bounding_rect.contains(pos):
+                        self.drawing_widget._move_state_saved = True
+                        self.drawing_widget.move_tool.start_move(pos, self.drawing_widget.strokes, selected_list)
+                        self.drawing_widget.update()
+                        return
+
+            # Aksi halde: tekli seçim davranışı - tıklanan stroke'u seç ve taşı
             self.drawing_widget.selection_tool.select_stroke_at_point(pos, self.drawing_widget.strokes, tolerance=25)
             self.drawing_widget._move_state_saved = True
-            self.drawing_widget.move_tool.start_move(pos)
+            self.drawing_widget.move_tool.start_move(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
             self.drawing_widget.update_shape_properties()
             self.drawing_widget.update()
         elif self.drawing_widget.selection_tool.selected_strokes:
             # Seçili nesneler var ama tıklanan yerde nesne yok
-            # Seçili nesnelerden birinin üzerinde mi kontrol et
+            # Seçili nesnelerden birinin üzerinde mi veya bounding rect içinde mi kontrol et
             selected_clicked = any(self.drawing_widget.selection_tool.get_stroke_at_point(pos, [self.drawing_widget.strokes[i]], tolerance=25) is not None 
                                  for i in self.drawing_widget.selection_tool.selected_strokes)
+            if not selected_clicked:
+                bounding_rect = self.drawing_widget.selection_tool.get_selection_bounding_rect(self.drawing_widget.strokes)
+                if bounding_rect and bounding_rect.contains(pos):
+                    selected_clicked = True
             
             if selected_clicked:
                 # Seçili nesne üzerine tıklandı - taşımayı başlat
                 self.drawing_widget._move_state_saved = True
-                self.drawing_widget.move_tool.start_move(pos)
+                self.drawing_widget.move_tool.start_move(pos, self.drawing_widget.strokes, self.drawing_widget.selection_tool.selected_strokes)
                 self.drawing_widget.update()
             else:
                 # Seçili nesne dışında bir yere tıklandı - sürükleme seçimi başlat
@@ -676,12 +737,8 @@ class EventHandler:
                 self.drawing_widget.selection_tool.clear_selection()
                 self.drawing_widget.selection_tool.is_selecting = False
             else:
-                # Sürükleme - dikdörtgen seçimi
+                # Sürükleme - dikdörtgen seçimi (sadece seçimi tamamla, taşıma bir sonraki tıklamada başlar)
                 selected = self.drawing_widget.selection_tool.finish_selection(self.drawing_widget.strokes)
-                if selected:
-                    # Seçim yapıldıysa taşımaya geç
-                    self.drawing_widget._move_state_saved = True
-                    self.drawing_widget.move_tool.start_move(pos)
                     
             self.drawing_widget.update_shape_properties()
             self.drawing_widget.update()
