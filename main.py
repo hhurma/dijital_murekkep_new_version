@@ -339,6 +339,14 @@ class MainWindow(QMainWindow):
         self.shape_props_toggle_tb.toggled.connect(self.toggle_shape_properties_dock)
         toolbar.addAction(self.shape_props_toggle_tb)
 
+        # Grid ayarları paneli toggle
+        self.grid_toggle_tb = QAction(qta.icon('fa5s.th', color='#795548'), "Grid Ayarları", self)
+        self.grid_toggle_tb.setToolTip("Grid ayarları panelini göster/gizle")
+        self.grid_toggle_tb.setCheckable(True)
+        self.grid_toggle_tb.setChecked(self.settings.get_grid_dock_visible())
+        self.grid_toggle_tb.toggled.connect(self.toggle_grid_dock)
+        toolbar.addAction(self.grid_toggle_tb)
+
         toolbar.addSeparator()
 
         toolbar.addSeparator()
@@ -496,6 +504,16 @@ class MainWindow(QMainWindow):
         self.layers_action.setChecked(self.settings.get_layer_dock_visible())
         self.layers_action.toggled.connect(self.toggle_layer_dock)
         view_menu.addAction(self.layers_action)
+        
+        # Grid ayarları
+        self.grid_action = QAction(qta.icon('fa5s.th', color='#795548'), "Grid Ayarları", self)
+        self.grid_action.setToolTip("Grid ayarları panelini göster/gizle")
+        self.grid_action.setCheckable(True)
+        self.grid_action.setChecked(self.settings.get_grid_dock_visible())
+        self.grid_action.toggled.connect(self.toggle_grid_dock)
+        view_menu.addAction(self.grid_action)
+        
+        view_menu.addSeparator()
         
         # Sekme çubuğunu göster/gizle
         self.toggle_tabbar_action = QAction("Sekme Çubuğunu Göster", self)
@@ -720,6 +738,18 @@ class MainWindow(QMainWindow):
         
         # Sinyalleri bağla
         self.grid_widget.gridSettingsChanged.connect(self.on_grid_settings_changed)
+
+        # Başlangıçta ayarları SettingsManager'dan yükle
+        try:
+            loaded_grid_settings = self.settings.get_snap_grid_settings()
+            if loaded_grid_settings:
+                self.grid_widget.set_grid_settings(loaded_grid_settings)
+                # Aktif sekmeye de uygula
+                active_widget = self.tab_manager.get_current_drawing_widget()
+                if active_widget:
+                    active_widget.set_grid_settings(loaded_grid_settings)
+        except Exception:
+            pass
         
         self.grid_dock.setWidget(self.grid_widget)
         self.grid_dock.setFloating(False)
@@ -773,7 +803,13 @@ class MainWindow(QMainWindow):
         active_widget = self.tab_manager.get_current_drawing_widget()
         if active_widget:
             active_widget.set_grid_settings(settings)
-        
+        # Ayarları kalıcıya yaz
+        try:
+            self.settings.set_snap_grid_settings(settings)
+            self.settings.save_settings()
+        except Exception:
+            pass
+            
     def toggle_background_dock(self, checked=None):
         """Ayarlar dock widget'ını aç/kapat veya verilen checked durumuna ayarla"""
         print(f"DEBUG: toggle_background_dock called with checked={checked}")
@@ -2000,6 +2036,13 @@ class MainWindow(QMainWindow):
         # Arka plan ayarları
         bg_settings = self.settings.get_background_settings()
         drawing_widget.set_background_settings(bg_settings)
+        
+        # Snap grid ayarları
+        try:
+            snap_grid_settings = self.settings.get_snap_grid_settings()
+            drawing_widget.set_grid_settings(snap_grid_settings)
+        except Exception:
+            pass
 
         # Gölge varsayılanlarını araçlara uygula
         shadow_defaults = self.settings.get_shadow_defaults(None)
@@ -4313,6 +4356,8 @@ class MainWindow(QMainWindow):
                 self.layers_toggle_tb.setChecked(self.layer_dock.isVisible())
             if hasattr(self, 'shape_props_toggle_tb'):
                 self.shape_props_toggle_tb.setChecked(self.shape_properties_dock.isVisible())
+            if hasattr(self, 'grid_toggle_tb'):
+                self.grid_toggle_tb.setChecked(self.grid_dock.isVisible())
             
             # Menü aksiyonları
             if hasattr(self, 'settings_action'):
@@ -4323,6 +4368,8 @@ class MainWindow(QMainWindow):
                 self.layers_action.setChecked(self.layer_dock.isVisible())
             if hasattr(self, 'shape_props_action'):
                 self.shape_props_action.setChecked(self.shape_properties_dock.isVisible())
+            if hasattr(self, 'grid_action'):
+                self.grid_action.setChecked(self.grid_dock.isVisible())
         except Exception:
             pass
 

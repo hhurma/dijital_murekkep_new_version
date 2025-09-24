@@ -87,6 +87,19 @@ class SettingsManager:
             'custom_height': '800'
         }
 
+        # Snap Grid (ayrı grid) ayarları
+        self.config['SnapGrid'] = {
+            'enabled': 'False',
+            'snap_grid_color': '#6464FF',
+            'snap_major_grid_color': '#3232C8',
+            'snap_grid_size': '20',
+            'snap_grid_width': '1',
+            'snap_major_grid_width': '2',
+            'snap_major_grid_interval': '5',
+            'snap_grid_opacity': '0.5',
+            'snap_to_grid': 'False'
+        }
+
         # Gölge varsayılanları (tüm araçlar için ortak)
         self.config['ShadowDefaults'] = {
             'enabled': 'False',
@@ -330,6 +343,56 @@ class SettingsManager:
         self.config.set('Background', 'minor_grid_interval', str(minor_val))
         self.set_grid_opacity(settings.get('grid_opacity', 1.0))
         self.set_snap_to_grid(settings.get('snap_to_grid', False))
+
+    # Snap Grid ayarları (kalıcı)
+    def get_snap_grid_settings(self):
+        """Snap grid ayarlarını al"""
+        sec = 'SnapGrid'
+        # Section yoksa varsayılanları oluştur
+        if not self.config.has_section(sec):
+            self.config.add_section(sec)
+        from PyQt6.QtGui import QColor
+        return {
+            'enabled': self.config.getboolean(sec, 'enabled', fallback=False),
+            'snap_grid_color': QColor(self.config.get(sec, 'snap_grid_color', fallback='#6464FF')),
+            'snap_major_grid_color': QColor(self.config.get(sec, 'snap_major_grid_color', fallback='#3232C8')),
+            'snap_grid_size': self.config.getint(sec, 'snap_grid_size', fallback=20),
+            'snap_grid_width': self.config.getint(sec, 'snap_grid_width', fallback=1),
+            'snap_major_grid_width': self.config.getint(sec, 'snap_major_grid_width', fallback=2),
+            'snap_major_grid_interval': self.config.getint(sec, 'snap_major_grid_interval', fallback=5),
+            'snap_grid_opacity': self.config.getfloat(sec, 'snap_grid_opacity', fallback=0.5),
+            'snap_to_grid': self.config.getboolean(sec, 'snap_to_grid', fallback=False)
+        }
+
+    def set_snap_grid_settings(self, settings):
+        """Snap grid ayarlarını kaydet"""
+        sec = 'SnapGrid'
+        if not self.config.has_section(sec):
+            self.config.add_section(sec)
+        # Renkler QColor ise .name(), string ise direkt yaz
+        def color_to_name(val):
+            try:
+                return val.name() if hasattr(val, 'name') else str(val)
+            except Exception:
+                return '#000000'
+        if 'enabled' in settings:
+            self.config.set(sec, 'enabled', str(bool(settings['enabled'])))
+        if 'snap_grid_color' in settings:
+            self.config.set(sec, 'snap_grid_color', color_to_name(settings['snap_grid_color']))
+        if 'snap_major_grid_color' in settings:
+            self.config.set(sec, 'snap_major_grid_color', color_to_name(settings['snap_major_grid_color']))
+        if 'snap_grid_size' in settings:
+            self.config.set(sec, 'snap_grid_size', str(int(settings['snap_grid_size'])))
+        if 'snap_grid_width' in settings:
+            self.config.set(sec, 'snap_grid_width', str(int(settings['snap_grid_width'])))
+        if 'snap_major_grid_width' in settings:
+            self.config.set(sec, 'snap_major_grid_width', str(int(settings['snap_major_grid_width'])))
+        if 'snap_major_grid_interval' in settings:
+            self.config.set(sec, 'snap_major_grid_interval', str(int(settings['snap_major_grid_interval'])))
+        if 'snap_grid_opacity' in settings:
+            self.config.set(sec, 'snap_grid_opacity', str(float(settings['snap_grid_opacity'])))
+        if 'snap_to_grid' in settings:
+            self.config.set(sec, 'snap_to_grid', str(bool(settings['snap_to_grid'])))
         
     # Araç ayarları
     def get_active_tool(self):

@@ -65,12 +65,62 @@ class GridSettingsWidget(QWidget):
         
         grid_layout.addLayout(major_color_layout)
         
-        # Grid boyutu
+        # Grid boyut presetleri
+        preset_layout = QVBoxLayout()
+        preset_layout.addWidget(QLabel("Grid Boyut Presetleri:"))
+        
+        preset_buttons_layout = QHBoxLayout()
+        
+        # Preset butonları
+        preset_button_style = """
+            QPushButton {
+                padding: 5px 10px;
+                background-color: #f0f0f0;
+                border: 1px solid #ccc;
+                border-radius: 3px;
+                font-size: 11px;
+            }
+            QPushButton:hover {
+                background-color: #e0e0e0;
+            }
+            QPushButton:pressed {
+                background-color: #d0d0d0;
+            }
+        """
+        
+        self.small_preset_btn = QPushButton("Küçük\n(10px)")
+        self.small_preset_btn.setToolTip("10px grid aralığı")
+        self.small_preset_btn.setStyleSheet(preset_button_style)
+        self.small_preset_btn.clicked.connect(lambda: self.apply_preset("small"))
+        preset_buttons_layout.addWidget(self.small_preset_btn)
+        
+        self.medium_preset_btn = QPushButton("Orta\n(20px)")
+        self.medium_preset_btn.setToolTip("20px grid aralığı")
+        self.medium_preset_btn.setStyleSheet(preset_button_style)
+        self.medium_preset_btn.clicked.connect(lambda: self.apply_preset("medium"))
+        preset_buttons_layout.addWidget(self.medium_preset_btn)
+        
+        self.large_preset_btn = QPushButton("Büyük\n(40px)")
+        self.large_preset_btn.setToolTip("40px grid aralığı")
+        self.large_preset_btn.setStyleSheet(preset_button_style)
+        self.large_preset_btn.clicked.connect(lambda: self.apply_preset("large"))
+        preset_buttons_layout.addWidget(self.large_preset_btn)
+        
+        self.xlarge_preset_btn = QPushButton("Çok Büyük\n(80px)")
+        self.xlarge_preset_btn.setToolTip("80px grid aralığı")
+        self.xlarge_preset_btn.setStyleSheet(preset_button_style)
+        self.xlarge_preset_btn.clicked.connect(lambda: self.apply_preset("xlarge"))
+        preset_buttons_layout.addWidget(self.xlarge_preset_btn)
+        
+        preset_layout.addLayout(preset_buttons_layout)
+        grid_layout.addLayout(preset_layout)
+        
+        # Manuel grid boyutu
         size_layout = QHBoxLayout()
-        size_layout.addWidget(QLabel("Grid Aralığı:"))
+        size_layout.addWidget(QLabel("Özel Grid Aralığı:"))
         
         self.size_spinbox = QSpinBox()
-        self.size_spinbox.setRange(5, 100)
+        self.size_spinbox.setRange(5, 200)
         self.size_spinbox.setValue(self.snap_grid_size)
         self.size_spinbox.setSuffix(" px")
         self.size_spinbox.valueChanged.connect(self.on_grid_size_changed)
@@ -227,6 +277,53 @@ class GridSettingsWidget(QWidget):
         self.snap_grid_opacity = value / 100.0  # 0.1 ile 1.0 arasına çevir
         self.opacity_label.setText(f"{value}%")
         self.emit_grid_settings_changed()
+        
+    def apply_preset(self, preset_type):
+        """Grid boyut presetini uygula"""
+        preset_configs = {
+            "small": {
+                "size": 10,
+                "width": 1,
+                "major_width": 2,
+                "major_interval": 5
+            },
+            "medium": {
+                "size": 20,
+                "width": 1,
+                "major_width": 2,
+                "major_interval": 5
+            },
+            "large": {
+                "size": 40,
+                "width": 1,
+                "major_width": 3,
+                "major_interval": 4
+            },
+            "xlarge": {
+                "size": 80,
+                "width": 2,
+                "major_width": 4,
+                "major_interval": 3
+            }
+        }
+        
+        if preset_type in preset_configs:
+            config = preset_configs[preset_type]
+            
+            # Değerleri güncelle
+            self.snap_grid_size = config["size"]
+            self.snap_grid_width = config["width"]
+            self.snap_major_grid_width = config["major_width"]
+            self.snap_major_grid_interval = config["major_interval"]
+            
+            # UI'yi güncelle
+            self.size_spinbox.setValue(self.snap_grid_size)
+            self.width_spinbox.setValue(self.snap_grid_width)
+            self.major_width_spinbox.setValue(self.snap_major_grid_width)
+            self.interval_spinbox.setValue(self.snap_major_grid_interval)
+            
+            # Değişiklikleri emit et
+            self.emit_grid_settings_changed()
         
     def emit_grid_settings_changed(self):
         """Grid ayarları değişikliği sinyali gönder"""
