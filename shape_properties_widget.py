@@ -1446,7 +1446,13 @@ class ShapePropertiesWidget(QWidget):
     
     def apply_style_change(self):
         """Stil değişikliğini uygula"""
-        if self.selected_strokes or self.freehand_mode_active:
+        # Seçim varsa veya tool modları aktifse sinyali gönder
+        # Not: generic_mode_active, freehand_mode_active korumalı alınır
+        if (
+            getattr(self, 'selected_strokes', [])
+            or getattr(self, 'freehand_mode_active', False)
+            or getattr(self, 'generic_mode_active', False)
+        ):
             self.lineStyleChanged.emit(self.current_line_style)
     
     def apply_fill_color_change(self):

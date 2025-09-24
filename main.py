@@ -1698,6 +1698,12 @@ class MainWindow(QMainWindow):
             
             current_widget.update()
             self.show_status_message("Şekil çizgi stili değiştirildi")
+            # Ayarlara da kaydet (seçim olsa bile varsayılan stil güncellensin)
+            try:
+                self.settings.set_line_style(line_style)
+                self.settings.save_settings()
+            except Exception:
+                pass
         else:
             # Seçim yoksa aktif aracın çizgi stilini güncelle
             if current_widget:
