@@ -229,6 +229,13 @@ class MainWindow(QMainWindow):
         self.freehand_action.triggered.connect(lambda: self.set_tool("freehand"))
         toolbar.addAction(self.freehand_action)
         
+        # Silgi aracı
+        self.eraser_action = QAction(qta.icon('fa5s.eraser', color='#F44336'), "Silgi", self)
+        self.eraser_action.setCheckable(True)
+        self.eraser_action.setToolTip("Silgi (sol tık ile sil)")
+        self.eraser_action.triggered.connect(lambda: self.set_tool("eraser"))
+        toolbar.addAction(self.eraser_action)
+        
         self.line_action = QAction(qta.icon('fa5s.minus', color='#607D8B'), "Düz Çizgi", self)
         self.line_action.setCheckable(True)
         self.line_action.setToolTip("Düz çizgi çizimi")
@@ -1366,6 +1373,7 @@ class MainWindow(QMainWindow):
                 # Toggle kapatma davranışını merkezi yerden kullan
                 self.bspline_edit_action.setChecked(False)
         self.freehand_action.setChecked(tool_name == "freehand")
+        self.eraser_action.setChecked(tool_name == "eraser")
         self.line_action.setChecked(tool_name == "line")
         self.rectangle_action.setChecked(tool_name == "rectangle")
         self.circle_action.setChecked(tool_name == "circle")

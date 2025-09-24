@@ -20,6 +20,7 @@ from rotate_tool import RotateTool
 from scale_tool import ScaleTool
 from bspline_tool import BSplineTool
 from freehand_tool import FreehandTool
+from eraser_tool import EraserTool
 from line_tool import LineTool
 from rectangle_tool import RectangleTool
 from circle_tool import CircleTool
@@ -303,6 +304,7 @@ class DrawingWidget(QWidget):
         self._scale_state_saved = False  # Scale için state kaydedildi mi
         self.bspline_tool = BSplineTool()  # B-spline aracı
         self.freehand_tool = FreehandTool()  # Serbest çizim aracı
+        self.eraser_tool = EraserTool()  # Silgi aracı
         self.line_tool = LineTool()  # Düz çizgi aracı
         self.rectangle_tool = RectangleTool()  # Dikdörtgen aracı
         self.circle_tool = CircleTool()  # Çember aracı
@@ -470,6 +472,10 @@ class DrawingWidget(QWidget):
             self.scale_tool.create_scale_handles(self.strokes, self.selection_tool.selected_strokes)
             
         self.update()
+
+    def set_eraser_radius(self, radius: float):
+        if hasattr(self, 'eraser_tool'):
+            self.eraser_tool.set_radius(radius)
         
     def set_current_color(self, color):
         """Aktif rengi ayarla ve araçlara bildir"""

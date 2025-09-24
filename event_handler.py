@@ -8,6 +8,8 @@ class EventHandler:
     
     def __init__(self, drawing_widget):
         self.drawing_widget = drawing_widget
+        # Geçici silgi (kalem alt tuşu / eraser ucu) durumu
+        self._eraser_temp_active = False
         
     def handle_mouse_press(self, event: QMouseEvent):
         """Mouse press event'i işle"""
@@ -32,7 +34,7 @@ class EventHandler:
 
         # Sadece sol tıkta araçlara yönlendir
         if event.button() == Qt.MouseButton.LeftButton:
-            if self.drawing_widget.active_tool in {"bspline", "freehand", "line", "rectangle", "circle", "select", "move", "rotate", "scale"}:
+            if self.drawing_widget.active_tool in {"bspline", "freehand", "eraser", "line", "rectangle", "circle", "select", "move", "rotate", "scale"}:
                 if not self.drawing_widget.ensure_layer_editable():
                     return
 
@@ -40,6 +42,8 @@ class EventHandler:
                 self.handle_bspline_press(event)
             elif self.drawing_widget.active_tool == "freehand":
                 self.handle_freehand_press(event)
+            elif self.drawing_widget.active_tool == "eraser":
+                self.handle_eraser_press(event)
             elif self.drawing_widget.active_tool == "line":
                 self.handle_line_press(event)
             elif self.drawing_widget.active_tool == "rectangle":
@@ -100,6 +104,8 @@ class EventHandler:
             self.handle_bspline_move(event)
         elif self.drawing_widget.active_tool == "freehand":
             self.handle_freehand_move(event)
+        elif self.drawing_widget.active_tool == "eraser":
+            self.handle_eraser_move(event)
         elif self.drawing_widget.active_tool == "line":
             self.handle_line_move(event)
         elif self.drawing_widget.active_tool == "rectangle":
@@ -169,6 +175,8 @@ class EventHandler:
                 self.handle_bspline_release(event)
             elif self.drawing_widget.active_tool == "freehand":
                 self.handle_freehand_release(event)
+            elif self.drawing_widget.active_tool == "eraser":
+                self.handle_eraser_release(event)
             elif self.drawing_widget.active_tool == "line":
                 self.handle_line_release(event)
             elif self.drawing_widget.active_tool == "rectangle":
@@ -202,6 +210,22 @@ class EventHandler:
         
         # Event türüne göre işle
         if event.type() == QTabletEvent.Type.TabletPress:
+            # Kalemin eraser ucu veya alt tuş (barrel/RightButton) ise geçici silgi modunu aç
+            try:
+                is_eraser_pointer = (event.pointerType() == QTabletEvent.PointerType.Eraser)
+            except Exception:
+                is_eraser_pointer = False
+            try:
+                # Wacom vs. için barrel (alt) tuş: bazı sürücüler Middle değil XButton1 olarak geçebilir.
+                # Öncelik: MiddleButton, yoksa RightButton (isteğe bağlı), en son sol+alt mod varken.
+                barrel_lower_pressed = bool(event.buttons() & Qt.MouseButton.MiddleButton)
+                if not barrel_lower_pressed:
+                    # Yedek: bazı cihazlarda RightButton alt tuş olabilir (isteğe bağlı)
+                    barrel_lower_pressed = bool(event.buttons() & Qt.MouseButton.RightButton)
+            except Exception:
+                barrel_lower_pressed = False
+            # Aktif araç zaten silgi değilse ve eraser işareti varsa geçici silgi aktif
+            self._eraser_temp_active = (not (getattr(self.drawing_widget, 'active_tool', '') == 'eraser')) and (is_eraser_pointer or barrel_lower_pressed)
             if not self.drawing_widget.ensure_layer_editable():
                 event.accept()
                 return
@@ -210,11 +234,21 @@ class EventHandler:
             self._handle_tablet_move(transformed_pos, pressure)
         elif event.type() == QTabletEvent.Type.TabletRelease:
             self._handle_tablet_release(transformed_pos, pressure)
+            # Geçici silgi modunu kapat
+            self._eraser_temp_active = False
             
         event.accept()
 
     def _handle_tablet_press(self, pos, pressure):
         """Tablet press event'i işle"""
+        using_eraser = (getattr(self.drawing_widget, 'active_tool', '') == 'eraser') or self._eraser_temp_active
+        if using_eraser:
+            # Silgi başlat
+            if not self.drawing_widget.eraser_tool.is_erasing:
+                self.drawing_widget.eraser_tool.start_erase(pos)
+            # Donma hissini azaltmak için anlık update
+            self.drawing_widget.update()
+            return
         if self.drawing_widget.active_tool == "bspline":
             if self.drawing_widget.bspline_tool.select_control_point(pos, self.drawing_widget.strokes):
                 self.drawing_widget.save_current_state("Move control point")
@@ -245,6 +279,14 @@ class EventHandler:
 
     def _handle_tablet_move(self, pos, pressure):
         """Tablet move event'i işle"""
+        using_eraser = (getattr(self.drawing_widget, 'active_tool', '') == 'eraser') or self._eraser_temp_active
+        if using_eraser:
+            if not self.drawing_widget.eraser_tool.is_erasing:
+                self.drawing_widget.eraser_tool.start_erase(pos)
+            if self.drawing_widget.eraser_tool.update_erase(pos, self.drawing_widget):
+                # Donma hissini azaltmak için anlık update
+                self.drawing_widget.update()
+            return
         if self.drawing_widget.active_tool == "bspline":
             if self.drawing_widget.bspline_tool.selected_control_point is not None:
                 if self.drawing_widget.bspline_tool.move_control_point(pos, self.drawing_widget.strokes):
@@ -281,6 +323,14 @@ class EventHandler:
 
     def _handle_tablet_release(self, pos, pressure):
         """Tablet release event'i işle"""
+        using_eraser = (getattr(self.drawing_widget, 'active_tool', '') == 'eraser') or self._eraser_temp_active
+        if using_eraser:
+            # Final kompakt ve kaydet
+            self._apply_eraser_compaction()
+            self.drawing_widget.save_current_state("Erase")
+            self.drawing_widget.eraser_tool.finish_erase()
+            self.drawing_widget.update()
+            return
         if self.drawing_widget.active_tool == "bspline":
             if self.drawing_widget.bspline_tool.selected_control_point is not None:
                 self.drawing_widget.bspline_tool.clear_selection()
@@ -340,6 +390,58 @@ class EventHandler:
             
         # Tablet işlemi bittiğinde reset
         self.drawing_widget.tablet_handler.reset_tablet_state()
+
+    # Eraser handlers
+    def handle_eraser_press(self, event):
+        pressure = event.pressure() if hasattr(event, 'pressure') else 1.0
+        transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+        self.drawing_widget.eraser_tool.start_erase(transformed_pos)
+        # İlk anda da silme uygula
+        if self.drawing_widget.eraser_tool.update_erase(transformed_pos, self.drawing_widget):
+            self.drawing_widget.update()
+
+    def handle_eraser_move(self, event):
+        if event.buttons() == Qt.MouseButton.LeftButton:
+            transformed_pos = self.drawing_widget.transform_mouse_pos(QPointF(event.pos()))
+            if self.drawing_widget.eraser_tool.update_erase(transformed_pos, self.drawing_widget):
+                self.drawing_widget.update()
+
+    def handle_eraser_release(self, event):
+        # Final kompakt ve undo kaydı
+        self._apply_eraser_compaction()
+        if self.drawing_widget.eraser_tool.is_erasing:
+            self.drawing_widget.save_current_state("Erase")
+        self.drawing_widget.eraser_tool.finish_erase()
+        self.drawing_widget.update()
+
+    def _apply_eraser_compaction(self):
+        """EraserTool'un işaretlediği stroke'ları kalıcı olarak kaldır."""
+        tool = getattr(self.drawing_widget, 'eraser_tool', None)
+        if tool is None:
+            return
+        remove_set = set(getattr(tool, '_to_remove', set()))
+        pending = bool(getattr(tool, '_pending_compact', False))
+        # Ayrıca 1 noktadan az kalan freehand stroke'ları at
+        if not remove_set and not pending:
+            return
+        strokes_list = list(self.drawing_widget.strokes)
+        new_strokes = []
+        for i, s in enumerate(strokes_list):
+            if i in remove_set:
+                continue
+            if hasattr(s, 'get') and s.get('type') == 'freehand':
+                pts = s.get('points', [])
+                if pts is None or len(pts) <= 1:
+                    continue
+            new_strokes.append(s)
+        # Uygula
+        self.drawing_widget.strokes = new_strokes
+        # Bayrakları sıfırla
+        try:
+            tool._to_remove.clear()
+        except Exception:
+            pass
+        tool._pending_compact = False
 
     def handle_key_press(self, event):
         """Klavye tuşu basıldığında"""

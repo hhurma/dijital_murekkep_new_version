@@ -128,6 +128,10 @@ class CanvasRenderer:
             self.drawing_widget.rectangle_tool.draw_current_stroke(painter)
         elif self.drawing_widget.active_tool == "circle":
             self.drawing_widget.circle_tool.draw_current_stroke(painter)
+        elif getattr(self.drawing_widget, 'active_tool', None) == "eraser":
+            # Silgi imlecini çiz
+            if hasattr(self.drawing_widget, 'eraser_tool'):
+                self.drawing_widget.eraser_tool.draw_cursor(painter)
 
         # Shift ile snap göstergesi çiz
         try:
