@@ -580,6 +580,49 @@ class DrawingWidget(QWidget):
         if hasattr(self.circle_tool, 'set_line_style'):
             self.circle_tool.set_line_style(style)
             
+    def set_shadow_settings(self, shadow_settings):
+        """Gölge ayarlarını şekil araçlarına bildir"""
+        if hasattr(self.rectangle_tool, 'set_shadow_enabled'):
+            self.rectangle_tool.set_shadow_enabled(shadow_settings.get('has_shadow', False))
+        if hasattr(self.rectangle_tool, 'set_shadow_color'):
+            self.rectangle_tool.set_shadow_color(shadow_settings.get('shadow_color'))
+        if hasattr(self.rectangle_tool, 'set_shadow_offset'):
+            self.rectangle_tool.set_shadow_offset(
+                shadow_settings.get('shadow_offset_x', 0),
+                shadow_settings.get('shadow_offset_y', 0)
+            )
+        if hasattr(self.rectangle_tool, 'set_shadow_blur'):
+            self.rectangle_tool.set_shadow_blur(shadow_settings.get('shadow_blur', 5))
+        if hasattr(self.rectangle_tool, 'set_shadow_size'):
+            self.rectangle_tool.set_shadow_size(shadow_settings.get('shadow_size', 0))
+        if hasattr(self.rectangle_tool, 'set_shadow_opacity'):
+            self.rectangle_tool.set_shadow_opacity(shadow_settings.get('shadow_opacity', 0.7))
+        if hasattr(self.rectangle_tool, 'set_inner_shadow'):
+            self.rectangle_tool.set_inner_shadow(shadow_settings.get('inner_shadow', False))
+        if hasattr(self.rectangle_tool, 'set_shadow_quality'):
+            self.rectangle_tool.set_shadow_quality(shadow_settings.get('shadow_quality', 'medium'))
+            
+        # Circle tool için de aynı ayarları uygula
+        if hasattr(self.circle_tool, 'set_shadow_enabled'):
+            self.circle_tool.set_shadow_enabled(shadow_settings.get('has_shadow', False))
+        if hasattr(self.circle_tool, 'set_shadow_color'):
+            self.circle_tool.set_shadow_color(shadow_settings.get('shadow_color'))
+        if hasattr(self.circle_tool, 'set_shadow_offset'):
+            self.circle_tool.set_shadow_offset(
+                shadow_settings.get('shadow_offset_x', 0),
+                shadow_settings.get('shadow_offset_y', 0)
+            )
+        if hasattr(self.circle_tool, 'set_shadow_blur'):
+            self.circle_tool.set_shadow_blur(shadow_settings.get('shadow_blur', 5))
+        if hasattr(self.circle_tool, 'set_shadow_size'):
+            self.circle_tool.set_shadow_size(shadow_settings.get('shadow_size', 0))
+        if hasattr(self.circle_tool, 'set_shadow_opacity'):
+            self.circle_tool.set_shadow_opacity(shadow_settings.get('shadow_opacity', 0.7))
+        if hasattr(self.circle_tool, 'set_inner_shadow'):
+            self.circle_tool.set_inner_shadow(shadow_settings.get('inner_shadow', False))
+        if hasattr(self.circle_tool, 'set_shadow_quality'):
+            self.circle_tool.set_shadow_quality(shadow_settings.get('shadow_quality', 'medium'))
+            
     def set_background_settings(self, settings):
         """Arka plan ayarlarını güncelle"""
         self.background_settings = settings

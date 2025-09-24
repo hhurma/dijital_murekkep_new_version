@@ -2604,12 +2604,15 @@ class ShapePropertiesWidget(QWidget):
         # Şekil havuzu - herhangi bir seçim varsa
         any_selection = len(self.selected_strokes) > 0
         self.shape_library_group.setVisible(any_selection)
+        
+        # Z-order grubu - herhangi bir seçim varsa
+        if hasattr(self, 'zorder_group'):
+            self.zorder_group.setVisible(any_selection)
 
         self._apply_panel_width()
 
         # Buton durumlarını güncelle
-        if multiple_selection:
-            self.update_button_states()
+        self.update_button_states()
     
     def update_button_states(self):
         """Buton durumlarını güncelle"""
@@ -2637,6 +2640,17 @@ class ShapePropertiesWidget(QWidget):
         distribute_enabled = stroke_count >= 3
         self.distribute_h_btn.setEnabled(distribute_enabled)
         self.distribute_v_btn.setEnabled(distribute_enabled)
+        
+        # Z-order butonları (1+ nesne gerekli)
+        zorder_enabled = stroke_count >= 1
+        if hasattr(self, 'send_backward_btn'):
+            self.send_backward_btn.setEnabled(zorder_enabled)
+        if hasattr(self, 'send_to_back_btn'):
+            self.send_to_back_btn.setEnabled(zorder_enabled)
+        if hasattr(self, 'send_forward_btn'):
+            self.send_forward_btn.setEnabled(zorder_enabled)
+        if hasattr(self, 'send_to_front_btn'):
+            self.send_to_front_btn.setEnabled(zorder_enabled)
     
     def check_if_selection_is_grouped(self):
         """Seçili stroke'ların hepsi aynı gruba ait mi kontrol et"""
@@ -2822,9 +2836,10 @@ class ShapePropertiesWidget(QWidget):
         if hasattr(self, 'stroke_shadow_group'):
             self.stroke_shadow_group.setVisible(tool_name in ['line', 'bspline'])
 
-        # Z-order grubu: Generic mode'da gizle (sadece seçili stroke'lar için)
+        # Z-order grubu: Seçili stroke varsa göster
         if hasattr(self, 'zorder_group'):
-            self.zorder_group.setVisible(False)
+            any_selection = len(self.selected_strokes) > 0
+            self.zorder_group.setVisible(any_selection)
             
         # UI'yi güncelle
         self.update_ui_values()

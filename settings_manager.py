@@ -238,7 +238,11 @@ class SettingsManager:
         
     def set_background_color(self, color):
         """Arka plan rengini kaydet"""
-        self.config.set('Background', 'background_color', color.name())
+        if isinstance(color, QColor):
+            color_str = color.name()
+        else:
+            color_str = str(color)
+        self.config.set('Background', 'background_color', color_str)
         
     def get_grid_color(self):
         """Minor grid rengini al"""
@@ -247,7 +251,11 @@ class SettingsManager:
         
     def set_grid_color(self, color):
         """Minor grid rengini kaydet"""
-        self.config.set('Background', 'grid_color', color.name())
+        if isinstance(color, QColor):
+            color_str = color.name()
+        else:
+            color_str = str(color)
+        self.config.set('Background', 'grid_color', color_str)
         
     def get_major_grid_color(self):
         """Major grid rengini al"""
@@ -256,7 +264,11 @@ class SettingsManager:
         
     def set_major_grid_color(self, color):
         """Major grid rengini kaydet"""
-        self.config.set('Background', 'major_grid_color', color.name())
+        if isinstance(color, QColor):
+            color_str = color.name()
+        else:
+            color_str = str(color)
+        self.config.set('Background', 'major_grid_color', color_str)
         
     def get_grid_size(self):
         """Grid boyutunu al"""

@@ -1485,9 +1485,6 @@ class MainWindow(QMainWindow):
         cancel_btn.clicked.connect(on_cancel)
         dlg.exec()
         
-        # Status bar'ı güncelle
-        self.update_tool_status(tool_name)
-        
     def on_color_selected(self, color):
         """Renk seçildiğinde aktif tab'a bildir"""
         current_widget = self.get_current_drawing_widget()
@@ -1741,6 +1738,15 @@ class MainWindow(QMainWindow):
     def on_shape_fill_color_changed(self, color):
         """Seçilen şekillerin dolgu rengini değiştir"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da dolgu rengini bildir
+        if current_widget:
+            current_widget.set_fill_color(color)
+            
+        # Ayarlara kaydet
+        self.settings.set_fill_defaults({'color': color})
+        self.settings.save_settings()
+        
         if current_widget and current_widget.selection_tool.selected_strokes:
             # Undo için state kaydet
             current_widget.save_current_state("Change shape fill color")
@@ -3281,8 +3287,15 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_enabled_changed(self, enabled):
         """Dikdörtgen gölge etkin/pasif değişti"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da gölge ayarını bildir
+        if current_widget:
+            shadow_settings = self.settings.get_shadow_defaults('Rectangle')
+            shadow_settings['has_shadow'] = enabled
+            current_widget.set_shadow_settings(shadow_settings)
+        
         try:
-            self.settings.set_shadow_defaults({'has_shadow': enabled})
+            self.settings.set_shadow_defaults({'has_shadow': enabled}, 'Rectangle')
             self.settings.save_settings()
         except Exception:
             pass
@@ -3304,8 +3317,15 @@ class MainWindow(QMainWindow):
     def on_rectangle_shadow_color_changed(self, color):
         """Dikdörtgen gölge rengi değişti"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da gölge rengini bildir
+        if current_widget:
+            shadow_settings = self.settings.get_shadow_defaults('Rectangle')
+            shadow_settings['shadow_color'] = color
+            current_widget.set_shadow_settings(shadow_settings)
+            
         try:
-            self.settings.set_shadow_defaults({'shadow_color': color})
+            self.settings.set_shadow_defaults({'shadow_color': color}, 'Rectangle')
             self.settings.save_settings()
         except Exception:
             pass
@@ -3467,8 +3487,15 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_enabled_changed(self, enabled):
         """Çember gölge etkin/pasif değişti"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da gölge ayarını bildir
+        if current_widget:
+            shadow_settings = self.settings.get_shadow_defaults('Circle')
+            shadow_settings['has_shadow'] = enabled
+            current_widget.set_shadow_settings(shadow_settings)
+            
         try:
-            self.settings.set_shadow_defaults({'has_shadow': enabled})
+            self.settings.set_shadow_defaults({'has_shadow': enabled}, 'Circle')
             self.settings.save_settings()
         except Exception:
             pass
@@ -3490,8 +3517,15 @@ class MainWindow(QMainWindow):
     def on_circle_shadow_color_changed(self, color):
         """Çember gölge rengi değişti"""
         current_widget = self.get_current_drawing_widget()
+        
+        # Aktif araçlara da gölge rengini bildir
+        if current_widget:
+            shadow_settings = self.settings.get_shadow_defaults('Circle')
+            shadow_settings['shadow_color'] = color
+            current_widget.set_shadow_settings(shadow_settings)
+            
         try:
-            self.settings.set_shadow_defaults({'shadow_color': color})
+            self.settings.set_shadow_defaults({'shadow_color': color}, 'Circle')
             self.settings.save_settings()
         except Exception:
             pass
