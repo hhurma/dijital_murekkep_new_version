@@ -51,6 +51,11 @@ class EventHandler:
                 self.handle_select_press(transformed_pos)
             elif self.drawing_widget.active_tool == "move":
                 transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
+                # Shift durumunu güncelle
+                try:
+                    self.drawing_widget.move_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                except Exception:
+                    pass
                 self.handle_move_press(transformed_pos)
             elif self.drawing_widget.active_tool == "rotate":
                 transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
@@ -108,6 +113,11 @@ class EventHandler:
         elif self.drawing_widget.active_tool == "move":
             if event.buttons() == Qt.MouseButton.LeftButton:
                 transformed_pos = self.drawing_widget.transform_mouse_pos(pos)
+                # Shift durumunu güncelle
+                try:
+                    self.drawing_widget.move_tool.shift_constrain = bool(event.modifiers() & Qt.KeyboardModifier.ShiftModifier)
+                except Exception:
+                    pass
                 self.handle_move_move(transformed_pos)
             else:
                 # İmleç geri bildirimini iyileştir: seçim bounding rect içinde ise OpenHand
@@ -353,6 +363,9 @@ class EventHandler:
                 self.drawing_widget.rectangle_tool.shift_constrain = True
             if hasattr(self.drawing_widget, 'circle_tool'):
                 self.drawing_widget.circle_tool.shift_constrain = True
+            # Move tool için geçici snap
+            if hasattr(self.drawing_widget, 'move_tool'):
+                self.drawing_widget.move_tool.shift_constrain = True
 
     def handle_key_release(self, event):
         """Klavye tuşu bırakıldığında"""
@@ -377,6 +390,9 @@ class EventHandler:
                 self.drawing_widget.rectangle_tool.shift_constrain = False
             if hasattr(self.drawing_widget, 'circle_tool'):
                 self.drawing_widget.circle_tool.shift_constrain = False
+            # Move tool için geçici snap'i kapat
+            if hasattr(self.drawing_widget, 'move_tool'):
+                self.drawing_widget.move_tool.shift_constrain = False
         elif event.key() == Qt.Key.Key_Escape:
             # ESC: B-spline düzenleme modunu kapat (noktaları gizle ve select aracına dön)
             if self.drawing_widget.active_tool == "bspline":

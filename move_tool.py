@@ -9,6 +9,7 @@ class MoveTool:
         self.last_pos = None
         self.start_pos = None
         self.background_settings = None  # Grid snap için
+        self.shift_constrain = False  # Shift tuşu ile snap zorlaması
         self._selection_bounds_start = None  # Başlangıçta seçimin bounding rect'i
         self._click_offset_from_topleft = None  # Tıklama noktasının bounding rect sol-üst'ünden ofseti
         
@@ -54,10 +55,10 @@ class MoveTool:
             )
             
             # Snap uygula (kenetli top-left için)
+            force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
             snap_enabled = (
                 self.background_settings and 
-                self.background_settings.get('snap_to_grid', False) and 
-                self.background_settings.get('snap_move', False)
+                (self.background_settings.get('snap_to_grid', False) or force_snap)
             )
             if snap_enabled:
                 new_top_left = GridSnapUtils.snap_point_to_grid_precise(new_top_left, self.background_settings)
