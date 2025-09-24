@@ -655,6 +655,8 @@ class DrawingWidget(QWidget):
         """Grid ayarlarını güncelle"""
         self.grid_settings = settings
 
+        # Artık snap sadece grid_settings'ten okunuyor; background_settings'e yansıtma yok
+
         # Snap-destekli araçlara grid ayarlarını bildir
         if hasattr(self.line_tool, 'grid_settings'):
             self.line_tool.grid_settings = settings

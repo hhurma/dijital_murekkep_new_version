@@ -15,7 +15,8 @@ class ScaleTool:
         self.scale_handles = []      # Boyutlandırma tutamakları
         self.active_handle = None    # Aktif tutamak
         self.handle_types = []       # Tutamak tipleri (corner, edge)
-        self.background_settings = None  # Grid snap için
+        self.background_settings = None  # (Eski) arka plan ayarları
+        self.grid_settings = None  # Tek kaynak snap ayarları
         self.shift_pressed = False   # Shift tuşu durumu
         
     def get_selection_center(self, strokes, selected_strokes):
@@ -219,11 +220,10 @@ class ScaleTool:
         if self.active_handle is None:
             return False
             
-        # Grid snap uygula - daha hassas snap kullan
+        # Grid snap uygula - tek kaynak grid_settings
         snapped_pos = pos
-        if (self.background_settings and 
-            self.background_settings.get('snap_to_grid', False)):
-            snapped_pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings)
+        if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
+            snapped_pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.grid_settings)
             
         # Tutamak tipine göre boyutlandırma yöntemini belirle
         handle_type = self.handle_types[self.active_handle]
@@ -604,9 +604,9 @@ class ScaleTool:
         if self.is_scaling and self.selected_strokes and self.scale_center:
             current_pos = event.position()
             
-            # Grid snap aktifse pozisyonu snap'le
-            if self.background_settings and self.background_settings.get('snap_to_grid', False):
-                current_pos = GridSnapUtils.snap_point_to_grid_precise(current_pos, self.background_settings)
+            # Grid snap aktifse pozisyonu snap'le (tek kaynak grid_settings)
+            if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
+                current_pos = GridSnapUtils.snap_point_to_grid_precise(current_pos, self.grid_settings)
             
             # Ölçek faktörünü hesapla
             initial_distance = self.calculate_distance(self.start_pos, self.scale_center)
@@ -620,8 +620,8 @@ class ScaleTool:
                 if abs(scale_factor - 1.0) < min_scale_change:
                     return
                 
-                # Grid snap aktifse ölçek faktörünü daha hassas hale getir
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                # Grid snap aktifse ölçek faktörünü daha hassas hale getir (tek kaynak grid_settings)
+                if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                     # Ölçek faktörünü 0.01 katlarına yuvarlama (daha hassas)
                     scale_factor = round(scale_factor * 100) / 100
                     if scale_factor <= 0.01:
@@ -673,7 +673,7 @@ class ScaleTool:
                     scaled_point = self.scale_point(original_point, self.scale_center, scale_factor)
                     
                     # Grid snap aktifse control point'i snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                         scaled_point = GridSnapUtils.snap_point_to_grid_precise(scaled_point, self.background_settings)
                     
                     stroke['control_points'].append([scaled_point.x(), scaled_point.y()])
@@ -721,7 +721,7 @@ class ScaleTool:
                         scaled_end = self.scale_point(original_end, self.scale_center, scale_factor)
                 
                 # Grid snap aktifse endpoint'leri snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                     scaled_start = GridSnapUtils.snap_point_to_grid_precise(scaled_start, self.background_settings)
                     scaled_end = GridSnapUtils.snap_point_to_grid_precise(scaled_end, self.background_settings)
                 
@@ -736,7 +736,7 @@ class ScaleTool:
                     scaled_corner = self.scale_point(original_corner, self.scale_center, scale_factor)
                     
                     # Grid snap aktifse corner'ı snap'le
-                    if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                    if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                         scaled_corner = GridSnapUtils.snap_point_to_grid_precise(scaled_corner, self.background_settings)
                     
                     stroke['corners'].append((scaled_corner.x(), scaled_corner.y()))
@@ -749,7 +749,7 @@ class ScaleTool:
                 scaled_br = self.scale_point(original_br, self.scale_center, scale_factor)
                 
                 # Grid snap aktifse corner'ları snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                     scaled_tl = GridSnapUtils.snap_point_to_grid_precise(scaled_tl, self.background_settings)
                     scaled_br = GridSnapUtils.snap_point_to_grid_precise(scaled_br, self.background_settings)
                 
@@ -762,7 +762,7 @@ class ScaleTool:
                 scaled_center = self.scale_point(original_center, self.scale_center, scale_factor)
                 
                 # Grid snap aktifse center'ı snap'le
-                if self.background_settings and self.background_settings.get('snap_to_grid', False):
+                if hasattr(self, 'grid_settings') and self.grid_settings and self.grid_settings.get('snap_to_grid', False):
                     scaled_center = GridSnapUtils.snap_point_to_grid_precise(scaled_center, self.background_settings)
                 
                 stroke['center'] = (scaled_center.x(), scaled_center.y())

@@ -26,7 +26,6 @@ class BackgroundWidget(QWidget):
         self.major_grid_width = 2  # Major grid için kalın çizgi
         self.major_grid_interval = 5  # Her 5 çizgide bir major grid
         self.grid_opacity = 1.0
-        self.snap_to_grid = False
         self.setup_ui()
         
     def setup_ui(self):
@@ -168,7 +167,7 @@ class BackgroundWidget(QWidget):
         
         grid_layout.addLayout(opacity_layout)
         
-        # Snap to grid seçeneği kaldırıldı - artık ayrı Grid Ayarları panelinde
+        # Snap to grid seçeneği kalıcı olarak kaldırıldı (tek kaynak Grid Ayarları)
         
         self.grid_group.setLayout(grid_layout)
         self.grid_group.setEnabled(True)  # Her zaman aktif
@@ -285,8 +284,7 @@ class BackgroundWidget(QWidget):
             'grid_width': self.grid_width,
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
-            'grid_opacity': self.grid_opacity,
-            'snap_to_grid': self.snap_to_grid
+            'grid_opacity': self.grid_opacity
         }
         self.backgroundChanged.emit(data)
         
@@ -301,8 +299,7 @@ class BackgroundWidget(QWidget):
             'grid_width': self.grid_width,
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
-            'grid_opacity': self.grid_opacity,
-            'snap_to_grid': self.snap_to_grid
+            'grid_opacity': self.grid_opacity
         }
         
     def set_background_settings(self, settings):
@@ -316,7 +313,6 @@ class BackgroundWidget(QWidget):
         self.major_grid_width = settings.get('major_grid_width', 2)
         self.major_grid_interval = settings.get('major_grid_interval', 5)
         self.grid_opacity = settings.get('grid_opacity', 1.0)
-        self.snap_to_grid = settings.get('snap_to_grid', False)
         
         # UI'yi güncelle
         for button in self.type_group.buttons():
@@ -333,5 +329,5 @@ class BackgroundWidget(QWidget):
         self.interval_spinbox.setValue(self.major_grid_interval)
         self.opacity_slider.setValue(int(self.grid_opacity * 100))
         self.opacity_label.setText(f"{int(self.grid_opacity * 100)}%")
-        # snap_checkbox kaldırıldı
+        # snap_checkbox yok
         self.grid_group.setEnabled(self.background_type in ['grid', 'dots']) 

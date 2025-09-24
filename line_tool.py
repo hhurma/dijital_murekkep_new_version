@@ -13,6 +13,8 @@ class LineTool:
         self.line_width = 2
         self.line_style = Qt.PenStyle.SolidLine
         self.grid_settings = None  # Snap için grid ayarları
+        if not hasattr(self, 'background_settings'):
+            self.background_settings = None
 
         # Gölge ayarları
         self.has_shadow = False
@@ -30,7 +32,7 @@ class LineTool:
         """Yeni bir çizgi çizimi başlat"""
         self.is_drawing = True
         
-        # Snap to grid uygulaması: grid açık veya Shift basılıysa
+        # Snap to grid: tek kaynak grid_settings
         if self.grid_settings:
             force_snap = getattr(self, 'shift_constrain', False) and not self.grid_settings.get('snap_to_grid', False)
             if self.grid_settings.get('snap_to_grid', False) or force_snap:
@@ -42,11 +44,11 @@ class LineTool:
     def add_point(self, pos, pressure=1.0):
         """Çizginin bitiş noktasını güncelle"""
         if self.is_drawing:
-            # Snap to grid uygulaması: ya grid açık ya da Shift basılıysa
-            if self.background_settings:
-                force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
-                if self.background_settings.get('snap_to_grid', False) or force_snap:
-                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
+            # Snap to grid: tek kaynak grid_settings
+            if self.grid_settings:
+                force_snap = getattr(self, 'shift_constrain', False) and not self.grid_settings.get('snap_to_grid', False)
+                if self.grid_settings.get('snap_to_grid', False) or force_snap:
+                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.grid_settings, force_snap=True)
             # Shift kısıtlaması: yatay/dikey
             if self.shift_constrain and self.start_point is not None:
                 dx = abs(pos.x() - self.start_point.x())

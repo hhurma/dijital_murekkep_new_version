@@ -16,6 +16,7 @@ class RectangleTool:
         self.is_filled = False  # Fill aktif mi
         self.line_style = Qt.PenStyle.SolidLine  # Çizgi stili
         self.background_settings = None  # Snap için arka plan ayarları
+        self.grid_settings = None  # Tek kaynak snap ayarları
         
         # Yuvarlak kenar özellikleri
         self.corner_radius = 0  # 0-50 px arası
@@ -36,11 +37,11 @@ class RectangleTool:
         """Yeni bir dikdörtgen çizimi başlat"""
         self.is_drawing = True
         
-        # Snap to grid uygulaması: grid açık veya Shift basılıysa
-        if self.background_settings:
-            force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
-            if self.background_settings.get('snap_to_grid', False) or force_snap:
-                pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
+        # Snap to grid: tek kaynak grid_settings
+        if hasattr(self, 'grid_settings') and self.grid_settings:
+            force_snap = getattr(self, 'shift_constrain', False) and not self.grid_settings.get('snap_to_grid', False)
+            if self.grid_settings.get('snap_to_grid', False) or force_snap:
+                pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.grid_settings, force_snap=True)
             
         self.start_point = pos
         self.current_point = pos
@@ -48,11 +49,11 @@ class RectangleTool:
     def add_point(self, pos, pressure=1.0):
         """Dikdörtgenin karşı köşesini güncelle"""
         if self.is_drawing:
-            # Snap to grid uygulaması: grid açık veya Shift basılıysa
-            if self.background_settings:
-                force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
-                if self.background_settings.get('snap_to_grid', False) or force_snap:
-                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.background_settings, force_snap=True)
+            # Snap to grid: tek kaynak grid_settings
+            if hasattr(self, 'grid_settings') and self.grid_settings:
+                force_snap = getattr(self, 'shift_constrain', False) and not self.grid_settings.get('snap_to_grid', False)
+                if self.grid_settings.get('snap_to_grid', False) or force_snap:
+                    pos = GridSnapUtils.snap_point_to_grid_precise(pos, self.grid_settings, force_snap=True)
                 
             self.current_point = pos
             

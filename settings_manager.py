@@ -16,6 +16,11 @@ class SettingsManager:
         """Ayarları dosyadan yükle"""
         if os.path.exists(self.config_file):
             self.config.read(self.config_file)
+            # Eski anahtarları temizlemek için migrasyon uygula
+            try:
+                self._migrate_settings()
+            except Exception:
+                pass
         else:
             self.create_default_settings()
             
@@ -48,8 +53,7 @@ class SettingsManager:
             'major_grid_width': '2',
             'major_grid_interval': '5',
             'minor_grid_interval': '1.0',
-            'grid_opacity': '1.0',
-            'snap_to_grid': 'False'
+            'grid_opacity': '1.0'
         }
         
         # Araç ayarları
@@ -310,14 +314,6 @@ class SettingsManager:
         """Grid şeffaflığını kaydet"""
         self.config.set('Background', 'grid_opacity', str(opacity))
         
-    def get_snap_to_grid(self):
-        """Snap to grid durumunu al"""
-        return self.config.getboolean('Background', 'snap_to_grid', fallback=False)
-        
-    def set_snap_to_grid(self, enabled):
-        """Snap to grid durumunu kaydet"""
-        self.config.set('Background', 'snap_to_grid', str(enabled))
-        
     def get_background_settings(self):
         """Tüm arka plan ayarlarını al"""
         return {
@@ -330,8 +326,7 @@ class SettingsManager:
             'major_grid_width': self.get_major_grid_width(),
             'major_grid_interval': self.get_major_grid_interval(),
             'minor_grid_interval': float(self.config.get('Background', 'minor_grid_interval', fallback='1.0')),
-            'grid_opacity': self.get_grid_opacity(),
-            'snap_to_grid': self.get_snap_to_grid()
+            'grid_opacity': self.get_grid_opacity()
         }
         
     def set_background_settings(self, settings):
@@ -354,7 +349,17 @@ class SettingsManager:
             self.config.add_section('Background')
         self.config.set('Background', 'minor_grid_interval', str(minor_val))
         self.set_grid_opacity(settings.get('grid_opacity', 1.0))
-        self.set_snap_to_grid(settings.get('snap_to_grid', False))
+
+    def _migrate_settings(self):
+        """Eski ayar anahtarlarını temizle (örn. Background.snap_to_grid)."""
+        bg = 'Background'
+        changed = False
+        if self.config.has_section(bg) and self.config.has_option(bg, 'snap_to_grid'):
+            # Artık snap_to_grid Background altında kullanılmıyor; kaldır
+            self.config.remove_option(bg, 'snap_to_grid')
+            changed = True
+        if changed:
+            self.save_settings()
 
     # Snap Grid ayarları (kalıcı)
     def get_snap_grid_settings(self):

@@ -41,7 +41,6 @@ class SettingsWidget(QWidget):
         self.major_grid_interval = 5
         self.minor_grid_interval = 1.0
         self.grid_opacity = 1.0
-        self.snap_to_grid = False
         
         # PDF ve Canvas ayarları
         self.pdf_orientation = 'landscape'
@@ -288,11 +287,7 @@ class SettingsWidget(QWidget):
         
         grid_layout.addLayout(opacity_layout)
         
-        # Snap to grid seçeneği
-        self.snap_checkbox = QCheckBox("Grid'e Yapıştır (Snap to Grid)")
-        self.snap_checkbox.setChecked(self.snap_to_grid)
-        self.snap_checkbox.toggled.connect(self.on_snap_changed)
-        grid_layout.addWidget(self.snap_checkbox)
+        # Snap to grid seçeneği kaldırıldı (tek kaynak Grid Ayarları paneli)
         
         self.grid_group.setLayout(grid_layout)
         self.grid_group.setEnabled(True)
@@ -620,10 +615,7 @@ class SettingsWidget(QWidget):
         self.opacity_label.setText(f"{value}%")
         self.emit_background_changed()
         
-    def on_snap_changed(self, checked):
-        """Snap to grid değiştiğinde"""
-        self.snap_to_grid = checked
-        self.emit_background_changed()
+    # on_snap_changed kaldırıldı
         
     def emit_background_changed(self):
         """Arka plan değişikliği sinyali gönder"""
@@ -637,8 +629,7 @@ class SettingsWidget(QWidget):
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
             'minor_grid_interval': self.minor_grid_interval,
-            'grid_opacity': self.grid_opacity,
-            'snap_to_grid': self.snap_to_grid
+            'grid_opacity': self.grid_opacity
         }
         self.backgroundChanged.emit(settings)
         
@@ -654,8 +645,7 @@ class SettingsWidget(QWidget):
             'major_grid_width': self.major_grid_width,
             'major_grid_interval': self.major_grid_interval,
             'minor_grid_interval': self.minor_grid_interval,
-            'grid_opacity': self.grid_opacity,
-            'snap_to_grid': self.snap_to_grid
+            'grid_opacity': self.grid_opacity
         }
         
     def set_background_settings(self, settings):
@@ -670,7 +660,6 @@ class SettingsWidget(QWidget):
         self.major_grid_interval = settings.get('major_grid_interval', 5)
         self.minor_grid_interval = float(settings.get('minor_grid_interval', 1.0))
         self.grid_opacity = settings.get('grid_opacity', 1.0)
-        self.snap_to_grid = settings.get('snap_to_grid', False)
         
         # UI'ı güncelle
         for button in self.type_group.buttons():
@@ -688,7 +677,7 @@ class SettingsWidget(QWidget):
         self.minor_interval_spinbox.setValue(self.minor_grid_interval)
         self.opacity_slider.setValue(int(self.grid_opacity * 100))
         self.opacity_label.setText(f"{int(self.grid_opacity * 100)}%")
-        self.snap_checkbox.setChecked(self.snap_to_grid)
+        # snap checkbox yok
         
     def set_pdf_orientation(self, orientation):
         """PDF yönünü ayarla"""

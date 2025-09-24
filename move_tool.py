@@ -9,6 +9,7 @@ class MoveTool:
         self.last_pos = None
         self.start_pos = None
         self.background_settings = None  # Grid snap için
+        self.grid_settings = None  # Tek kaynak snap ayarları
         self.shift_constrain = False  # Shift tuşu ile snap zorlaması
         self._selection_bounds_start = None  # Başlangıçta seçimin bounding rect'i
         self._click_offset_from_topleft = None  # Tıklama noktasının bounding rect sol-üst'ünden ofseti
@@ -54,14 +55,14 @@ class MoveTool:
                 pos.y() - self._click_offset_from_topleft.y()
             )
             
-            # Snap uygula (kenetli top-left için)
-            force_snap = getattr(self, 'shift_constrain', False) and not self.background_settings.get('snap_to_grid', False)
+            # Snap uygula (kenetli top-left için) - tek kaynak grid_settings
+            force_snap = getattr(self, 'shift_constrain', False) and not getattr(self, 'grid_settings', {}).get('snap_to_grid', False)
             snap_enabled = (
-                self.background_settings and 
-                (self.background_settings.get('snap_to_grid', False) or force_snap)
+                hasattr(self, 'grid_settings') and self.grid_settings and 
+                (self.grid_settings.get('snap_to_grid', False) or force_snap)
             )
             if snap_enabled:
-                new_top_left = GridSnapUtils.snap_point_to_grid_precise(new_top_left, self.background_settings)
+                new_top_left = GridSnapUtils.snap_point_to_grid_precise(new_top_left, self.grid_settings)
             
             # Delta = yeni sol-üst - başlangıç sol-üst
             delta = QPointF(
