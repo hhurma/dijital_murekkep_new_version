@@ -12,6 +12,22 @@ from splash_screen import show_splash_screen
 from DrawingWidget import DrawingWidget
 from pdf_exporter import PDFExporter
 from tab_manager import TabManager
+from PyQt6.QtWidgets import QInputDialog
+
+try:
+    from gemini_client import GeminiClient
+except Exception:
+    GeminiClient = None
+
+try:
+    from prompt_drawer import PromptDrawer
+except Exception:
+    PromptDrawer = None
+
+try:
+    from prompt_dialog import PromptDialog
+except Exception:
+    PromptDialog = None
 from color_palette import ColorPalette
 from line_width_widget import LineWidthWidget
 from settings_manager import SettingsManager
@@ -519,6 +535,12 @@ class MainWindow(QMainWindow):
         self.grid_action.setChecked(self.settings.get_grid_dock_visible())
         self.grid_action.toggled.connect(self.toggle_grid_dock)
         view_menu.addAction(self.grid_action)
+
+        # Araçlar menüsü
+        tools_menu = menubar.addMenu("Araçlar")
+        action_prompt = QAction("Prompt ile çiz…", self)
+        action_prompt.triggered.connect(self.on_prompt_draw)
+        tools_menu.addAction(action_prompt)
         
         view_menu.addSeparator()
         
@@ -4427,6 +4449,157 @@ class MainWindow(QMainWindow):
                 self.grid_action.setChecked(self.grid_dock.isVisible())
         except Exception:
             pass
+
+    def on_prompt_draw(self):
+        current_widget = self.get_current_drawing_widget()
+        if not current_widget:
+            return
+        # Dialog ile model seçimi + prompt
+        selected_model = None
+        text = None
+        # Her zaman özel PromptDialog'u kullan
+        if PromptDialog is None:
+            # Güvenli geri dönüş
+            text, ok = QInputDialog.getMultiLineText(self, "Prompt ile çiz", "İstek:", "")
+            if not ok or not text:
+                return
+        else:
+            models = []
+            try:
+                tmp_client = GeminiClient() if GeminiClient is not None else None
+                if tmp_client and tmp_client.is_configured():
+                    models = tmp_client.list_models()
+                else:
+                    models = GeminiClient.default_models() if GeminiClient is not None else []
+            except Exception:
+                models = GeminiClient.default_models() if GeminiClient is not None else []
+            dlg = PromptDialog(self, models=models)
+            # Önerilen şablon
+            template = (
+                "Sadece JSON ver. Şema: {\n"
+                "  \"axes\": { \"x\": \"Miktar\", \"y\": \"Fiyat\" },\n"
+                "  \"series\": [ { \"name\": \"Arz Eğrisi\", \"points\": [ { \"x\": 10, \"y\": 2 }, { \"x\": 50, \"y\": 10 } ] } ]\n"
+                "}\n"
+                "Yalnızca bu alanları kullan, başka anahtar ekleme.\n"
+                "İstek: yatay eksen Miktar, dikey eksen Fiyat. Arz eğrisi çiz."
+            )
+            try:
+                dlg.set_default_prompt(template)
+            except Exception:
+                pass
+            result_cache = {"strokes": None, "used_llm": False}
+
+            def do_send():
+                t = dlg.get_prompt()
+                if not t:
+                    dlg.append_log("Lütfen bir istek girin.")
+                    return
+                dlg.set_busy(True)
+                nonlocal selected_model
+                selected_model = dlg.get_selected_model()
+                dlg.append_log(f"Seçilen model: {selected_model}")
+                strokes_to_add = []
+                used_llm = False
+                if GeminiClient is not None:
+                    client = GeminiClient(model=selected_model) if selected_model else GeminiClient()
+                    if client.is_configured():
+                        dlg.append_log("Gemini çağrısı yapılıyor...")
+                        schema_hint = {'axes': {'x': 'string', 'y': 'string'}, 'chart': 'string'}
+                        data = client.generate_json(t.strip(), schema_hint)
+                        # Tam yanıtı (gerekirse kırparak) logla
+                        raw = data.get('_raw') if isinstance(data, dict) else None
+                        preview = raw if isinstance(raw, str) else str(data)
+                        if len(preview) > 1000:
+                            preview = preview[:1000] + "..."
+                        dlg.append_log("LLM yanıtı:\n" + preview)
+                        if PromptDrawer is not None and isinstance(data, dict) and data:
+                            w = getattr(current_widget, 'a4_width_landscape', 1169)
+                            h = getattr(current_widget, 'a4_height_landscape', 827)
+                            strokes_to_add = PromptDrawer.strokes_from_llm_json(w, h, data)
+                            used_llm = True
+                if not strokes_to_add and PromptDrawer is not None:
+                    lower = t.lower()
+                    x_label = 'Miktar' if 'miktar' in lower else 'X'
+                    y_label = 'Fiyat' if 'fiyat' in lower else 'Y'
+                    w = getattr(current_widget, 'a4_width_landscape', 1169)
+                    h = getattr(current_widget, 'a4_height_landscape', 827)
+                    if 'talep' in lower or 'demand' in lower:
+                        strokes_to_add = PromptDrawer.build_axes_and_demand_curve(w, h, x_label, y_label)
+                    else:
+                        strokes_to_add = PromptDrawer.build_axes_and_demand_curve(w, h, x_label, y_label)[:2]
+                if strokes_to_add:
+                    dlg.append_log("Önizleme hazır. Çiz için butona basın.")
+                    dlg.set_draw_enabled(True)
+                    result_cache["strokes"] = strokes_to_add
+                    result_cache["used_llm"] = used_llm
+                else:
+                    dlg.append_log("İçerik üretilemedi.")
+                    dlg.set_draw_enabled(False)
+                dlg.set_busy(False)
+
+            def do_draw():
+                strokes_to_add = result_cache.get("strokes")
+                if not strokes_to_add:
+                    dlg.append_log("Çizilecek içerik yok.")
+                    return
+                import time
+                group_id = f"group_{int(time.time() * 1000)}"
+                for s in strokes_to_add:
+                    s['parent_group_id'] = group_id
+                new_list = list(current_widget.strokes)
+                new_list.extend(strokes_to_add)
+                current_widget.strokes = new_list
+                current_widget.save_current_state("Prompt draw" + (" (LLM)" if result_cache.get("used_llm") else ""))
+                current_widget.update()
+                dlg.append_log("Çizim tamamlandı.")
+                dlg.accept()
+
+            dlg.sendRequested.connect(do_send)
+            dlg.drawRequested.connect(do_draw)
+            dlg.exec()
+            return
+        if not text or not text.strip():
+            return
+        strokes_to_add = []
+        used_llm = False
+        if GeminiClient is not None:
+            client = GeminiClient(model=selected_model) if selected_model else GeminiClient()
+            if client.is_configured():
+                if PromptDialog is not None and 'dlg' in locals():
+                    dlg.set_busy(True)
+                schema_hint = {
+                    'axes': {'x': 'string', 'y': 'string'},
+                    'chart': 'string'
+                }
+                data = client.generate_json(text.strip(), schema_hint)
+                if PromptDialog is not None and 'dlg' in locals():
+                    dlg.set_busy(False)
+                if PromptDrawer is not None and isinstance(data, dict) and data:
+                    w = getattr(current_widget, 'a4_width_landscape', 1169)
+                    h = getattr(current_widget, 'a4_height_landscape', 827)
+                    strokes_to_add = PromptDrawer.strokes_from_llm_json(w, h, data)
+                    used_llm = True
+        if not strokes_to_add and PromptDrawer is not None:
+            lower = text.lower()
+            x_label = 'Miktar' if 'miktar' in lower else 'X'
+            y_label = 'Fiyat' if 'fiyat' in lower else 'Y'
+            w = getattr(current_widget, 'a4_width_landscape', 1169)
+            h = getattr(current_widget, 'a4_height_landscape', 827)
+            if 'talep' in lower or 'demand' in lower:
+                strokes_to_add = PromptDrawer.build_axes_and_demand_curve(w, h, x_label, y_label)
+            else:
+                strokes_to_add = PromptDrawer.build_axes_and_demand_curve(w, h, x_label, y_label)[:2]
+        if not strokes_to_add:
+            return
+        import time
+        group_id = f"group_{int(time.time() * 1000)}"
+        for s in strokes_to_add:
+            s['parent_group_id'] = group_id
+        new_list = list(current_widget.strokes)
+        new_list.extend(strokes_to_add)
+        current_widget.strokes = new_list
+        current_widget.save_current_state("Prompt draw" + (" (LLM)" if used_llm else ""))
+        current_widget.update()
 
 if __name__ == "__main__":
     app = QApplication(sys.argv)
