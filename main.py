@@ -2597,13 +2597,20 @@ class MainWindow(QMainWindow):
         group_id = f"group_{int(time.time() * 1000)}"
         
         # Seçili stroke'ları grupla
+        # İç içe grup desteği: mevcut group_id'yi KORU, dış grup için parent_group_id ata
         for index in selected_indices:
             if index < len(current_widget.strokes):
                 stroke = current_widget.strokes[index]
+                # Nesne tabanlı ise
                 if hasattr(stroke, 'group_id'):
-                    stroke.group_id = group_id
+                    # Dış grup referansı olarak parent_group_id özelliği oluştur/ata
+                    try:
+                        setattr(stroke, 'parent_group_id', group_id)
+                    except Exception:
+                        pass
+                # Dict tabanlı ise
                 elif isinstance(stroke, dict):
-                    stroke['group_id'] = group_id
+                    stroke['parent_group_id'] = group_id
         
         current_widget.update()
         

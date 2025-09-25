@@ -167,7 +167,8 @@ class LayerManager:
                     'strokes': copy.deepcopy(layer_data['strokes'])
                 }
                 for layer_id, layer_data in self.layers.items()
-            }
+            },
+            'group_names': copy.deepcopy(getattr(self.drawing_widget, 'group_names', {}))
         }
 
     def import_state(self, state):
@@ -213,6 +214,11 @@ class LayerManager:
         # Güncelleme sinyallerini gönder
         self._emit_changes(update_only=False)
         self.drawing_widget.activeLayerChanged.emit(self.active_layer_id)
+        # Grup adlarını yükle
+        try:
+            self.drawing_widget.group_names = dict(state.get('group_names', {}))
+        except Exception:
+            self.drawing_widget.group_names = {}
 
     def count_visible_strokes(self):
         count = 0

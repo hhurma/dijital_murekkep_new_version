@@ -102,6 +102,7 @@ class LayerManagerWidget(QWidget):
         self.layer_tree.setSelectionMode(QTreeWidget.SelectionMode.ExtendedSelection)
         self.layer_tree.currentItemChanged.connect(self._on_selection_changed)
         self.layer_tree.itemClicked.connect(self._on_item_clicked)
+        self.layer_tree.itemChanged.connect(self._on_item_renamed)
         main_layout.addWidget(self.layer_tree, 1)
 
         controls_layout = QHBoxLayout()
@@ -226,7 +227,8 @@ class LayerManagerWidget(QWidget):
         self._update_controls()
 
     def _select_layer(self, layer_id):
-        if layer_id is None:
+        # Hatalı payload (ör. liste) gelirse katman seçimini bozma
+        if layer_id is None or isinstance(layer_id, (list, tuple, set, dict)):
             self.layer_tree.clearSelection()
             return
 
@@ -281,7 +283,10 @@ class LayerManagerWidget(QWidget):
             if node_type == 'layer':
                 layer_id_val = current.data(0, Qt.ItemDataRole.UserRole)
             else:
+                # En üst katman düğümüne kadar yüksel ve layer_id'yi güvenli şekilde al
                 parent = current.parent()
+                while parent and parent.parent() is not None:
+                    parent = parent.parent()
                 layer_id_val = parent.data(0, Qt.ItemDataRole.UserRole) if parent else None
                 selection_payload = current.data(0, Qt.ItemDataRole.UserRole)
         except RuntimeError:
@@ -305,7 +310,10 @@ class LayerManagerWidget(QWidget):
                     if layer_id and not active_layer_id:
                         active_layer_id = layer_id
                 elif item_node_type in ('stroke', 'group'):
+                    # En üst katman düğümüne kadar yüksel ve güvenli layer_id al
                     parent = item.parent()
+                    while parent and parent.parent() is not None:
+                        parent = parent.parent()
                     layer_id = parent.data(0, Qt.ItemDataRole.UserRole) if parent else None
                     if layer_id and not active_layer_id:
                         active_layer_id = layer_id
@@ -455,38 +463,89 @@ class LayerManagerWidget(QWidget):
                 continue
             stroke = strokes[idx]
 
+            # Önce parent_group_id ile dış grupları topla (iç içe grup desteği)
+            parent_group_id = self._get_stroke_parent_group_id(stroke)
             group_id = self._get_stroke_group_id(stroke)
-            if group_id:
-                members = self._find_group_members_indices(strokes, group_id)
-                print(f"DEBUG: Found group {group_id} with {len(members)} members: {members}")
+            effective_group_id = parent_group_id or group_id
+            if effective_group_id:
+                members = self._find_group_members_indices(strokes, effective_group_id, prefer_parent=bool(parent_group_id))
+                print(f"DEBUG: Found group {effective_group_id} with {len(members)} members: {members}")
                 # Tüm üyeleri visited işaretle
                 for m in members:
                     visited_indices.add(m)
 
                 text = f"Grup ({len(members)} öğe)"
                 group_item = QTreeWidgetItem(layer_item)
-                group_item.setText(0, text)
-                group_item.setData(0, Qt.ItemDataRole.UserRole, members)
+                # Grup adı (kullanıcı tarafından atanmış olabilir)
+                display_name = self._get_group_display_name(effective_group_id) or 'Grup'
+                group_item.setText(0, f"{display_name} ({len(members)} öğe)")
+                group_item.setData(0, Qt.ItemDataRole.UserRole, members)  # seçim için indeks listesi
                 group_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'group')
+                group_item.setData(0, Qt.ItemDataRole.UserRole + 2, effective_group_id)  # isim için grup id
+                # Düzenlenebilir yap
+                group_item.setFlags(group_item.flags() | Qt.ItemFlag.ItemIsEditable)
                 
-                # Grup üyelerini alt düğümler olarak ekle
+                # Grup üyelerini alt düğümler olarak ekle (alt grupları tekil oluştur)
+                subgroup_map = {}
+                single_members = []
                 for member_idx in members:
                     if member_idx < len(strokes):
                         member_stroke = strokes[member_idx]
+                        inner_parent = self._get_stroke_parent_group_id(member_stroke)
+                        inner_group = self._get_stroke_group_id(member_stroke)
+                        if inner_group and (not inner_parent or inner_parent == effective_group_id):
+                            subgroup_map.setdefault(inner_group, []).append(member_idx)
+                        else:
+                            single_members.append(member_idx)
+
+                # Tekil üyeleri ekle
+                for member_idx in single_members:
+                    member_stroke = strokes[member_idx]
+                    custom_name = self._get_stroke_name(member_stroke)
+                    if custom_name:
+                        member_text = custom_name
+                    else:
                         member_type = self._get_stroke_type(member_stroke)
                         member_text = f"{member_type} #{member_idx}"
-                        member_item = QTreeWidgetItem(group_item)
-                        member_item.setText(0, member_text)
-                        member_item.setData(0, Qt.ItemDataRole.UserRole, member_idx)
-                        member_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'stroke')
+                    member_item = QTreeWidgetItem(group_item)
+                    member_item.setText(0, member_text)
+                    member_item.setData(0, Qt.ItemDataRole.UserRole, member_idx)
+                    member_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'stroke')
+                    # Düzenlenebilir yap
+                    member_item.setFlags(member_item.flags() | Qt.ItemFlag.ItemIsEditable)
+
+                # Alt grupları tekil olarak ekle
+                for ig, ig_members in subgroup_map.items():
+                    sub_item = QTreeWidgetItem(group_item)
+                    sub_name = self._get_group_display_name(ig) or 'Grup'
+                    sub_item.setText(0, f"{sub_name} ({len(ig_members)} öğe)")
+                    sub_item.setData(0, Qt.ItemDataRole.UserRole, ig_members)
+                    sub_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'group')
+                    sub_item.setData(0, Qt.ItemDataRole.UserRole + 2, ig)
+                    sub_item.setFlags(sub_item.flags() | Qt.ItemFlag.ItemIsEditable)
+                    for sm_idx in ig_members:
+                        sm_stroke = strokes[sm_idx]
+                        sm_custom = self._get_stroke_name(sm_stroke)
+                        if sm_custom:
+                            sm_text = sm_custom
+                        else:
+                            sm_type = self._get_stroke_type(sm_stroke)
+                            sm_text = f"{sm_type} #{sm_idx}"
+                        sm_item = QTreeWidgetItem(sub_item)
+                        sm_item.setText(0, sm_text)
+                        sm_item.setData(0, Qt.ItemDataRole.UserRole, sm_idx)
+                        sm_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'stroke')
+                        sm_item.setFlags(sm_item.flags() | Qt.ItemFlag.ItemIsEditable)
             else:
                 visited_indices.add(idx)
                 stroke_type = self._get_stroke_type(stroke)
-                text = f"{stroke_type} #{idx}"
+                custom_name = self._get_stroke_name(stroke)
+                text = custom_name if custom_name else f"{stroke_type} #{idx}"
                 stroke_item = QTreeWidgetItem(layer_item)
                 stroke_item.setText(0, text)
                 stroke_item.setData(0, Qt.ItemDataRole.UserRole, idx)
                 stroke_item.setData(0, Qt.ItemDataRole.UserRole + 1, 'stroke')
+                stroke_item.setFlags(stroke_item.flags() | Qt.ItemFlag.ItemIsEditable)
 
     def _get_stroke_group_id(self, stroke):
         try:
@@ -502,13 +561,100 @@ class LayerManagerWidget(QWidget):
         except Exception:
             return None
 
-    def _find_group_members_indices(self, strokes, group_id):
+    def _get_group_display_name(self, group_id):
+        try:
+            if not group_id:
+                return None
+            names = getattr(self.drawing_widget, 'group_names', None)
+            if isinstance(names, dict) and group_id in names:
+                return names.get(group_id)
+            # Varsayılan isimler
+            if isinstance(group_id, str) and group_id.startswith('freehand_'):
+                return 'Serbest Çizimler'
+            return 'Grup'
+        except Exception:
+            return 'Grup'
+
+    def _get_stroke_name(self, stroke):
+        try:
+            if hasattr(stroke, 'name'):
+                return getattr(stroke, 'name', None)
+            if isinstance(stroke, dict):
+                return stroke.get('name')
+            return None
+        except Exception:
+            return None
+
+    def _get_stroke_parent_group_id(self, stroke):
+        try:
+            parent_id = None
+            if hasattr(stroke, 'parent_group_id'):
+                parent_id = getattr(stroke, 'parent_group_id', None)
+            elif isinstance(stroke, dict):
+                parent_id = stroke.get('parent_group_id')
+            return parent_id
+        except Exception:
+            return None
+
+    def _find_group_members_indices(self, strokes, group_id, prefer_parent=False):
         members = []
         for i, s in enumerate(strokes):
-            gid = self._get_stroke_group_id(s)
-            if gid == group_id:
-                members.append(i)
+            if prefer_parent:
+                gid = self._get_stroke_parent_group_id(s)
+                if gid == group_id:
+                    members.append(i)
+            else:
+                gid = self._get_stroke_group_id(s)
+                pid = self._get_stroke_parent_group_id(s)
+                if gid == group_id or pid == group_id:
+                    members.append(i)
         return members
+
+    # ------------------------------------------------------------------
+    # Yeniden adlandırma
+    # ------------------------------------------------------------------
+    def _on_item_renamed(self, item, column):
+        if self._updating or not self.drawing_widget:
+            return
+        try:
+            node_type = item.data(0, Qt.ItemDataRole.UserRole + 1)
+        except RuntimeError:
+            node_type = None
+        if node_type not in ('stroke', 'group'):
+            return
+        new_text = item.text(0).strip()
+        if not new_text:
+            return
+        # Katman düğümünü bul
+        parent = item.parent()
+        while parent and parent.parent() is not None:
+            parent = parent.parent()
+        layer_id = parent.data(0, Qt.ItemDataRole.UserRole) if parent else None
+        if not layer_id:
+            return
+        # Stroke yeniden adlandırma
+        if node_type == 'stroke':
+            stroke_idx = item.data(0, Qt.ItemDataRole.UserRole)
+            if isinstance(stroke_idx, int):
+                strokes = self.drawing_widget.layer_manager.layers[layer_id]['strokes']
+                if 0 <= stroke_idx < len(strokes):
+                    s = strokes[stroke_idx]
+                    if hasattr(s, 'name'):
+                        try:
+                            setattr(s, 'name', new_text)
+                        except Exception:
+                            pass
+                    elif isinstance(s, dict):
+                        s['name'] = new_text
+        # Grup yeniden adlandırma
+        elif node_type == 'group':
+            group_id = item.data(0, Qt.ItemDataRole.UserRole + 2)
+            if not hasattr(self.drawing_widget, 'group_names'):
+                self.drawing_widget.group_names = {}
+            if group_id:
+                self.drawing_widget.group_names[group_id] = new_text
+        # Görünümü tazele
+        self.refresh_layers()
 
     def _get_stroke_type(self, stroke):
         try:

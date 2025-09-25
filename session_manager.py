@@ -377,6 +377,17 @@ class SessionManager:
         state = drawing_widget.layer_manager.export_state()
         serialized_state = self.serialize_layer_state(state)
 
+        # Grup adlarını da tab verisine ekle
+        try:
+            group_names = getattr(drawing_widget, 'group_names', {})
+            if isinstance(group_names, dict) and group_names:
+                # export_state içinden de gelebilir; öncelik DrawingWidget üstündeki runtime sözlükte
+                serialized_state['group_names'] = dict(group_names)
+            elif isinstance(state, dict) and 'group_names' in state:
+                serialized_state['group_names'] = dict(state.get('group_names') or {})
+        except Exception:
+            pass
+
         if (
             hasattr(drawing_widget, 'has_pdf_background')
             and callable(getattr(drawing_widget, 'has_pdf_background'))
@@ -543,6 +554,13 @@ class SessionManager:
 
         state = self.deserialize_layer_state(serialized_layers)
         drawing_widget.layer_manager.import_state(state)
+
+        # Grup adlarını geri yükle
+        try:
+            gn = serialized_layers.get('group_names', {}) if isinstance(serialized_layers, dict) else {}
+            drawing_widget.group_names = dict(gn) if isinstance(gn, dict) else {}
+        except Exception:
+            drawing_widget.group_names = {}
 
         if (
             isinstance(serialized_layers, dict)

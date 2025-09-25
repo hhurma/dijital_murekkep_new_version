@@ -10,6 +10,8 @@ class EventHandler:
         self.drawing_widget = drawing_widget
         # Geçici silgi (kalem alt tuşu / eraser ucu) durumu
         self._eraser_temp_active = False
+        # Freehand otomatik grup kimliği (katman bazlı - sabit)
+        self._freehand_active_group_id = None
         
     def handle_mouse_press(self, event: QMouseEvent):
         """Mouse press event'i işle"""
@@ -607,6 +609,12 @@ class EventHandler:
         pressure = self.drawing_widget.tablet_handler.get_optimized_pressure(event)
         is_tablet = self.drawing_widget.tablet_handler.is_tablet_in_use()
         self.drawing_widget.freehand_tool.start_stroke(transformed_pos, pressure, is_tablet)
+        # Katman bazlı sabit grup kimliği (o katmandaki tüm freehand'ler tek klasör)
+        try:
+            active_layer_id = self.drawing_widget.get_active_layer_id()
+        except Exception:
+            active_layer_id = None
+        self._freehand_active_group_id = f"freehand_{active_layer_id}" if active_layer_id else "freehand_default"
         self.drawing_widget.update()
 
     def handle_freehand_move(self, event):
@@ -629,11 +637,21 @@ class EventHandler:
         if self.drawing_widget.freehand_tool.is_drawing:
             stroke_data = self.drawing_widget.freehand_tool.finish_stroke()
             if stroke_data is not None:
+                # Katman bazlı group_id’yi stroke’a işle
+                try:
+                    if isinstance(stroke_data, dict):
+                        stroke_data['group_id'] = self._freehand_active_group_id
+                    elif hasattr(stroke_data, 'group_id'):
+                        setattr(stroke_data, 'group_id', self._freehand_active_group_id)
+                except Exception:
+                    pass
                 current_strokes = list(self.drawing_widget.strokes)
                 current_strokes.append(stroke_data)
                 self.drawing_widget.strokes = current_strokes
                 self.drawing_widget.save_current_state("Add freehand")
             self.drawing_widget.update()
+        # Freehand bitince (bir sonraki stroke da aynı katman kimliği ile ayarlanır)
+        self._freehand_active_group_id = None
 
     def handle_line_press(self, event):
         """Çizgi çizimi başlat"""
