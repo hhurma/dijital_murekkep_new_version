@@ -1,4 +1,4 @@
-from PyQt6.QtWidgets import QTabWidget, QWidget, QVBoxLayout, QScrollArea
+from PyQt6.QtWidgets import QTabWidget, QWidget, QVBoxLayout, QScrollArea, QInputDialog
 from PyQt6.QtCore import Qt, pyqtSignal
 from DrawingWidget import DrawingWidget
 from undo_redo_manager import UndoRedoManager
@@ -43,6 +43,14 @@ class TabManager:
         
         # Tab değişikliklerini takip et
         self.tab_widget.currentChanged.connect(self.on_tab_changed)
+
+        # Sekme başlığını çift tıklamayla yeniden adlandırma
+        try:
+            # QTabBar'ın çift tıklama sinyaline bağlan
+            self.tab_widget.tabBar().tabBarDoubleClicked.connect(self.on_tab_double_clicked)
+        except Exception:
+            # Bazı platformlarda/sürümlerde mevcut olmayabilir; sessizce geç
+            pass
     
     def get_tab_widget(self):
         """Tab widget'ını döndür"""
@@ -183,6 +191,17 @@ class TabManager:
     def set_tab_text(self, index, text):
         """Belirtilen indeksteki tab adını değiştir"""
         self.tab_widget.setTabText(index, text)
+
+    def on_tab_double_clicked(self, index):
+        """Sekme başlığı çift tıklandığında yeniden adlandır."""
+        if index < 0 or index >= self.tab_widget.count():
+            return
+        current_text = self.get_tab_text(index)
+        new_text, ok = QInputDialog.getText(self.tab_widget, "Sekmeyi Yeniden Adlandır", "Yeni ad:", text=current_text)
+        if ok:
+            new_text = new_text.strip()
+            if new_text:
+                self.set_tab_text(index, new_text)
     
     def get_current_index(self):
         """Aktif tab indeksini döndür"""
